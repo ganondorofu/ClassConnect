@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from 'react'; // Re-added missing React import
+import * as React from 'react'; // Ensure React is imported
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
@@ -380,14 +380,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                             </SelectTrigger>
                             <SelectContent>
                                 {Object.values(AnnouncementTypeEnum).map(type => {
-                                     const TypeDetails = announcementTypeDetails[type];
-                                     const IconComponent = TypeDetails?.icon; // Get the component
+                                     const typeDetails = announcementTypeDetails[type]; // Renamed to avoid conflict
                                      return (
                                          <SelectItem key={type} value={type}>
                                              <div className="flex items-center gap-2">
-                                                 {IconComponent && (
-                                                     <IconComponent className={`w-4 h-4 ${TypeDetails.color}`} /> // Use the component directly
-                                                 )}
+                                                 {typeDetails && React.createElement(typeDetails.icon, { className: `w-4 h-4 ${typeDetails.color}` })}
                                                  {type}
                                              </div>
                                          </SelectItem>
@@ -438,6 +435,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </Card>
   );
 }
-
-
-    
