@@ -18,7 +18,7 @@ export default function SettingsPage() {
           <QueryClientProvider client={queryClient}>
             <MainLayout>
                 {/* Temporarily replace SettingsContent with simple text */}
-                <div>Settings Page Content Placeholder for Debugging</div>
+                <div className="p-4">Settings Page Content Placeholder for Debugging</div>
                 {/* <SettingsContent /> */}
             </MainLayout>
           </QueryClientProvider>
@@ -28,3 +28,4 @@ export default function SettingsPage() {
         return <div>Error rendering settings page. Check console.</div>; // Fallback UI
     }
 }
+
