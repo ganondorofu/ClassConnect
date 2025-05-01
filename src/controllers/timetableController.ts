@@ -1,3 +1,4 @@
+
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -366,7 +367,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
 /**
  * Creates or updates a daily announcement/note for a specific date and period.
  * Overwrites existing announcement for that slot on that day.
- * @param {Omit<DailyAnnouncement, 'id' | 'updatedAt'>} announcementData - The announcement data (date, period, text).
+ * @param {Omit<DailyAnnouncement, 'id' | 'updatedAt'>} announcementData - The announcement data (date, period, text, optional subjectOverride).
  * @returns {Promise<void>}
  */
 export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>): Promise<void> => {
@@ -377,25 +378,35 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
 
   // Ensure text is defined, default to empty string if not
   const text = announcementData.text ?? '';
+  // Handle subjectOverride, ensuring it's either a string or undefined
+  const subjectOverride = announcementData.subjectOverride || undefined;
+
 
   const dataToSet: Omit<DailyAnnouncement, 'id'> = {
     date: announcementData.date,
     period: announcementData.period,
+    subjectOverride: subjectOverride, // Include subjectOverride
     text: text, // Use sanitized text
-    updatedAt: new Date(), // Set update timestamp using client time (Firestore server timestamp is better if needed)
+    updatedAt: Timestamp.now(), // Use server timestamp for consistency
   };
 
   try {
     const oldDataSnap = await getDoc(docRef); // Might fail offline
-    const oldData = oldDataSnap.exists() ? oldDataSnap.data() : null;
+    const oldData = oldDataSnap.exists() ? oldDataSnap.data() as DailyAnnouncement : null;
 
-    // Only log if data actually changed
-    const hasChanged = !oldData || oldData.text !== text;
+    // Only log if data actually changed (text or subjectOverride)
+    const hasChanged = !oldData || oldData.text !== text || oldData.subjectOverride !== subjectOverride;
 
     await setDoc(docRef, dataToSet); // This will create or overwrite
 
     if (hasChanged) {
-         await logAction('upsert_announcement', { docId, oldText: oldData?.text, newText: text });
+         await logAction('upsert_announcement', {
+            docId,
+            oldText: oldData?.text,
+            newText: text,
+            oldSubjectOverride: oldData?.subjectOverride,
+            newSubjectOverride: subjectOverride
+        });
     }
 
   } catch (error) {
@@ -419,8 +430,13 @@ export const deleteDailyAnnouncement = async (date: string, period: number): Pro
     try {
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         if (oldDataSnap.exists()) {
+            const oldData = oldDataSnap.data();
             await deleteDoc(docRef);
-            await logAction('delete_announcement', { docId, oldText: oldDataSnap.data().text });
+            await logAction('delete_announcement', {
+                 docId,
+                 oldText: oldData.text,
+                 oldSubjectOverride: oldData.subjectOverride
+            });
         } else {
             console.log(`Announcement ${docId} not found for deletion.`);
         }
@@ -643,3 +659,4 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 // Example: Wrap getSchoolEvents for React Query
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 
+    
