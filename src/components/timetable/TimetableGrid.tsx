@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from 'react'; // Added missing React import
+import * as React from 'react'; // Re-added missing React import
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
@@ -136,7 +136,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
 
   // --- Data Merging ---
-  const settings = liveSettings ?? initialSettings;
+  const settings = liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS; // Provide default if initial is undefined
   const fixedTimetable = liveFixedTimetable.length > 0 ? liveFixedTimetable : initialFixedTimetable ?? [];
   const schoolEvents = liveSchoolEvents.length > 0 ? liveSchoolEvents : initialSchoolEvents ?? [];
   const dailyAnnouncements = { ...initialDailyAnnouncementsData, ...liveDailyAnnouncements };
@@ -249,8 +249,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     return <div className="text-destructive p-4">エラーが発生しました: {String(error)}</div>;
   }
 
-  const numberOfPeriods = settings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
-  const activeDays = settings?.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
+  const numberOfPeriods = settings.numberOfPeriods;
+  const activeDays = settings.activeDays;
 
   // Filter weekDays to only include active days + Saturday/Sunday for events
    const displayDays = weekDays.map(date => {
@@ -379,14 +379,20 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                 <SelectValue placeholder="種別を選択" />
                             </SelectTrigger>
                             <SelectContent>
-                                {Object.values(AnnouncementTypeEnum).map(type => (
-                                    <SelectItem key={type} value={type}>
-                                         <div className="flex items-center gap-2">
-                                             {React.createElement(announcementTypeDetails[type].icon, { className: `w-4 h-4 ${announcementTypeDetails[type].color}` })}
-                                             {type}
-                                         </div>
-                                     </SelectItem>
-                                ))}
+                                {Object.values(AnnouncementTypeEnum).map(type => {
+                                     const TypeDetails = announcementTypeDetails[type];
+                                     const IconComponent = TypeDetails?.icon; // Get the component
+                                     return (
+                                         <SelectItem key={type} value={type}>
+                                             <div className="flex items-center gap-2">
+                                                 {IconComponent && (
+                                                     <IconComponent className={`w-4 h-4 ${TypeDetails.color}`} /> // Use the component directly
+                                                 )}
+                                                 {type}
+                                             </div>
+                                         </SelectItem>
+                                     );
+                                })}
                             </SelectContent>
                         </Select>
                     </div>
@@ -433,3 +439,5 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   );
 }
 
+
+    
