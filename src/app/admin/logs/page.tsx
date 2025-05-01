@@ -2,7 +2,7 @@
 "use client";
 
 import { useQuery } from '@tanstack/react-query';
-import { MainLayout } from '@/components/layout/MainLayout'; // Use named import
+import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default import
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -179,5 +179,4 @@ export default function LogsPage() {
         </QueryClientProvider>
     );
 }
-
 
