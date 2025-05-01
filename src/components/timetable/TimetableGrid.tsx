@@ -1,6 +1,6 @@
 "use client";
 
-import type React from 'react';
+import * as React from 'react'; // Added missing React import
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName } from '@/models/timetable'; // Combined imports
 import type { DailyAnnouncement, AnnouncementType } from '@/models/announcement';
 import { AnnouncementType as AnnouncementTypeEnum } from '@/models/announcement'; // Import the enum
 import {
@@ -32,7 +33,6 @@ import {
   upsertDailyAnnouncement,
   deleteDailyAnnouncement,
 } from '@/controllers/timetableController';
-import { WeekDays, getDayOfWeekName, AllDays } from '@/models/timetable';
 import { AlertCircle, CalendarDays, Edit2, Trash2, PlusCircle, Info, AlertTriangle, BookOpen, Users, BellRing } from 'lucide-react'; // Import icons
 
 
@@ -256,7 +256,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
    const displayDays = weekDays.map(date => {
         const dayOfWeekStr = format(date, 'eee', { locale: ja }) as DayOfWeek; // Get Japanese day name
         const isActive = activeDays.includes(dayOfWeekStr);
-        const isWeekend = dayOfWeekStr === DayOfWeek.SATURDAY || dayOfWeekStr === DayOfWeek.SUNDAY;
+        const isWeekend = dayOfWeekStr === DayOfWeekEnum.SATURDAY || dayOfWeekStr === DayOfWeekEnum.SUNDAY; // Use DayOfWeekEnum
         return { date, dayOfWeek: dayOfWeekStr, isActive, isWeekend };
     });
 
@@ -363,7 +363,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>連絡を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeek.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
+                    <DialogTitle>連絡を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
                      <p className="text-sm text-muted-foreground pt-1">時間割: {selectedSlot?.fixedSubject || '未設定'}</p>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -432,3 +432,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </Card>
   );
 }
+
