@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -16,7 +15,7 @@ import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettin
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController'; // Import subject functions
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject'; // Import Subject type
-import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, WeekDays } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, WifiOff, Save } from 'lucide-react';
 import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Import SubjectSelector
