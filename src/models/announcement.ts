@@ -12,12 +12,11 @@ export interface DailyAnnouncement {
   date: string;
   /** The period number this announcement applies to */
   period: number;
-  /** Optional override for the subject name for this specific slot/day. Null or empty string means no override. */
-  subjectOverride?: string | null;
+  /** Optional override for the subject ID for this specific slot/day. Null means no override. References /subjects collection. */
+  subjectIdOverride?: string | null;
   /** The text content of the announcement (free text) */
   text: string;
   /** Timestamp of the last update */
   updatedAt: Date | Timestamp; // Allow both for easier handling before/after fetch
 }
 
-// Removed AnnouncementType enum and related logic

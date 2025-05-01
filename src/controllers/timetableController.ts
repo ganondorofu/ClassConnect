@@ -26,9 +26,10 @@ import type {
   SchoolEvent,
 } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
+import type { Subject } from '@/models/subject'; // Import Subject
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays, DayOfWeek as DayOfWeekEnum } from '@/models/timetable';
 import { format, addDays, startOfDay, getDay, parseISO } from 'date-fns';
-
+import { getSubjects } from './subjectController'; // Import getSubjects
 
 /**
  * Placeholder for the current class ID.
@@ -58,14 +59,12 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      // Ensure activeDays is always present, falling back to default if missing
       const data = docSnap.data();
       return {
           numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
           activeDays: data.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
       } as TimetableSettings;
     } else {
-      // Initialize with default settings if not found
       console.log("No settings found, initializing with defaults.");
       await setDoc(docRef, DEFAULT_TIMETABLE_SETTINGS);
       await logAction('initialize_settings', { settings: DEFAULT_TIMETABLE_SETTINGS });
@@ -125,7 +124,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
             for (let period = oldPeriods + 1; period <= newPeriods; period++) {
               const slotId = `${day}_${period}`;
               const newSlotRef = doc(fixedTimetableCollection, slotId);
-              const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subject: '' };
+              const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null }; // Use subjectId: null
               transaction.set(newSlotRef, defaultSlot);
             }
           }
@@ -144,7 +143,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
               for (let period = 1; period <= newSettings.numberOfPeriods; period++) {
                   const slotId = `${day}_${period}`;
                   const newSlotRef = doc(fixedTimetableCollection, slotId);
-                  const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subject: '' };
+                  const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null }; // Use subjectId: null
                   transaction.set(newSlotRef, defaultSlot);
               }
           }
@@ -216,7 +215,14 @@ export const onTimetableSettingsUpdate = (
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
    try {
       const snapshot = await getDocs(fixedTimetableCollection);
-      const slots = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+      let slots = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+
+      // Ensure subjectId exists, default to null if not
+      slots = slots.map(slot => ({
+          ...slot,
+          subjectId: slot.subjectId === undefined ? null : slot.subjectId
+      }));
+
        slots.sort((a, b) => {
            const dayOrder = AllDays.indexOf(a.day) - AllDays.indexOf(b.day); // Use AllDays for correct sorting
            if (dayOrder !== 0) return dayOrder;
@@ -271,15 +277,16 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
     }
     const docRef = doc(fixedTimetableCollection, slot.id);
     const existingSlot = existingSlotsMap.get(slot.id);
-    const newSubject = slot.subject || ''; // Ensure subject is string
+    const newSubjectId = slot.subjectId === undefined ? null : slot.subjectId; // Ensure subjectId is null if undefined
 
-    // Only add to batch if the subject has actually changed
-    if (!existingSlot || existingSlot.subject !== newSubject) {
+    // Only add to batch if the subjectId has actually changed
+    if (!existingSlot || (existingSlot.subjectId ?? null) !== newSubjectId) {
         const dataToSet: FixedTimeSlot = {
             id: slot.id,
             day: slot.day,
             period: slot.period,
-            subject: newSubject,
+            subjectId: newSubjectId, // Save null if no subject
+            // room: slot.room ?? null, // Handle room if needed
         };
         batch.set(docRef, dataToSet);
         changesMade = true;
@@ -321,7 +328,12 @@ export const onFixedTimetableUpdate = (
 ): Unsubscribe => {
     const q = query(fixedTimetableCollection);
     return onSnapshot(q, (snapshot) => {
-        const timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+        let timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+         // Ensure subjectId exists, default to null if not
+         timetable = timetable.map(slot => ({
+            ...slot,
+            subjectId: slot.subjectId === undefined ? null : slot.subjectId
+        }));
         timetable.sort((a, b) => {
              const dayOrder = AllDays.indexOf(a.day) - AllDays.indexOf(b.day); // Use AllDays
             if (dayOrder !== 0) return dayOrder;
@@ -355,6 +367,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
       return snapshot.docs.map(doc => ({
           ...doc.data(),
           id: doc.id,
+          subjectIdOverride: doc.data().subjectIdOverride === undefined ? null : doc.data().subjectIdOverride, // Ensure null default
           updatedAt: (doc.data().updatedAt as Timestamp)?.toDate() ?? new Date(),
         }) as DailyAnnouncement);
     } catch (error) {
@@ -375,7 +388,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
 /**
  * Creates or updates a daily announcement/note for a specific date and period.
  * Overwrites existing announcement for that slot on that day.
- * If `text` and `subjectOverride` are both empty/null, deletes the document.
+ * If `text` and `subjectIdOverride` are both empty/null, deletes the document.
  * Triggers applying fixed timetable to future after update/delete.
  * @param {Omit<DailyAnnouncement, 'id' | 'updatedAt'>} announcementData - The announcement data.
  * @returns {Promise<void>}
@@ -386,10 +399,10 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
   const docRef = doc(dailyAnnouncementsCollection, docId);
 
   const text = announcementData.text ?? '';
-  const subjectOverride = announcementData.subjectOverride || null; // Store null for empty override
+  const subjectIdOverride = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride; // Ensure null default
 
-  // If both text and subjectOverride are empty/null, delete the document
-  if (!text && !subjectOverride) {
+  // If both text and subjectIdOverride are null/empty, delete the document
+  if (!text && subjectIdOverride === null) {
       await deleteDailyAnnouncement(date, period); // Reuse delete function (logs internally)
       return; // Exit early
   }
@@ -397,7 +410,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
   const dataToSet: Omit<DailyAnnouncement, 'id'> = {
     date: date,
     period: period,
-    subjectOverride: subjectOverride,
+    subjectIdOverride: subjectIdOverride, // Save null if no override
     text: text,
     updatedAt: Timestamp.now(),
   };
@@ -407,13 +420,13 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
     const oldDataSnap = await getDoc(docRef);
     if (oldDataSnap.exists()) {
         oldData = { ...oldDataSnap.data(), id: oldDataSnap.id } as DailyAnnouncement;
-        // Ensure updatedAt is Date object if needed for comparison, though Timestamp.now() is used for setting
-        // oldData.updatedAt = (oldData.updatedAt as Timestamp)?.toDate() ?? new Date();
+        // Ensure default for comparison
+        oldData.subjectIdOverride = oldData.subjectIdOverride === undefined ? null : oldData.subjectIdOverride;
     }
 
     const hasChanged = !oldData
         || oldData.text !== text
-        || (oldData.subjectOverride ?? null) !== subjectOverride;
+        || (oldData.subjectIdOverride ?? null) !== (subjectIdOverride ?? null);
 
     if (hasChanged) {
         await setDoc(docRef, dataToSet); // Create or overwrite
@@ -423,8 +436,8 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
             period,
             oldText: oldData?.text ?? null,
             newText: text,
-            oldSubjectOverride: oldData?.subjectOverride ?? null,
-            newSubjectOverride: subjectOverride
+            oldSubjectIdOverride: oldData?.subjectIdOverride ?? null,
+            newSubjectIdOverride: subjectIdOverride ?? null
         });
         // Apply fixed timetable to future after a manual change
         console.log("Manual announcement change, applying fixed timetable to future...");
@@ -467,7 +480,7 @@ export const deleteDailyAnnouncement = async (date: string, period: number): Pro
                  date,
                  period,
                  oldText: oldData?.text ?? null,
-                 oldSubjectOverride: oldData?.subjectOverride ?? null
+                 oldSubjectIdOverride: oldData?.subjectIdOverride === undefined ? null : oldData?.subjectIdOverride
             });
              // Apply fixed timetable to future after a manual deletion
              console.log("Manual announcement deletion, applying fixed timetable to future...");
@@ -502,6 +515,7 @@ export const onDailyAnnouncementsUpdate = (
     const announcements = snapshot.docs.map(doc => ({
       ...doc.data(),
       id: doc.id,
+      subjectIdOverride: doc.data().subjectIdOverride === undefined ? null : doc.data().subjectIdOverride, // Ensure null default
       updatedAt: (doc.data().updatedAt as Timestamp)?.toDate() ?? new Date(),
     }) as DailyAnnouncement);
     callback(announcements);
@@ -660,7 +674,7 @@ export const onSchoolEventsUpdate = (
 /**
  * Applies the fixed timetable subjects to future daily announcements
  * for the next N weeks, but only for slots that don't already have
- * a daily announcement (text or subjectOverride).
+ * a daily announcement (text or subjectIdOverride).
  * This is triggered after saving fixed timetable or settings, or manual daily changes.
  * @returns {Promise<void>}
  */
@@ -669,6 +683,10 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
     try {
         const settings = await getTimetableSettings();
         const fixedTimetable = await getFixedTimetable();
+        // Subjects are not strictly needed here unless we want to log teacher names
+        // const subjects = await getSubjects();
+        // const subjectsMap = new Map(subjects.map(s => [s.id, s]));
+
         if (!fixedTimetable || fixedTimetable.length === 0) {
             console.warn("No fixed timetable data found. Cannot apply to future.");
             return;
@@ -678,23 +696,17 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
         const batch = writeBatch(db);
         let operationsCount = 0;
 
-        // Mapping from JS day index (0=Sun, 1=Mon...) to DayOfWeek enum ("月", "火"...)
         const dayMapping: { [key: number]: DayOfWeek } = {
-            1: DayOfWeekEnum.MONDAY,
-            2: DayOfWeekEnum.TUESDAY,
-            3: DayOfWeekEnum.WEDNESDAY,
-            4: DayOfWeekEnum.THURSDAY,
-            5: DayOfWeekEnum.FRIDAY,
-            // Add Saturday/Sunday if they can be active days
-            // 6: DayOfWeekEnum.SATURDAY,
-            // 0: DayOfWeekEnum.SUNDAY,
+            1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY,
+            4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY,
+            6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY, // Include weekends if potentially active
         };
 
-        // Iterate through the next N weeks (e.g., 3 weeks * 7 days)
+        // Iterate through the next N weeks
         for (let i = 0; i < FUTURE_WEEKS_TO_APPLY * 7; i++) {
             const futureDate = addDays(today, i + 1); // Start from tomorrow
             const dateStr = format(futureDate, 'yyyy-MM-dd');
-            const dayOfWeekJs = getDay(futureDate); // 0 for Sunday, 1 for Monday, etc.
+            const dayOfWeekJs = getDay(futureDate);
             const dayOfWeekEnum = dayMapping[dayOfWeekJs];
 
             // Skip if it's not an active day according to settings
@@ -704,39 +716,48 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
             // Fetch existing announcements for this future date
             const existingAnnouncements = await getDailyAnnouncements(dateStr);
-            const existingPeriods = new Set(existingAnnouncements.map(a => a.period));
+            const existingAnnouncementsMap = new Map(existingAnnouncements.map(a => [a.period, a]));
 
             // Apply fixed slots for this day
             const fixedSlotsForDay = fixedTimetable.filter(slot => slot.day === dayOfWeekEnum);
 
             for (const fixedSlot of fixedSlotsForDay) {
-                // Check if an announcement already exists for this period
-                if (!existingPeriods.has(fixedSlot.period)) {
+                const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
+
+                if (!existingAnn) {
                     // No existing announcement, create a default one based on fixed slot
                     const docId = `${dateStr}_${fixedSlot.period}`;
                     const docRef = doc(dailyAnnouncementsCollection, docId);
                     const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = {
                         date: dateStr,
                         period: fixedSlot.period,
-                        subjectOverride: fixedSlot.subject || null, // Apply fixed subject as override
-                        text: '', // Default to empty text
-                        updatedAt: Timestamp.now(), // Mark when it was auto-applied
+                        subjectIdOverride: fixedSlot.subjectId, // Apply fixed subject ID
+                        text: '',
+                        updatedAt: Timestamp.now(),
                     };
                     batch.set(docRef, newAnnouncementData);
                     operationsCount++;
-                    // console.log(`Applying fixed slot to ${docId}: ${fixedSlot.subject}`);
                 } else {
-                     // Optional: Check if existing announcement ONLY has text and NO subjectOverride
-                     // If so, maybe update the subjectOverride based on fixed timetable? Decide based on desired behavior.
-                     const existingAnn = existingAnnouncements.find(a => a.period === fixedSlot.period);
-                     if (existingAnn && !existingAnn.text && (existingAnn.subjectOverride ?? null) !== (fixedSlot.subject || null)) {
-                          // If existing announcement has NO text and subject differs, update it
-                          const docId = `${dateStr}_${fixedSlot.period}`;
-                          const docRef = doc(dailyAnnouncementsCollection, docId);
-                          batch.update(docRef, { subjectOverride: fixedSlot.subject || null, updatedAt: Timestamp.now() });
-                          operationsCount++;
-                           // console.log(`Updating subjectOverride for ${docId} based on fixed slot: ${fixedSlot.subject}`);
+                     // If existing announcement has NO text and NO subject override,
+                     // update it with the fixed subject ID.
+                     if (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null) {
+                          if ((fixedSlot.subjectId ?? null) !== null) { // Only update if fixed slot has a subject
+                              const docId = `${dateStr}_${fixedSlot.period}`;
+                              const docRef = doc(dailyAnnouncementsCollection, docId);
+                              batch.update(docRef, {
+                                  subjectIdOverride: fixedSlot.subjectId,
+                                  updatedAt: Timestamp.now()
+                              });
+                              operationsCount++;
+                          }
                      }
+                      // Optional: If existing has NO text, but the override differs from fixed, update it?
+                    //  else if (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) !== (fixedSlot.subjectId ?? null)) {
+                    //      const docId = `${dateStr}_${fixedSlot.period}`;
+                    //      const docRef = doc(dailyAnnouncementsCollection, docId);
+                    //      batch.update(docRef, { subjectIdOverride: fixedSlot.subjectId, updatedAt: Timestamp.now() });
+                    //      operationsCount++;
+                    // }
                 }
             }
         }
@@ -751,16 +772,12 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
     } catch (error) {
         console.error("Error applying fixed timetable to future dates:", error);
-        // Don't throw UI errors for this background task, just log it.
         await logAction('apply_fixed_timetable_future_error', { error: String(error) });
          if ((error as FirestoreError).code === 'unavailable') {
             console.warn("Client is offline. Cannot apply fixed timetable to future.");
-            // Don't throw, this is a background task
         } else if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
              console.error("Firestore index required for applying fixed timetable to future. Check getDailyAnnouncements index requirements.");
-             // Don't throw, log is sufficient
         }
-        // Do not re-throw, as this is often a background process
     }
 };
 
@@ -769,15 +786,12 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
 /**
  * Logs an action performed by a user (or system).
- * Attempts to log even if offline, but might fail.
  * Replaces undefined values in details with null.
- * @param {string} actionType - Type of action (e.g., 'update_settings', 'add_announcement').
- * @param {object} details - Additional details about the action.
- * @param {string} [userId='anonymous'] - ID of the user performing the action.
  */
 const logAction = async (actionType: string, details: object, userId: string = 'anonymous') => {
+  // Ensure details are serializable (replace undefined with null)
   const cleanDetails = JSON.parse(JSON.stringify(details, (key, value) =>
-      value === undefined ? null : value
+    value === undefined ? null : value
   ));
 
   const logEntry = {
@@ -792,9 +806,9 @@ const logAction = async (actionType: string, details: object, userId: string = '
     await setDoc(newLogRef, logEntry);
   } catch (error) {
     console.error(`Failed to log action '${actionType}' (might be offline):`, error);
-     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
-        console.error("Firestore Logging Error: Attempted to save 'undefined' in log details.", logEntry);
-    }
+    if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+       console.error("Firestore Logging Error: Attempted to save 'undefined' in log details.", logEntry);
+   }
      // Don't throw error for logging failures
   }
 };

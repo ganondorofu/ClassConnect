@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -10,12 +11,15 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'; // Import Table components
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable } from '@/controllers/timetableController';
+import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController'; // Import subject functions
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
-import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays } from '@/models/timetable'; // Import WeekDays
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import Alert
-import { AlertCircle, WifiOff, Save } from 'lucide-react'; // Import WifiOff and Save icon
+import type { Subject } from '@/models/subject'; // Import Subject type
+import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays } from '@/models/timetable';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle, WifiOff, Save } from 'lucide-react';
+import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Import SubjectSelector
 
 // Re-export QueryClientProvider for client components using queries
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -34,6 +38,9 @@ function SettingsPageContent() {
   // --- State for Fixed Timetable Editor ---
   const [editedFixedTimetable, setEditedFixedTimetable] = useState<FixedTimeSlot[]>([]);
   const [initialFixedTimetableData, setInitialFixedTimetableData] = useState<FixedTimeSlot[]>([]); // Store initial data for comparison
+
+  // --- State for Subjects ---
+  const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
 
 
     // --- Check Online Status ---
@@ -122,6 +129,34 @@ function SettingsPageContent() {
     refetchOnMount: true,
   });
 
+  // --- Fetching Subjects ---
+   const { data: initialSubjects, isLoading: isLoadingSubjects, error: errorSubjects } = useQuery({
+     queryKey: ['subjects'],
+     queryFn: queryFnGetSubjects,
+     staleTime: 1000 * 60 * 15, // 15 minutes
+     refetchOnWindowFocus: false,
+     onError: handleQueryError('subjects'),
+     enabled: !isOffline,
+     refetchOnMount: true,
+   });
+
+   // --- Realtime Subscription for Subjects ---
+    useEffect(() => {
+        if (isOffline) return;
+        const unsubscribe = onSubjectsUpdate((subs) => {
+        setLiveSubjects(subs);
+        setIsOffline(false);
+        }, (error) => {
+        console.error("Realtime subjects error:", error);
+        setIsOffline(true);
+        });
+        return () => unsubscribe();
+    }, [isOffline]);
+
+    // Merge initial and live subjects data
+    const subjects = useMemo(() => liveSubjects.length > 0 ? liveSubjects : initialSubjects ?? [], [liveSubjects, initialSubjects]);
+
+
    // --- Initialize and Manage Edited Fixed Timetable State ---
    useEffect(() => {
        if (fetchedFixedTimetable && settings) {
@@ -134,7 +169,7 @@ function SettingsPageContent() {
                        id: `${day}_${period}`, // Generate ID if missing
                        day,
                        period,
-                       subject: '', // Default to empty string
+                       subjectId: null, // Default to null
                    });
                }
            });
@@ -149,7 +184,7 @@ function SettingsPageContent() {
                        id: `${day}_${period}`,
                        day,
                        period,
-                       subject: '',
+                       subjectId: null,
                     });
                 }
             });
@@ -239,11 +274,11 @@ function SettingsPageContent() {
       }
   };
 
-  const handleSubjectChange = (day: DayOfWeek, period: number, newSubject: string) => {
+  const handleSubjectChange = (day: DayOfWeek, period: number, newSubjectId: string | null) => {
     setEditedFixedTimetable(currentTimetable =>
         currentTimetable.map(slot =>
             slot.day === day && slot.period === period
-                ? { ...slot, subject: newSubject }
+                ? { ...slot, subjectId: newSubjectId } // Update subjectId
                 : slot
         )
     );
@@ -263,6 +298,9 @@ function SettingsPageContent() {
    const showErrorSettings = errorSettings && !isOffline;
    const showLoadingFixed = isLoadingFixed && !isOffline;
    const showErrorFixed = errorFixed && !isOffline;
+   const showLoadingSubjects = isLoadingSubjects && !isOffline;
+   const showErrorSubjects = errorSubjects && !isOffline;
+
 
     // Calculate if fixed timetable has changes
    const hasFixedTimetableChanged = useMemo(() => {
@@ -350,7 +388,7 @@ function SettingsPageContent() {
                 <CardDescription>月曜日から金曜日までの基本的な時間割を設定します。</CardDescription>
             </CardHeader>
             <CardContent>
-                 {showLoadingFixed ? (
+                 {showLoadingFixed || showLoadingSubjects ? (
                     <div className="space-y-2">
                         {[...Array(settings?.numberOfPeriods || 6)].map((_, i) => (
                              <div key={i} className="flex gap-2">
@@ -361,12 +399,14 @@ function SettingsPageContent() {
                             </div>
                         ))}
                     </div>
-                ) : showErrorFixed ? (
+                ) : showErrorFixed || showErrorSubjects ? (
                      <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>エラー</AlertTitle>
                         <AlertDescription>
-                            固定時間割の読み込みに失敗しました。(エラー: {String(errorFixed)})
+                             {showErrorFixed ? `固定時間割の読み込みに失敗しました。(エラー: ${String(errorFixed)})` : ''}
+                             {showErrorFixed && showErrorSubjects ? <br /> : ''}
+                             {showErrorSubjects ? `科目リストの読み込みに失敗しました。(エラー: ${String(errorSubjects)})` : ''}
                          </AlertDescription>
                     </Alert>
                  ) : !settings ? (
@@ -384,7 +424,7 @@ function SettingsPageContent() {
                                  <TableRow>
                                      <TableHead className="w-[60px] text-center">時間</TableHead>
                                      {WeekDays.map(day => (
-                                         <TableHead key={day} className="min-w-[120px] text-center">{day}</TableHead>
+                                         <TableHead key={day} className="min-w-[180px] text-center">{day}</TableHead> {/* Increased min-width */}
                                      ))}
                                  </TableRow>
                             </TableHeader>
@@ -396,13 +436,13 @@ function SettingsPageContent() {
                                              const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
                                              return (
                                                  <TableCell key={`${day}-${period}`}>
-                                                    <Input
-                                                         type="text"
-                                                         value={slot?.subject ?? ''}
-                                                         onChange={(e) => handleSubjectChange(day, period, e.target.value)}
-                                                         placeholder="科目名"
-                                                         disabled={fixedTimetableMutation.isPending || isOffline}
-                                                         className="text-sm"
+                                                     <SubjectSelector
+                                                        subjects={subjects}
+                                                        selectedSubjectId={slot?.subjectId ?? null}
+                                                        onValueChange={(newSubjectId) => handleSubjectChange(day, period, newSubjectId)}
+                                                        placeholder="科目未設定"
+                                                        disabled={fixedTimetableMutation.isPending || isOffline}
+                                                        className="text-sm w-full" // Ensure it takes full width
                                                      />
                                                  </TableCell>
                                              );
@@ -419,6 +459,7 @@ function SettingsPageContent() {
                      onClick={handleSaveFixedTimetable}
                      disabled={
                          showLoadingFixed ||
+                         showLoadingSubjects ||
                          fixedTimetableMutation.isPending ||
                          isOffline ||
                          !hasFixedTimetableChanged // Disable if no changes
@@ -432,7 +473,6 @@ function SettingsPageContent() {
                  )}
              </CardFooter>
         </Card>
-
 
     </MainLayout>
   );

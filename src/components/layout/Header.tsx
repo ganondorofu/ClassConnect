@@ -1,9 +1,10 @@
+
 "use client";
 
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { CalendarCheck, Settings, History } from 'lucide-react'; // Icons for navigation
+import { CalendarCheck, Settings, History, BookMarked } from 'lucide-react'; // Added BookMarked icon
 
 export function Header() {
   return (
@@ -32,6 +33,12 @@ export function Header() {
         <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
           {/* Placeholder for Admin/Settings/Log Links - adjust visibility based on future auth */}
            <nav className="flex items-center gap-1">
+             <Button variant="ghost" size="sm" asChild>
+                 <Link href="/admin/subjects" aria-label="科目管理">
+                     <BookMarked className="h-4 w-4" />
+                     <span className="hidden sm:inline ml-1">科目管理</span>
+                 </Link>
+             </Button>
              <Button variant="ghost" size="sm" asChild>
                 <Link href="/admin/settings" aria-label="設定">
                      <Settings className="h-4 w-4" />

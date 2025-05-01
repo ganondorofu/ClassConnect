@@ -9,8 +9,8 @@ export interface FixedTimeSlot {
   day: DayOfWeek;
   /** Period number (1-based index) */
   period: number;
-  /** Subject name (e.g., "Math", "English") */
-  subject: string;
+  /** ID of the subject assigned to this slot (references /subjects collection) */
+  subjectId: string | null; // Use null if no subject is assigned
   /** Optional room number or location */
   room?: string;
 }
