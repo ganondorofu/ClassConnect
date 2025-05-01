@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react'; // Explicitly import React
@@ -59,13 +58,7 @@ export default function SettingsContent() {
         console.error(`Settings Query Error (${queryKey}):`, error);
         const isOfflineError = (error as any)?.code === 'unavailable';
         setIsOffline(isOfflineError || !navigator.onLine); // Update offline state based on error
-        toast({
-            title: isOfflineError ? "オフライン" : "エラー",
-            description: isOfflineError
-                ? `設定 (${queryKey}) の取得に失敗しました。接続を確認してください。`
-                : `設定 (${queryKey}) の読み込み中にエラーが発生しました。`,
-            variant: "destructive",
-        });
+        // Don't toast here, let individual components show errors
     };
 
   // Fetch initial settings
@@ -155,7 +148,7 @@ export default function SettingsContent() {
        if (fetchedFixedTimetable && settings) {
            // Generate a complete grid based on settings, filled with fetched data or defaults
            const completeTimetable: FixedTimeSlot[] = [];
-           WeekDays.forEach(day => { // Only active days (Mon-Fri typically)
+           (settings.activeDays ?? WeekDays).forEach(day => { // Use active days from settings or default WeekDays
                for (let period = 1; period <= settings.numberOfPeriods; period++) {
                    const existingSlot = fetchedFixedTimetable.find(slot => slot.day === day && slot.period === period);
                    completeTimetable.push(existingSlot ?? {
@@ -171,7 +164,7 @@ export default function SettingsContent() {
        } else if (settings && !fetchedFixedTimetable && !isLoadingFixed) {
             // Handle case where fetch completes but returns empty/null, generate default grid
             const defaultGrid: FixedTimeSlot[] = [];
-            WeekDays.forEach(day => {
+            (settings.activeDays ?? WeekDays).forEach(day => {
                 for (let period = 1; period <= settings.numberOfPeriods; period++) {
                     defaultGrid.push({
                        id: `${day}_${period}`,
@@ -309,7 +302,7 @@ export default function SettingsContent() {
      <>
        <h1 className="text-2xl font-semibold mb-6">設定</h1>
 
-       <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+       <Card className="mb-6">
          <CardHeader>
            <CardTitle>基本設定</CardTitle>
            <CardDescription>クラスの1日の時間数を設定します。</CardDescription>
@@ -365,7 +358,7 @@ export default function SettingsContent() {
          </CardFooter>
        </Card>
 
-        <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+       <Card>
              <CardHeader>
                  <CardTitle>固定時間割の設定</CardTitle>
                  <CardDescription>月曜日から金曜日までの基本的な時間割を設定します。</CardDescription>
