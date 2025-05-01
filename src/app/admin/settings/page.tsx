@@ -27,4 +27,3 @@ export default function SettingsPage() {
         return <div>Error rendering settings page. Check console.</div>; // Fallback UI
     }
 }
-
