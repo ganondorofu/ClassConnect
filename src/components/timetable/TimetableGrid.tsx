@@ -1,7 +1,6 @@
 "use client";
 
-import * as React from 'react'; // Ensure React is imported
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
@@ -15,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 import { useToast } from "@/hooks/use-toast";
+import { Alert } from "@/components/ui/alert"; // Import Alert
 
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
@@ -93,7 +93,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
    const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
   // Fetch daily announcements for the current week
-  const { data: initialDailyAnnouncementsData, isLoading: isLoadingAnnouncements } = useQuery({
+  const { data: initialDailyAnnouncementsData, isLoading: isLoadingAnnouncements, error: errorAnnouncements } = useQuery({
     queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')], // Key changes weekly
     queryFn: async () => {
       const announcementsPromises = weekDays.map(day =>
@@ -143,7 +143,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
 
   const isLoading = isLoadingSettings || isLoadingFixed || isLoadingAnnouncements || isLoadingEvents;
-  const error = errorSettings || errorFixed || errorEvents; // Combine errors
+  const queryError = errorSettings || errorFixed || errorEvents || errorAnnouncements; // Combine errors
 
   const getFixedSlot = (day: DayOfWeek, period: number): FixedTimeSlot | undefined => {
     return fixedTimetable.find(slot => slot.day === day && slot.period === period);
@@ -213,9 +213,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       setAnnouncementType(AnnouncementTypeEnum.OTHER);
     } catch (error) {
       console.error("Failed to save announcement:", error);
+      // Check for offline error
+      const isOffline = (error as any)?.code === 'unavailable';
       toast({
         title: "エラー",
-        description: "連絡の保存に失敗しました。",
+        description: isOffline
+            ? "連絡の保存に失敗しました。オフラインの可能性があります。"
+            : "連絡の保存に失敗しました。",
         variant: "destructive",
       });
     }
@@ -237,16 +241,34 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
          setAnnouncementType(AnnouncementTypeEnum.OTHER);
      } catch (error) {
          console.error("Failed to delete announcement:", error);
+         // Check for offline error
+         const isOffline = (error as any)?.code === 'unavailable';
          toast({
              title: "エラー",
-             description: "連絡の削除に失敗しました。",
+             description: isOffline
+                ? "連絡の削除に失敗しました。オフラインの可能性があります。"
+                : "連絡の削除に失敗しました。",
              variant: "destructive",
          });
      }
  };
 
-  if (error) {
-    return <div className="text-destructive p-4">エラーが発生しました: {String(error)}</div>;
+  if (queryError) {
+    const isOfflineError = (queryError as any)?.code === 'unavailable';
+    return (
+        <Alert variant="destructive" className="m-4">
+            <AlertCircle className="h-4 w-4" />
+            <p>
+                {isOfflineError
+                    ? "データの読み込みに失敗しました。オフラインの可能性があります。"
+                    : `エラーが発生しました: ${String(queryError)}`
+                }
+            </p>
+             <p className="text-xs mt-1">
+                時間をおいてページを再読み込みしてください。
+             </p>
+        </Alert>
+    );
   }
 
   const numberOfPeriods = settings.numberOfPeriods;
@@ -292,71 +314,86 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </div>
 
           {/* Timetable Rows */}
-          {Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => (
-            <div key={period} className="flex border-b min-h-[80px]">
-              {/* Period Number Column */}
-              <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
-                {period}限
-              </div>
-              {/* Timetable Cells */}
-              {displayDays.map(({ date, dayOfWeek, isActive }) => {
-                 const dateStr = format(date, 'yyyy-MM-dd');
-                 const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
-                 const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
-                 const TypeIcon = announcement ? announcementTypeDetails[announcement.type]?.icon : null;
-                 const iconColor = announcement ? announcementTypeDetails[announcement.type]?.color : '';
-                 const hasEvent = !isActive && getEventsForDay(date).length > 0; // Check if inactive day has event
-
-                return (
-                  <div
-                    key={`${dateStr}-${period}`}
-                    className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
-                  >
-                    {isLoading ? (
-                      <Skeleton className="h-16 w-full" />
-                    ) : isActive ? (
-                         <>
-                             {/* Top Section: Fixed Subject */}
-                            <div className="text-sm text-muted-foreground truncate mb-1" title={fixedSlot?.subject || '未設定'}>
-                                {fixedSlot?.subject || (period <= DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods ? '未設定' : '')}
-                             </div>
-                             {/* Middle Section: Announcement */}
-                             <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                                 {announcement && (
-                                     <div className={`p-1 rounded bg-card border border-dashed ${iconColor} border-opacity-50`}>
-                                         <div className="flex items-center gap-1 font-medium mb-0.5">
-                                             {TypeIcon && <TypeIcon className={`w-3 h-3 shrink-0 ${iconColor}`} />}
-                                             <span>{announcement.type}</span>
-                                         </div>
-                                         <p className="text-foreground whitespace-pre-wrap">{announcement.text}</p>
-                                    </div>
-                                 )}
-                             </div>
-                             {/* Bottom Section: Edit Button */}
-                             <div className="mt-auto">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
-                                    onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                    aria-label={`${dateStr} ${period}限目の連絡を編集`}
-                                >
-                                    <Edit2 className="w-3 h-3" />
-                                </Button>
-                            </div>
-                         </>
-                    ) : hasEvent ? (
-                        // Display placeholder or message for event days if needed
-                        <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
-                    ) : (
-                         // Inactive day without event
-                         <div className="h-full"></div> // Empty cell for inactive days
-                    )}
+          {isLoading ? (
+              // Skeleton loading rows
+              Array.from({ length: numberOfPeriods || 6 }, (_, i) => i + 1).map((period) => (
+                 <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">
+                    <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
+                        <Skeleton className="h-6 w-8" />
+                    </div>
+                    {displayDays.map(({ date }) => (
+                        <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r flex flex-col justify-between`}>
+                            <Skeleton className="h-16 w-full" />
+                        </div>
+                    ))}
+                </div>
+              ))
+          ) : (
+              // Actual timetable rows
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => (
+                <div key={period} className="flex border-b min-h-[80px]">
+                  {/* Period Number Column */}
+                  <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
+                    {period}限
                   </div>
-                );
-              })}
-            </div>
-          ))}
+                  {/* Timetable Cells */}
+                  {displayDays.map(({ date, dayOfWeek, isActive }) => {
+                     const dateStr = format(date, 'yyyy-MM-dd');
+                     const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
+                     const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
+                     const TypeIcon = announcement ? announcementTypeDetails[announcement.type]?.icon : null;
+                     const iconColor = announcement ? announcementTypeDetails[announcement.type]?.color : '';
+                     const hasEvent = !isActive && getEventsForDay(date).length > 0; // Check if inactive day has event
+
+                    return (
+                      <div
+                        key={`${dateStr}-${period}`}
+                        className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
+                      >
+                       {isActive ? (
+                             <>
+                                 {/* Top Section: Fixed Subject */}
+                                <div className="text-sm text-muted-foreground truncate mb-1" title={fixedSlot?.subject || '未設定'}>
+                                    {fixedSlot?.subject || (period <= (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods) ? '未設定' : '')}
+                                 </div>
+                                 {/* Middle Section: Announcement */}
+                                 <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
+                                     {announcement && (
+                                         <div className={`p-1 rounded bg-card border border-dashed ${iconColor} border-opacity-50`}>
+                                             <div className="flex items-center gap-1 font-medium mb-0.5">
+                                                 {TypeIcon && <TypeIcon className={`w-3 h-3 shrink-0 ${iconColor}`} />}
+                                                 <span>{announcement.type}</span>
+                                             </div>
+                                             <p className="text-foreground whitespace-pre-wrap">{announcement.text}</p>
+                                        </div>
+                                     )}
+                                 </div>
+                                 {/* Bottom Section: Edit Button */}
+                                 <div className="mt-auto">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
+                                        onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
+                                        aria-label={`${dateStr} ${period}限目の連絡を編集`}
+                                    >
+                                        <Edit2 className="w-3 h-3" />
+                                    </Button>
+                                </div>
+                             </>
+                        ) : hasEvent ? (
+                            // Display placeholder or message for event days if needed
+                            <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
+                        ) : (
+                             // Inactive day without event
+                             <div className="h-full"></div> // Empty cell for inactive days
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+          )}
         </div>
 
         {/* Announcement Edit Modal */}
@@ -380,11 +417,12 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                             </SelectTrigger>
                             <SelectContent>
                                 {Object.values(AnnouncementTypeEnum).map(type => {
-                                     const typeDetails = announcementTypeDetails[type]; // Renamed to avoid conflict
+                                     const IconComponent = announcementTypeDetails[type]?.icon; // Get the icon component
+                                     const colorClass = announcementTypeDetails[type]?.color ?? ''; // Get the color class
                                      return (
                                          <SelectItem key={type} value={type}>
                                              <div className="flex items-center gap-2">
-                                                 {typeDetails && React.createElement(typeDetails.icon, { className: `w-4 h-4 ${typeDetails.color}` })}
+                                                 {IconComponent && <IconComponent className={`w-4 h-4 ${colorClass}`} />}
                                                  {type}
                                              </div>
                                          </SelectItem>
