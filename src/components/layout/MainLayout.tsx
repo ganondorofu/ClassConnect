@@ -5,8 +5,8 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-// Use named export
-export function MainLayout({ children }: MainLayoutProps) {
+// Corrected: Use default export
+export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <Header />

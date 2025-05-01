@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react'; // Import React
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MainLayout } from '@/components/layout/MainLayout'; // Use named import
+import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default import
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
