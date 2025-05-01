@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react'; // Ensure React is imported
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
@@ -12,13 +12,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable } from '@/controllers/timetableController';
-import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController'; // Import subject functions
+import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
-import type { Subject } from '@/models/subject'; // Import Subject type
+import type { Subject } from '@/models/subject';
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, WifiOff, Save } from 'lucide-react';
-import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Import SubjectSelector
+import { SubjectSelector } from '@/components/timetable/SubjectSelector';
 
 // Re-export QueryClientProvider for client components using queries
 const queryClient = new QueryClient();
@@ -491,4 +491,3 @@ export default function SettingsPage() {
     );
 }
 
-    
