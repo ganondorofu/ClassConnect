@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 import { useToast } from "@/hooks/use-toast";
-import { Alert } from "@/components/ui/alert"; // Import Alert
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
 
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
@@ -33,7 +33,7 @@ import {
   upsertDailyAnnouncement,
   deleteDailyAnnouncement,
 } from '@/controllers/timetableController';
-import { AlertCircle, CalendarDays, Edit2, Trash2, PlusCircle, Info, AlertTriangle, BookOpen, Users, BellRing } from 'lucide-react'; // Import icons
+import { AlertCircle, CalendarDays, Edit2, Trash2, PlusCircle, Info, AlertTriangle, BookOpen, Users, BellRing, WifiOff } from 'lucide-react'; // Import icons
 
 
 const DAY_CELL_WIDTH = "min-w-[150px]"; // Adjust width as needed
@@ -55,10 +55,14 @@ interface TimetableGridProps {
 
 export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedSlot, setSelectedSlot] = useState<{ date: string, period: number, day: DayOfWeek, fixedSubject: string, announcement?: DailyAnnouncement } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [announcementText, setAnnouncementText] = useState('');
   const [announcementType, setAnnouncementType] = useState<AnnouncementType>(AnnouncementTypeEnum.OTHER);
+  const [isSaving, setIsSaving] = useState(false); // State for save/delete operations
+  const [isOffline, setIsOffline] = useState(false); // State to track offline status
+
 
   // --- State for Realtime Data ---
   const [liveSettings, setLiveSettings] = useState<TimetableSettings | null>(null);
@@ -66,26 +70,66 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const [liveDailyAnnouncements, setLiveDailyAnnouncements] = useState<Record<string, DailyAnnouncement[]>>({});
   const [liveSchoolEvents, setLiveSchoolEvents] = useState<SchoolEvent[]>([]);
 
+
+  // --- Check Online Status ---
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    // Initial check
+    if (typeof navigator !== 'undefined') {
+        setIsOffline(!navigator.onLine);
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+
   // --- Tanstack Query Fetching ---
-  const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
-    queryKey: ['timetableSettings'],
-    queryFn: queryFnGetTimetableSettings,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    refetchOnWindowFocus: false,
-  });
+    const handleQueryError = (error: unknown) => {
+        console.error("Query Error:", error);
+        const isOfflineError = (error as any)?.code === 'unavailable';
+        setIsOffline(isOfflineError || !navigator.onLine); // Update offline state based on error
+        toast({
+          title: isOfflineError ? "オフライン" : "エラー",
+          description: isOfflineError
+            ? "データの取得に失敗しました。接続を確認してください。"
+            : `データの読み込み中にエラーが発生しました。`,
+          variant: "destructive",
+        });
+    };
 
-  const { data: initialFixedTimetable, isLoading: isLoadingFixed, error: errorFixed } = useQuery({
-    queryKey: ['fixedTimetable'],
-    queryFn: queryFnGetFixedTimetable,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    refetchOnWindowFocus: false,
-  });
+    const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
+        queryKey: ['timetableSettings'],
+        queryFn: queryFnGetTimetableSettings,
+        staleTime: 1000 * 60 * 5, // 5 minutes
+        refetchOnWindowFocus: false,
+        onError: handleQueryError,
+        refetchOnMount: true, // Refetch on mount to check connectivity
+    });
 
-   const { data: initialSchoolEvents, isLoading: isLoadingEvents, error: errorEvents } = useQuery({
-    queryKey: ['schoolEvents'],
-    queryFn: queryFnGetSchoolEvents,
-    staleTime: 1000 * 60 * 15, // 15 minutes
-  });
+    const { data: initialFixedTimetable, isLoading: isLoadingFixed, error: errorFixed } = useQuery({
+        queryKey: ['fixedTimetable'],
+        queryFn: queryFnGetFixedTimetable,
+        staleTime: 1000 * 60 * 5, // 5 minutes
+        refetchOnWindowFocus: false,
+        onError: handleQueryError,
+        refetchOnMount: true,
+    });
+
+    const { data: initialSchoolEvents, isLoading: isLoadingEvents, error: errorEvents } = useQuery({
+        queryKey: ['schoolEvents'],
+        queryFn: queryFnGetSchoolEvents,
+        staleTime: 1000 * 60 * 15, // 15 minutes
+        onError: handleQueryError,
+        refetchOnMount: true,
+    });
 
   // Calculate week interval based on currentDate
    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 }); // Week starts on Monday
@@ -96,7 +140,15 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const { data: initialDailyAnnouncementsData, isLoading: isLoadingAnnouncements, error: errorAnnouncements } = useQuery({
     queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')], // Key changes weekly
     queryFn: async () => {
-      const announcementsPromises = weekDays.map(day =>
+        // Attempt to fetch only if online
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+           console.warn("Offline: Skipping announcement fetch.");
+           setIsOffline(true);
+           // Return cached data if available, otherwise empty map
+           return queryClient.getQueryData(['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')]) ?? {};
+         }
+        setIsOffline(false); // Assume online if fetch proceeds
+        const announcementsPromises = weekDays.map(day =>
         queryFnGetDailyAnnouncements(format(day, 'yyyy-MM-dd'))()
       );
       const announcementsByDay = await Promise.all(announcementsPromises);
@@ -107,21 +159,54 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       return announcementsMap;
     },
     staleTime: 1000 * 60 * 1, // 1 minute
-    refetchInterval: 1000 * 60 * 2, // Refetch every 2 minutes
+    refetchInterval: isOffline ? false : 1000 * 60 * 2, // Refetch every 2 minutes only if online
+    onError: handleQueryError,
+    enabled: !isOffline, // Only enable query if initially online
+    refetchOnMount: true,
   });
 
 
   // --- Realtime Subscriptions ---
   useEffect(() => {
-    const unsubSettings = onTimetableSettingsUpdate(setLiveSettings);
-    const unsubFixed = onFixedTimetableUpdate(setLiveFixedTimetable);
-    const unsubEvents = onSchoolEventsUpdate(setLiveSchoolEvents);
+     // Only subscribe if online
+     if (isOffline) {
+        console.warn("Offline: Skipping realtime subscriptions.");
+        return;
+     }
+
+    const unsubSettings = onTimetableSettingsUpdate((settings) => {
+      setLiveSettings(settings);
+      setIsOffline(false); // Got data, assume online
+    }, (error) => {
+        console.error("Realtime settings error:", error);
+        setIsOffline(true);
+    });
+
+    const unsubFixed = onFixedTimetableUpdate((timetable) => {
+        setLiveFixedTimetable(timetable);
+        setIsOffline(false);
+    }, (error) => {
+        console.error("Realtime fixed timetable error:", error);
+        setIsOffline(true);
+    });
+
+    const unsubEvents = onSchoolEventsUpdate((events) => {
+        setLiveSchoolEvents(events);
+        setIsOffline(false);
+    }, (error) => {
+        console.error("Realtime events error:", error);
+        setIsOffline(true);
+    });
 
      // Subscribe to announcements for each day in the current view
      const unsubAnnouncements = weekDays.map(day => {
        const dateStr = format(day, 'yyyy-MM-dd');
        return onDailyAnnouncementsUpdate(dateStr, (announcements) => {
          setLiveDailyAnnouncements(prev => ({ ...prev, [dateStr]: announcements }));
+         setIsOffline(false);
+       }, (error) => {
+           console.error(`Realtime announcements error for ${dateStr}:`, error);
+           setIsOffline(true);
        });
      });
 
@@ -131,19 +216,23 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       unsubEvents();
       unsubAnnouncements.forEach(unsub => unsub());
     };
-    // Resubscribe if the week changes
-  }, [weekStart]);
+    // Resubscribe if the week changes or online status changes
+  }, [weekStart, isOffline]);
 
 
   // --- Data Merging ---
   const settings = liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS; // Provide default if initial is undefined
   const fixedTimetable = liveFixedTimetable.length > 0 ? liveFixedTimetable : initialFixedTimetable ?? [];
   const schoolEvents = liveSchoolEvents.length > 0 ? liveSchoolEvents : initialSchoolEvents ?? [];
-  const dailyAnnouncements = { ...initialDailyAnnouncementsData, ...liveDailyAnnouncements };
+  // Merge initial data (potentially from cache) with live updates
+  const dailyAnnouncements = Object.keys(liveDailyAnnouncements).length > 0
+      ? { ...initialDailyAnnouncementsData, ...liveDailyAnnouncements }
+      : initialDailyAnnouncementsData ?? {};
 
 
-  const isLoading = isLoadingSettings || isLoadingFixed || isLoadingAnnouncements || isLoadingEvents;
+  const isLoading = (isLoadingSettings || isLoadingFixed || isLoadingAnnouncements || isLoadingEvents) && !isOffline; // Don't show loading if offline error is the reason
   const queryError = errorSettings || errorFixed || errorEvents || errorAnnouncements; // Combine errors
+
 
   const getFixedSlot = (day: DayOfWeek, period: number): FixedTimeSlot | undefined => {
     return fixedTimetable.find(slot => slot.day === day && slot.period === period);
@@ -172,7 +261,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date,
         period,
         day,
-        fixedSubject: fixedSlot?.subject ?? 'N/A',
+        fixedSubject: fixedSlot?.subject ?? '未設定',
         announcement
     });
     setAnnouncementText(announcement?.text ?? '');
@@ -181,10 +270,20 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   };
 
  const handleSaveAnnouncement = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || isSaving) return;
+
+    // Check online status before attempting save
+    if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        toast({
+            title: "オフライン",
+            description: "現在オフラインのため、連絡を保存できません。",
+            variant: "destructive",
+        });
+        return;
+    }
 
     // Basic validation
-    if (!announcementText.trim()) {
+    if (!announcementText.trim() && announcementType !== AnnouncementTypeEnum.CHANGE) { // Allow empty text for '変更' if needed, adjust logic if not
         toast({
             title: "エラー",
             description: "連絡内容を入力してください。",
@@ -193,7 +292,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         return;
     }
 
-
+    setIsSaving(true);
     try {
       const announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = {
         date: selectedSlot.date,
@@ -211,23 +310,38 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       setSelectedSlot(null);
       setAnnouncementText('');
       setAnnouncementType(AnnouncementTypeEnum.OTHER);
+      // Invalidate query to ensure data consistency, even with realtime updates
+      queryClient.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
     } catch (error) {
       console.error("Failed to save announcement:", error);
-      // Check for offline error
-      const isOffline = (error as any)?.code === 'unavailable';
+      const isFirebaseOfflineError = (error as any)?.code === 'unavailable';
+       setIsOffline(isFirebaseOfflineError || !navigator.onLine);
       toast({
-        title: "エラー",
-        description: isOffline
+        title: isFirebaseOfflineError ? "オフライン" : "エラー",
+        description: isFirebaseOfflineError
             ? "連絡の保存に失敗しました。オフラインの可能性があります。"
             : "連絡の保存に失敗しました。",
         variant: "destructive",
       });
+    } finally {
+        setIsSaving(false);
     }
   };
 
   const handleDeleteAnnouncement = async () => {
-     if (!selectedSlot || !selectedSlot.announcement) return;
+     if (!selectedSlot || !selectedSlot.announcement || isSaving) return;
 
+     // Check online status before attempting delete
+     if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+         toast({
+             title: "オフライン",
+             description: "現在オフラインのため、連絡を削除できません。",
+             variant: "destructive",
+         });
+         return;
+     }
+
+     setIsSaving(true);
      try {
          await deleteDailyAnnouncement(selectedSlot.date, selectedSlot.period);
          toast({
@@ -239,37 +353,27 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
          setSelectedSlot(null);
          setAnnouncementText('');
          setAnnouncementType(AnnouncementTypeEnum.OTHER);
+          // Invalidate query
+         queryClient.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
      } catch (error) {
          console.error("Failed to delete announcement:", error);
-         // Check for offline error
-         const isOffline = (error as any)?.code === 'unavailable';
+         const isFirebaseOfflineError = (error as any)?.code === 'unavailable';
+         setIsOffline(isFirebaseOfflineError || !navigator.onLine);
          toast({
-             title: "エラー",
-             description: isOffline
+             title: isFirebaseOfflineError ? "オフライン" : "エラー",
+             description: isFirebaseOfflineError
                 ? "連絡の削除に失敗しました。オフラインの可能性があります。"
                 : "連絡の削除に失敗しました。",
              variant: "destructive",
          });
+     } finally {
+        setIsSaving(false);
      }
  };
 
-  if (queryError) {
-    const isOfflineError = (queryError as any)?.code === 'unavailable';
-    return (
-        <Alert variant="destructive" className="m-4">
-            <AlertCircle className="h-4 w-4" />
-            <p>
-                {isOfflineError
-                    ? "データの読み込みに失敗しました。オフラインの可能性があります。"
-                    : `エラーが発生しました: ${String(queryError)}`
-                }
-            </p>
-             <p className="text-xs mt-1">
-                時間をおいてページを再読み込みしてください。
-             </p>
-        </Alert>
-    );
-  }
+  // Determine if there's a non-offline error
+  const hasConnectivityError = queryError && !isOffline;
+
 
   const numberOfPeriods = settings.numberOfPeriods;
   const activeDays = settings.activeDays;
@@ -284,8 +388,27 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   return (
     <Card className="w-full overflow-hidden shadow-lg rounded-lg">
-      <CardHeader>
-         {/* Header can be added later if needed */}
+      <CardHeader className="p-4 border-b">
+         {/* Display Offline Indicator */}
+        {isOffline && (
+          <Alert variant="destructive" className="mb-4">
+            <WifiOff className="h-4 w-4" />
+            <AlertTitle>オフライン</AlertTitle>
+            <AlertDescription>
+              現在オフラインです。表示されているデータは古い可能性があります。変更は保存されません。
+            </AlertDescription>
+          </Alert>
+        )}
+         {/* Display Other Connectivity Error */}
+        {hasConnectivityError && !isOffline && (
+            <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>接続エラー</AlertTitle>
+                <AlertDescription>
+                    データの読み込みに失敗しました。時間をおいてページを再読み込みしてください。 (エラー詳細: {String(queryError)})
+                </AlertDescription>
+            </Alert>
+        )}
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -345,6 +468,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                      const iconColor = announcement ? announcementTypeDetails[announcement.type]?.color : '';
                      const hasEvent = !isActive && getEventsForDay(date).length > 0; // Check if inactive day has event
 
+                     const displaySubject = (announcement?.type === AnnouncementTypeEnum.CHANGE && announcement?.text)
+                        ? announcement.text // Show announcement text if type is CHANGE and text exists
+                        : fixedSlot?.subject || '未設定'; // Otherwise, show fixed subject or '未設定'
+
+                     const showAnnouncementDetails = announcement && announcement.type !== AnnouncementTypeEnum.CHANGE;
+
+
                     return (
                       <div
                         key={`${dateStr}-${period}`}
@@ -352,13 +482,17 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       >
                        {isActive ? (
                              <>
-                                 {/* Top Section: Fixed Subject */}
-                                <div className="text-sm text-muted-foreground truncate mb-1" title={fixedSlot?.subject || '未設定'}>
-                                    {fixedSlot?.subject || (period <= (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods) ? '未設定' : '')}
+                                 {/* Top Section: Subject (Potentially overridden by CHANGE announcement) */}
+                                <div
+                                    className={`text-sm truncate mb-1 ${announcement?.type === AnnouncementTypeEnum.CHANGE ? 'font-bold text-foreground' : 'text-muted-foreground'}`}
+                                    title={displaySubject}
+                                >
+                                    {displaySubject}
                                  </div>
-                                 {/* Middle Section: Announcement */}
+
+                                 {/* Middle Section: Announcement Details (if not CHANGE type) */}
                                  <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                                     {announcement && (
+                                     {showAnnouncementDetails && (
                                          <div className={`p-1 rounded bg-card border border-dashed ${iconColor} border-opacity-50`}>
                                              <div className="flex items-center gap-1 font-medium mb-0.5">
                                                  {TypeIcon && <TypeIcon className={`w-3 h-3 shrink-0 ${iconColor}`} />}
@@ -367,7 +501,15 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                              <p className="text-foreground whitespace-pre-wrap">{announcement.text}</p>
                                         </div>
                                      )}
+                                     {/* Explicitly show icon for CHANGE type even if details aren't shown here */}
+                                      {announcement?.type === AnnouncementTypeEnum.CHANGE && (
+                                         <div className="flex items-center gap-1 font-medium mb-0.5 text-xs">
+                                             <AlertTriangle className={`w-3 h-3 shrink-0 ${iconColor}`} />
+                                             <span>{announcement.type}</span>
+                                         </div>
+                                     )}
                                  </div>
+
                                  {/* Bottom Section: Edit Button */}
                                  <div className="mt-auto">
                                     <Button
@@ -375,7 +517,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                         size="sm"
                                         className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
                                         onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                        aria-label={`${dateStr} ${period}限目の連絡を編集`}
+                                        aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
+                                        disabled={isOffline} // Disable edit button when offline
                                     >
                                         <Edit2 className="w-3 h-3" />
                                     </Button>
@@ -400,8 +543,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>連絡を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
-                     <p className="text-sm text-muted-foreground pt-1">時間割: {selectedSlot?.fixedSubject || '未設定'}</p>
+                    <DialogTitle>連絡・変更を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
+                     <p className="text-sm text-muted-foreground pt-1">
+                         時間割: {selectedSlot?.fixedSubject || '未設定'}
+                         {selectedSlot?.announcement?.type === AnnouncementTypeEnum.CHANGE && ' (変更中)'}
+                     </p>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
@@ -411,6 +557,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                          <Select
                             value={announcementType}
                             onValueChange={(value) => setAnnouncementType(value as AnnouncementType)}
+                            disabled={isSaving}
                          >
                             <SelectTrigger id="announcement-type" className="col-span-3">
                                 <SelectValue placeholder="種別を選択" />
@@ -433,36 +580,55 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                     </div>
                      <div className="grid grid-cols-4 items-center gap-4">
                          <Label htmlFor="announcement-text" className="text-right">
-                             連絡内容
+                             {announcementType === AnnouncementTypeEnum.CHANGE ? '変更後の教科' : '連絡内容'}
                          </Label>
                          <Textarea
                             id="announcement-text"
                             value={announcementText}
                             onChange={(e) => setAnnouncementText(e.target.value)}
                             className="col-span-3 min-h-[100px]"
-                            placeholder="特別な持ち物、テスト範囲、教室変更などを入力..."
+                            placeholder={
+                                announcementType === AnnouncementTypeEnum.CHANGE
+                                ? "変更後の教科名を入力 (例: 体育)"
+                                : "特別な持ち物、テスト範囲、教室変更などを入力..."
+                            }
+                            disabled={isSaving}
                         />
                     </div>
+                     {announcementType === AnnouncementTypeEnum.CHANGE && (
+                        <p className="col-span-4 text-xs text-muted-foreground px-2">
+                            種別「変更」の場合、ここで入力した内容が時間割の教科名の代わりに表示されます。
+                        </p>
+                    )}
                 </div>
                 <DialogFooter className="flex justify-between sm:justify-between w-full">
                      {/* Delete Button Aligned Left */}
                      <div>
                          {selectedSlot?.announcement && ( // Only show delete if there's an existing announcement
-                             <Button variant="destructive" onClick={handleDeleteAnnouncement} size="sm">
+                             <Button
+                                 variant="destructive"
+                                 onClick={handleDeleteAnnouncement}
+                                 size="sm"
+                                 disabled={isSaving || isOffline} // Disable if saving or offline
+                            >
                                  <Trash2 className="mr-1 w-4 h-4" />
-                                 削除
+                                 {isSaving ? '削除中...' : '削除'}
                              </Button>
                          )}
                      </div>
                      {/* Save and Cancel Buttons Aligned Right */}
                      <div className="flex gap-2">
                          <DialogClose asChild>
-                             <Button type="button" variant="secondary">
+                             <Button type="button" variant="secondary" disabled={isSaving}>
                                  キャンセル
                              </Button>
                          </DialogClose>
-                         <Button type="button" onClick={handleSaveAnnouncement}>
-                             保存
+                         <Button
+                             type="button"
+                             onClick={handleSaveAnnouncement}
+                             disabled={isSaving || isOffline} // Disable if saving or offline
+                        >
+                            {isSaving ? '保存中...' : '保存'}
                          </Button>
                      </div>
                  </DialogFooter>

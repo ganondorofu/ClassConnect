@@ -8,7 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getLogs } from '@/controllers/timetableController';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle, WifiOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react'; // Import useState and useEffect
+
 
 // Re-export QueryClientProvider for client components using queries
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,11 +19,42 @@ const queryClient = new QueryClient();
 
 
 function LogsPageContent() {
+    const [isOffline, setIsOffline] = useState(false); // State to track offline status
+
+    // --- Check Online Status ---
+    useEffect(() => {
+        const handleOnline = () => setIsOffline(false);
+        const handleOffline = () => setIsOffline(true);
+
+        // Initial check
+        if (typeof navigator !== 'undefined') {
+            setIsOffline(!navigator.onLine);
+        }
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    const handleQueryError = (error: unknown) => {
+        console.error("Log Query Error:", error);
+        const isOfflineError = (error as any)?.code === 'unavailable';
+        setIsOffline(isOfflineError || !navigator.onLine); // Update offline state based on error
+    };
+
+
     const { data: logs, isLoading, error } = useQuery({
         queryKey: ['actionLogs'],
         queryFn: () => getLogs(100), // Fetch latest 100 logs
         staleTime: 1000 * 60, // 1 minute stale time
-        refetchInterval: 1000 * 60 * 5, // Refetch every 5 minutes
+        refetchInterval: isOffline ? false : 1000 * 60 * 5, // Refetch every 5 minutes only if online
+        onError: handleQueryError,
+        enabled: !isOffline, // Only enable query if initially online
+        refetchOnMount: true, // Refetch on mount to check connectivity
     });
 
     const formatTimestamp = (timestamp: Date | undefined): string => {
@@ -60,6 +94,9 @@ function LogsPageContent() {
         }
     };
 
+    const showLoading = isLoading && !isOffline;
+    const showError = error && !isOffline;
+
 
     return (
         <MainLayout>
@@ -68,19 +105,32 @@ function LogsPageContent() {
                 <CardHeader>
                     <CardTitle>操作ログ</CardTitle>
                     <CardDescription>最近の変更履歴を表示します。</CardDescription>
+                     {/* Display Offline Indicator */}
+                    {isOffline && (
+                      <Alert variant="destructive" className="mt-4">
+                        <WifiOff className="h-4 w-4" />
+                        <AlertTitle>オフライン</AlertTitle>
+                        <AlertDescription>
+                          現在オフラインです。ログの取得や更新はできません。
+                        </AlertDescription>
+                      </Alert>
+                    )}
                 </CardHeader>
                 <CardContent>
-                    {isLoading ? (
+                    {showLoading ? (
                         <div className="space-y-2">
                             {[...Array(5)].map((_, i) => (
                                 <Skeleton key={i} className="h-10 w-full" />
                             ))}
                         </div>
-                    ) : error ? (
-                         <div className="text-destructive flex items-center gap-2">
-                             <AlertCircle className="h-4 w-4" />
-                             ログの読み込みに失敗しました。
-                         </div>
+                    ) : showError ? (
+                         <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>エラー</AlertTitle>
+                            <AlertDescription>
+                                ログの読み込みに失敗しました。時間をおいて再試行してください。
+                            </AlertDescription>
+                        </Alert>
                     ) : !logs || logs.length === 0 ? (
                         <p className="text-muted-foreground text-center py-4">ログはありません。</p>
                     ) : (
