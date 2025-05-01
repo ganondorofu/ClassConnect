@@ -309,7 +309,6 @@ export default function SettingsContent() {
      <>
        <h1 className="text-2xl font-semibold mb-6">設定</h1>
 
-       {/* Offline Indicator */}
         {isOffline && (
           <Alert variant="destructive" className="mb-6">
             <WifiOff className="h-4 w-4" />
