@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -268,16 +269,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         return;
     }
 
-    // Basic validation (allow empty text to clear announcement)
-    // if (!announcementText.trim()) {
-    //     toast({
-    //         title: "エラー",
-    //         description: "連絡内容を入力してください。",
-    //         variant: "destructive",
-    //     });
-    //     return;
-    // }
-
     setIsSaving(true);
     try {
       // If text is empty, delete the announcement instead of saving empty string
@@ -301,6 +292,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             date: selectedSlot.date,
             period: selectedSlot.period,
             text: announcementText,
+            // Removed type field
           };
           await upsertDailyAnnouncement(announcementData);
           toast({
@@ -468,8 +460,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                      const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
                      const hasEvent = !isActive && getEventsForDay(date).length > 0; // Check if inactive day has event
 
-                     // Display subject from fixed timetable
-                     const displaySubject = fixedSlot?.subject || '未設定';
+                     // Display subject from fixed timetable or announcement override
+                     const displaySubject = announcement?.subjectOverride ?? fixedSlot?.subject ?? '未設定';
 
                      // Announcement text to display
                      const announcementDisplay = announcement?.text;
@@ -484,10 +476,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                              <>
                                  {/* Top Section: Subject */}
                                 <div
-                                    className="text-sm truncate mb-1 text-muted-foreground"
+                                    className="text-sm truncate mb-1 font-medium" // Make subject slightly more prominent
                                     title={displaySubject}
                                 >
                                     {displaySubject}
+                                    {announcement?.subjectOverride && (
+                                        <span className="text-xs text-destructive ml-1">(変更)</span>
+                                    )}
                                  </div>
 
                                  {/* Middle Section: Announcement Details */}
@@ -506,7 +501,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                         size="sm"
                                         className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
                                         onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                        aria-label={`${dateStr} ${period}限目の連絡を編集`}
+                                        aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
                                         disabled={isOffline} // Disable edit button when offline
                                     >
                                         <Edit2 className="w-3 h-3" />
@@ -532,12 +527,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>連絡を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
+                    <DialogTitle>連絡・変更を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
                      <p className="text-sm text-muted-foreground pt-1">
-                         時間割: {selectedSlot?.fixedSubject || '未設定'}
+                         元の時間割: {selectedSlot?.fixedSubject || '未設定'}
                      </p>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
+                     {/* Removed Subject Override Input - Handled by the main Timetable editor now */}
+
                      <div className="grid grid-cols-4 items-center gap-4">
                          <Label htmlFor="announcement-text" className="text-right col-span-1">
                              連絡内容
@@ -547,7 +544,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                             value={announcementText}
                             onChange={(e) => setAnnouncementText(e.target.value)}
                             className="col-span-3 min-h-[100px]"
-                            placeholder="特別な持ち物、テスト範囲、教室変更などを入力... (空にすると連絡が削除されます)"
+                            placeholder="持ち物、テスト範囲、教室変更など (空にすると連絡が削除されます)"
                             disabled={isSaving}
                         />
                     </div>
@@ -556,9 +553,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                      </p>
                 </div>
                 <DialogFooter className="flex justify-between sm:justify-between w-full">
-                     {/* Delete Button Aligned Left (Now primarily handled by saving empty text) */}
+                     {/* Delete Button Aligned Left (Only if announcement text exists) */}
                      <div>
-                         {selectedSlot?.announcement && announcementText && ( // Show delete only if existing and text is NOT empty (otherwise save handles deletion)
+                         {selectedSlot?.announcement && announcementText && ( // Show delete only if existing and text is NOT empty
                              <Button
                                  variant="destructive"
                                  onClick={handleDeleteAnnouncement}
@@ -593,3 +590,5 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </Card>
   );
 }
+
+    
