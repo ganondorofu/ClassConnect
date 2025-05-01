@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MainLayout } from '@/components/layout/MainLayout';
+import { MainLayout } from '@/components/layout/MainLayout'; // Correct named import
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -310,176 +310,177 @@ function SettingsPageContent() {
    }, [editedFixedTimetable, initialFixedTimetableData]);
 
 
-  return (
-    <MainLayout>
-      <h1 className="text-2xl font-semibold mb-6">設定</h1>
+   // Ensure the return statement is correct JSX
+   return (
+     <MainLayout>
+       <h1 className="text-2xl font-semibold mb-6">設定</h1>
 
-       {/* Offline Indicator */}
-        {isOffline && (
-          <Alert variant="destructive" className="mb-6">
-            <WifiOff className="h-4 w-4" />
-            <AlertTitle>オフライン</AlertTitle>
-            <AlertDescription>
-              現在オフラインです。設定の表示や変更はできません。接続が回復するまでお待ちください。
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* Offline Indicator */}
+         {isOffline && (
+           <Alert variant="destructive" className="mb-6">
+             <WifiOff className="h-4 w-4" />
+             <AlertTitle>オフライン</AlertTitle>
+             <AlertDescription>
+               現在オフラインです。設定の表示や変更はできません。接続が回復するまでお待ちください。
+             </AlertDescription>
+           </Alert>
+         )}
 
-      {/* --- Basic Settings Card --- */}
-      <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
-        <CardHeader>
-          <CardTitle>基本設定</CardTitle>
-          <CardDescription>クラスの1日の時間数を設定します。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {showLoadingSettings ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-1/4" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : showErrorSettings ? (
-             <Alert variant="destructive">
-                 <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>エラー</AlertTitle>
-                 <AlertDescription>
-                     基本設定の読み込みに失敗しました。 (エラー: {String(errorSettings)})
-                 </AlertDescription>
-            </Alert>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="numberOfPeriods">1日の時間数 (時限)</Label>
-              <Input
-                id="numberOfPeriods"
-                type="number"
-                min="1"
-                max="12" // Example max limit
-                value={numberOfPeriods === '' ? '' : String(numberOfPeriods)}
-                onChange={handlePeriodsChange}
-                placeholder={`例: ${DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods}`}
-                disabled={settingsMutation.isPending || isOffline}
-                className="max-w-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                 時間数を変更すると、下の固定時間割表の行数が自動的に調整されます。
-              </p>
-            </div>
-          )}
-        </CardContent>
-        <CardFooter>
-           <Button
-                onClick={handleSaveSettings}
-                disabled={
-                     showLoadingSettings ||
-                     settingsMutation.isPending ||
-                     isOffline ||
-                     String(numberOfPeriods) === '' ||
-                     (settings && String(numberOfPeriods) === String(settings.numberOfPeriods)) // Disable if no change
-                 }
-            >
-                <Save className="mr-2 h-4 w-4" />
-                {settingsMutation.isPending ? '保存中...' : '基本設定を保存'}
-            </Button>
-        </CardFooter>
-      </Card>
+       {/* --- Basic Settings Card --- */}
+       <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+         <CardHeader>
+           <CardTitle>基本設定</CardTitle>
+           <CardDescription>クラスの1日の時間数を設定します。</CardDescription>
+         </CardHeader>
+         <CardContent className="space-y-4">
+           {showLoadingSettings ? (
+             <div className="space-y-2">
+               <Skeleton className="h-4 w-1/4" />
+               <Skeleton className="h-10 w-full" />
+             </div>
+           ) : showErrorSettings ? (
+              <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                   <AlertTitle>エラー</AlertTitle>
+                  <AlertDescription>
+                      基本設定の読み込みに失敗しました。 (エラー: {String(errorSettings)})
+                  </AlertDescription>
+             </Alert>
+           ) : (
+             <div className="space-y-2">
+               <Label htmlFor="numberOfPeriods">1日の時間数 (時限)</Label>
+               <Input
+                 id="numberOfPeriods"
+                 type="number"
+                 min="1"
+                 max="12" // Example max limit
+                 value={numberOfPeriods === '' ? '' : String(numberOfPeriods)}
+                 onChange={handlePeriodsChange}
+                 placeholder={`例: ${DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods}`}
+                 disabled={settingsMutation.isPending || isOffline}
+                 className="max-w-xs"
+               />
+               <p className="text-xs text-muted-foreground">
+                  時間数を変更すると、下の固定時間割表の行数が自動的に調整されます。
+               </p>
+             </div>
+           )}
+         </CardContent>
+         <CardFooter>
+            <Button
+                 onClick={handleSaveSettings}
+                 disabled={
+                      showLoadingSettings ||
+                      settingsMutation.isPending ||
+                      isOffline ||
+                      String(numberOfPeriods) === '' ||
+                      (settings && String(numberOfPeriods) === String(settings.numberOfPeriods)) // Disable if no change
+                  }
+             >
+                 <Save className="mr-2 h-4 w-4" />
+                 {settingsMutation.isPending ? '保存中...' : '基本設定を保存'}
+             </Button>
+         </CardFooter>
+       </Card>
 
-      {/* --- Fixed Timetable Editor Card --- */}
-       <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
-            <CardHeader>
-                <CardTitle>固定時間割の設定</CardTitle>
-                <CardDescription>月曜日から金曜日までの基本的な時間割を設定します。</CardDescription>
-            </CardHeader>
-            <CardContent>
-                 {showLoadingFixed || showLoadingSubjects || showLoadingSettings ? ( // Added settings loading
-                    <div className="space-y-2">
-                        {/* Use a placeholder number of periods if settings are loading */}
-                        {Array.from({ length: initialSettings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods }, (_, i) => (
-                             <div key={i} className="flex gap-2">
-                                <Skeleton className="h-10 w-16" />
-                                {[...Array(WeekDays.length)].map((_, j) => (
-                                     <Skeleton key={j} className="h-10 flex-1" />
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                ) : showErrorFixed || showErrorSubjects || showErrorSettings ? ( // Added settings error
-                     <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>エラー</AlertTitle>
-                        <AlertDescription>
-                             {showErrorSettings ? `基本設定の読み込みに失敗しました。(エラー: ${String(errorSettings)}) ` : ''}
-                             {showErrorFixed ? `固定時間割の読み込みに失敗しました。(エラー: ${String(errorFixed)}) ` : ''}
-                             {showErrorSubjects ? `科目リストの読み込みに失敗しました。(エラー: ${String(errorSubjects)})` : ''}
-                         </AlertDescription>
-                    </Alert>
-                 ) : !settings ? (
-                     <Alert variant="destructive">
+       {/* --- Fixed Timetable Editor Card --- */}
+        <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+             <CardHeader>
+                 <CardTitle>固定時間割の設定</CardTitle>
+                 <CardDescription>月曜日から金曜日までの基本的な時間割を設定します。</CardDescription>
+             </CardHeader>
+             <CardContent>
+                  {showLoadingFixed || showLoadingSubjects || showLoadingSettings ? ( // Added settings loading
+                     <div className="space-y-2">
+                         {/* Use a placeholder number of periods if settings are loading */}
+                         {Array.from({ length: initialSettings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods }, (_, i) => (
+                              <div key={i} className="flex gap-2">
+                                 <Skeleton className="h-10 w-16" />
+                                 {[...Array(WeekDays.length)].map((_, j) => (
+                                      <Skeleton key={j} className="h-10 flex-1" />
+                                 ))}
+                             </div>
+                         ))}
+                     </div>
+                 ) : showErrorFixed || showErrorSubjects || showErrorSettings ? ( // Added settings error
+                      <Alert variant="destructive">
                          <AlertCircle className="h-4 w-4" />
                          <AlertTitle>エラー</AlertTitle>
                          <AlertDescription>
-                             基本設定が読み込まれていないため、時間割を表示できません。
-                         </AlertDescription>
-                    </Alert>
-                 ) : (
-                     <div className="overflow-x-auto">
-                         <Table>
-                             <TableHeader>
-                                 <TableRow>
-                                     <TableHead className="w-[60px] text-center">時間</TableHead>
-                                     {WeekDays.map(day => (
-                                         <TableHead key={day} className="min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead> {/* Use getDayOfWeekName */}
-                                     ))}
-                                 </TableRow>
-                            </TableHeader>
-                             <TableBody>
-                                 {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map(period => (
-                                     <TableRow key={period}>
-                                         <TableCell className="font-medium text-center">{period}限</TableCell>
-                                         {WeekDays.map(day => {
-                                             const slot = editedFixedTimetable.find(s => s?.day === day && s?.period === period);
-                                             return (
-                                                 <TableCell key={`${day}-${period}`}>
-                                                     <SubjectSelector
-                                                        subjects={subjects}
-                                                        selectedSubjectId={slot?.subjectId ?? null}
-                                                        onValueChange={(newSubjectId) => handleSubjectChange(day, period, newSubjectId)}
-                                                        placeholder="科目未設定"
-                                                        disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
-                                                        className="text-sm w-full" // Ensure it takes full width
-                                                     />
-                                                 </TableCell>
-                                             );
-                                         })}
-                                     </TableRow>
-                                ))}
-                             </TableBody>
-                        </Table>
-                    </div>
-                 )}
-             </CardContent>
-             <CardFooter>
-                <Button
-                     onClick={handleSaveFixedTimetable}
-                     disabled={
-                         showLoadingFixed ||
-                         showLoadingSubjects ||
-                         showLoadingSettings || // Disable if settings are loading
-                         fixedTimetableMutation.isPending ||
-                         isOffline ||
-                         !hasFixedTimetableChanged // Disable if no changes
-                     }
-                 >
-                     <Save className="mr-2 h-4 w-4" />
-                     {fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}
-                </Button>
-                 {!isOffline && !fixedTimetableMutation.isPending && !hasFixedTimetableChanged && (
-                     <p className="ml-4 text-sm text-muted-foreground">変更はありません</p>
-                 )}
-             </CardFooter>
-        </Card>
+                              {showErrorSettings ? `基本設定の読み込みに失敗しました。(エラー: ${String(errorSettings)}) ` : ''}
+                              {showErrorFixed ? `固定時間割の読み込みに失敗しました。(エラー: ${String(errorFixed)}) ` : ''}
+                              {showErrorSubjects ? `科目リストの読み込みに失敗しました。(エラー: ${String(errorSubjects)})` : ''}
+                          </AlertDescription>
+                     </Alert>
+                  ) : !settings ? (
+                      <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>エラー</AlertTitle>
+                          <AlertDescription>
+                              基本設定が読み込まれていないため、時間割を表示できません。
+                          </AlertDescription>
+                     </Alert>
+                  ) : (
+                      <div className="overflow-x-auto">
+                          <Table>
+                              <TableHeader>
+                                  <TableRow>
+                                      <TableHead className="w-[60px] text-center">時間</TableHead>
+                                      {WeekDays.map(day => (
+                                          <TableHead key={day} className="min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead> {/* Use getDayOfWeekName */}
+                                      ))}
+                                  </TableRow>
+                             </TableHeader>
+                              <TableBody>
+                                  {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map(period => (
+                                      <TableRow key={period}>
+                                          <TableCell className="font-medium text-center">{period}限</TableCell>
+                                          {WeekDays.map(day => {
+                                              const slot = editedFixedTimetable.find(s => s?.day === day && s?.period === period);
+                                              return (
+                                                  <TableCell key={`${day}-${period}`}>
+                                                      <SubjectSelector
+                                                         subjects={subjects}
+                                                         selectedSubjectId={slot?.subjectId ?? null}
+                                                         onValueChange={(newSubjectId) => handleSubjectChange(day, period, newSubjectId)}
+                                                         placeholder="科目未設定"
+                                                         disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
+                                                         className="text-sm w-full" // Ensure it takes full width
+                                                      />
+                                                  </TableCell>
+                                              );
+                                          })}
+                                      </TableRow>
+                                 ))}
+                              </TableBody>
+                         </Table>
+                     </div>
+                  )}
+              </CardContent>
+              <CardFooter>
+                 <Button
+                      onClick={handleSaveFixedTimetable}
+                      disabled={
+                          showLoadingFixed ||
+                          showLoadingSubjects ||
+                          showLoadingSettings || // Disable if settings are loading
+                          fixedTimetableMutation.isPending ||
+                          isOffline ||
+                          !hasFixedTimetableChanged // Disable if no changes
+                      }
+                  >
+                      <Save className="mr-2 h-4 w-4" />
+                      {fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}
+                 </Button>
+                  {!isOffline && !fixedTimetableMutation.isPending && !hasFixedTimetableChanged && (
+                      <p className="ml-4 text-sm text-muted-foreground">変更はありません</p>
+                  )}
+              </CardFooter>
+         </Card>
 
-    </MainLayout>
-  );
-}
+     </MainLayout>
+   );
+ }
 
 
 // Wrap the content component with the provider
@@ -490,4 +491,3 @@ export default function SettingsPage() {
         </QueryClientProvider>
     );
 }
-
