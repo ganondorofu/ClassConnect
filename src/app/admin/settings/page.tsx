@@ -1,9 +1,9 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react'; // Ensure React is explicitly imported
+import React, { useState, useEffect, useMemo } from 'react'; // Explicitly import React
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default import
+import MainLayout from '@/components/layout/MainLayout'; // Use default import
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -491,3 +491,6 @@ export default function SettingsPage() {
         </QueryClientProvider>
     );
 }
+
+
+    

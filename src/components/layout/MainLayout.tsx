@@ -1,11 +1,12 @@
-import type React from 'react';
+
+import React from 'react'; // Ensure React is imported
 import { Header } from './Header';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-// Corrected: Use default export
+// Ensure default export
 export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col">
@@ -17,3 +18,5 @@ export default function MainLayout({ children }: MainLayoutProps) {
     </div>
   );
 }
+
+    
