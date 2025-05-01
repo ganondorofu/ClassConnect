@@ -304,22 +304,11 @@ export default function SettingsContent() {
        return JSON.stringify(editedFixedTimetable) !== JSON.stringify(initialFixedTimetableData);
    }, [editedFixedTimetable, initialFixedTimetableData]);
 
-   // Return a simplified JSX structure to test parsing
+   // Return the actual JSX
    return (
      <>
        <h1 className="text-2xl font-semibold mb-6">設定</h1>
 
-        {isOffline && (
-          <Alert variant="destructive" className="mb-6">
-            <WifiOff className="h-4 w-4" />
-            <AlertTitle>オフライン</AlertTitle>
-            <AlertDescription>
-              現在オフラインです。設定の表示や変更はできません。接続が回復するまでお待ちください。
-            </AlertDescription>
-          </Alert>
-        )}
-
-       {/* --- Basic Settings Card --- */}
        <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
          <CardHeader>
            <CardTitle>基本設定</CardTitle>
@@ -376,7 +365,6 @@ export default function SettingsContent() {
          </CardFooter>
        </Card>
 
-       {/* --- Fixed Timetable Editor Card --- */}
         <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
              <CardHeader>
                  <CardTitle>固定時間割の設定</CardTitle>
