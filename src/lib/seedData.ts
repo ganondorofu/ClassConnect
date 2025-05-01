@@ -1,6 +1,6 @@
 // src/lib/seedData.ts
-import { addSubject } from '@/controllers/subjectController';
-import { batchUpdateFixedTimetable, getFixedTimetable } from '@/controllers/timetableController';
+import { addSubject, getSubjects } from '@/controllers/subjectController'; // Import getSubjects
+import { batchUpdateFixedTimetable } from '@/controllers/timetableController';
 import { Subject } from '@/models/subject';
 import { FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 
