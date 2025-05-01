@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useQuery } from '@tanstack/react-query';
-import { MainLayout } from '@/components/layout/MainLayout';
+import { MainLayout } from '@/components/layout/MainLayout'; // Use named import
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -79,6 +80,12 @@ function LogsPageContent() {
             case 'add_event': return '行事追加';
             case 'update_event': return '行事更新';
             case 'delete_event': return '行事削除';
+            case 'add_subject': return '科目追加'; // Add log descriptions for subjects
+            case 'update_subject': return '科目更新';
+            case 'delete_subject': return '科目削除';
+            case 'batch_update_fixed_timetable': return '固定時間割一括更新';
+            case 'apply_fixed_timetable_future': return '固定時間割の将来適用';
+            case 'apply_fixed_timetable_future_error': return '固定時間割の将来適用エラー';
             default: return action; // Fallback to the raw action type
         }
     };
@@ -172,4 +179,5 @@ export default function LogsPage() {
         </QueryClientProvider>
     );
 }
+
 

@@ -1,8 +1,9 @@
+
 "use client"; // Required for React Query and state hooks
 
-import { useState } from 'react';
+import React, { useState } from 'react'; // Import React
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MainLayout } from '@/components/layout/MainLayout';
+import { MainLayout } from '@/components/layout/MainLayout'; // Use named import
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -56,3 +57,4 @@ export default function Home() {
     </QueryClientProvider>
   );
 }
+
