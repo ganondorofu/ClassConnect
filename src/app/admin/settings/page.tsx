@@ -1,8 +1,8 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react'; // Explicitly import React
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect, useMemo } from 'react'; // Ensure React is imported
+import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -15,13 +15,12 @@ import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettin
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController'; // Import subject functions
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject'; // Import Subject type
-import { DEFAULT_TIMETABLE_SETTINGS, WeekDays } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, WifiOff, Save } from 'lucide-react';
 import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Import SubjectSelector
 
 // Re-export QueryClientProvider for client components using queries
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const queryClient = new QueryClient();
 
 
@@ -229,6 +228,8 @@ function SettingsPageContent() {
         setInitialFixedTimetableData([...editedFixedTimetable]);
          // Optionally refetch or invalidate, though batch update is the source of truth now
          await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
+         // Trigger applying changes to future
+         // No need to explicitly call applyFixedTimetableForFuture here, as batchUpdateFixedTimetable handles it internally.
     },
     onError: (error: Error) => {
         console.error("Failed to update fixed timetable:", error);
@@ -289,7 +290,7 @@ function SettingsPageContent() {
         return;
       }
       // Filter out potential undefined slots just in case, though initialization should prevent this
-      const validSlots = editedFixedTimetable.filter(slot => slot.id && slot.day && slot.period !== undefined);
+      const validSlots = editedFixedTimetable.filter(slot => slot?.id && slot?.day && slot?.period !== undefined);
       fixedTimetableMutation.mutate(validSlots);
   };
 
@@ -388,9 +389,10 @@ function SettingsPageContent() {
                 <CardDescription>月曜日から金曜日までの基本的な時間割を設定します。</CardDescription>
             </CardHeader>
             <CardContent>
-                 {showLoadingFixed || showLoadingSubjects ? (
+                 {showLoadingFixed || showLoadingSubjects || showLoadingSettings ? ( // Added settings loading
                     <div className="space-y-2">
-                        {[...Array(settings?.numberOfPeriods || 6)].map((_, i) => (
+                        {/* Use a placeholder number of periods if settings are loading */}
+                        {Array.from({ length: initialSettings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods }, (_, i) => (
                              <div key={i} className="flex gap-2">
                                 <Skeleton className="h-10 w-16" />
                                 {[...Array(WeekDays.length)].map((_, j) => (
@@ -399,13 +401,13 @@ function SettingsPageContent() {
                             </div>
                         ))}
                     </div>
-                ) : showErrorFixed || showErrorSubjects ? (
+                ) : showErrorFixed || showErrorSubjects || showErrorSettings ? ( // Added settings error
                      <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>エラー</AlertTitle>
                         <AlertDescription>
-                             {showErrorFixed ? `固定時間割の読み込みに失敗しました。(エラー: ${String(errorFixed)})` : ''}
-                             {showErrorFixed && showErrorSubjects ? <br /> : ''}
+                             {showErrorSettings ? `基本設定の読み込みに失敗しました。(エラー: ${String(errorSettings)}) ` : ''}
+                             {showErrorFixed ? `固定時間割の読み込みに失敗しました。(エラー: ${String(errorFixed)}) ` : ''}
                              {showErrorSubjects ? `科目リストの読み込みに失敗しました。(エラー: ${String(errorSubjects)})` : ''}
                          </AlertDescription>
                     </Alert>
@@ -424,7 +426,7 @@ function SettingsPageContent() {
                                  <TableRow>
                                      <TableHead className="w-[60px] text-center">時間</TableHead>
                                      {WeekDays.map(day => (
-                                         <TableHead key={day} className="min-w-[180px] text-center">{day}</TableHead> {/* Increased min-width */}
+                                         <TableHead key={day} className="min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead> {/* Use getDayOfWeekName */}
                                      ))}
                                  </TableRow>
                             </TableHeader>
@@ -433,7 +435,7 @@ function SettingsPageContent() {
                                      <TableRow key={period}>
                                          <TableCell className="font-medium text-center">{period}限</TableCell>
                                          {WeekDays.map(day => {
-                                             const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
+                                             const slot = editedFixedTimetable.find(s => s?.day === day && s?.period === period);
                                              return (
                                                  <TableCell key={`${day}-${period}`}>
                                                      <SubjectSelector
@@ -460,6 +462,7 @@ function SettingsPageContent() {
                      disabled={
                          showLoadingFixed ||
                          showLoadingSubjects ||
+                         showLoadingSettings || // Disable if settings are loading
                          fixedTimetableMutation.isPending ||
                          isOffline ||
                          !hasFixedTimetableChanged // Disable if no changes
@@ -487,3 +490,5 @@ export default function SettingsPage() {
         </QueryClientProvider>
     );
 }
+
+    
