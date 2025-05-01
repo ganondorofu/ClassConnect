@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'; // Explicitly import React
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
@@ -308,6 +308,7 @@ function SettingsPageContent() {
        return JSON.stringify(editedFixedTimetable) !== JSON.stringify(initialFixedTimetableData);
    }, [editedFixedTimetable, initialFixedTimetableData]);
 
+
   return (
     <MainLayout>
       <h1 className="text-2xl font-semibold mb-6">設定</h1>
@@ -440,7 +441,7 @@ function SettingsPageContent() {
                                                         selectedSubjectId={slot?.subjectId ?? null}
                                                         onValueChange={(newSubjectId) => handleSubjectChange(day, period, newSubjectId)}
                                                         placeholder="科目未設定"
-                                                        disabled={fixedTimetableMutation.isPending || isOffline}
+                                                        disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
                                                         className="text-sm w-full" // Ensure it takes full width
                                                      />
                                                  </TableCell>
