@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react'; // Ensure React is imported
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout'; // Correct default import
+import MainLayout from '@/components/layout/MainLayout'; // Correct: Default import
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -492,3 +492,4 @@ export default function SettingsPage() {
     );
 }
 
+    
