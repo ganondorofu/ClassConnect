@@ -1,7 +1,7 @@
 // src/lib/seedData.ts
 import { addSubject, getSubjects } from '@/controllers/subjectController'; // Import getSubjects
 import { batchUpdateFixedTimetable } from '@/controllers/timetableController';
-import { Subject } from '@/models/subject';
+import type { Subject } from '@/models/subject'; // Correct import for Subject type
 import { FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 
 // Updated teacher names based on the image
@@ -21,7 +21,7 @@ const seedSubjectsData: Omit<Subject, 'id'>[] = [
   { name: '保健', teacherName: '濵田' },
   // { name: '化学基礎', teacherName: '前田' }, // Already added
   { name: 'プログラミング技術', teacherName: '住原/友田' }, // Explicitly add this based on 7th period
-  { name: 'HR', teacherName: '奥/小/服' },
+  { name: 'HR', teacherName: '担任' }, // Updated HR teacher name as per image (generic "担任")
   { name: '選択A', teacherName: '奥/前/大' }, // Add 選択A
 ];
 
@@ -30,15 +30,17 @@ export const seedSubjects = async (): Promise<Subject[]> => {
   const addedSubjects: Subject[] = [];
   try {
     const existingSubjects = await getSubjects(); // Fetch existing subjects first
-    const existingSubjectsMap = new Map(existingSubjects.map(s => `${s.name}-${s.teacherName}`));
+    // Correctly create the map with [key, value] pairs
+    const existingSubjectsMap = new Map(existingSubjects.map(s => [`${s.name}-${s.teacherName}`, s]));
 
     for (const subjectData of seedSubjectsData) {
       const mapKey = `${subjectData.name}-${subjectData.teacherName}`;
       if (!existingSubjectsMap.has(mapKey)) {
         try {
           const subjectId = await addSubject(subjectData.name, subjectData.teacherName);
-          addedSubjects.push({ id: subjectId, ...subjectData });
-          existingSubjectsMap.set(mapKey, { id: subjectId, ...subjectData }); // Add to map after successful add
+          const newSubject = { id: subjectId, ...subjectData };
+          addedSubjects.push(newSubject);
+          existingSubjectsMap.set(mapKey, newSubject); // Add to map after successful add
         } catch (addError) {
             console.error(`Error adding subject '${subjectData.name}':`, addError);
         }
@@ -59,58 +61,66 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
   console.log('Seeding fixed timetable...');
 
   // Create a map for easy subject lookup by name AND teacher for more accuracy if needed
-  // For simplicity, using just name here, assuming names are unique enough for this seed data
-  const subjectMap = new Map(subjects.map(s => [s.name, s.id]));
+  // Using name and teacher name for the key
+  const subjectMap = new Map(subjects.map(s => [`${s.name}-${s.teacherName}`, s.id]));
 
-  const getSubjectId = (name: string): string | null => {
-    const id = subjectMap.get(name);
+  const getSubjectId = (name: string, teacher: string): string | null => {
+    const key = `${name}-${teacher}`;
+    const id = subjectMap.get(key);
     if (!id) {
-        console.warn(`Subject ID not found for seed name: ${name}. Setting to null.`);
+        // Try finding by name only as a fallback
+        const fallbackSubject = subjects.find(s => s.name === name);
+        if(fallbackSubject?.id) {
+            console.warn(`Subject ID not found for seed: ${key}. Using fallback ID for name: ${name}`);
+            return fallbackSubject.id;
+        }
+        console.warn(`Subject ID not found for seed: ${key}. Setting to null.`);
+        return null;
     }
-    return id ?? null; // Return null if subject not found
+    return id;
   };
 
   // Use the timetable structure from the image
   const fixedTimetableData: Omit<FixedTimeSlot, 'id'>[] = [
     // Monday
-    { day: DayOfWeek.MONDAY, period: 1, subjectId: getSubjectId('電気回路') },
-    { day: DayOfWeek.MONDAY, period: 2, subjectId: getSubjectId('体育') },
-    { day: DayOfWeek.MONDAY, period: 3, subjectId: getSubjectId('選択A') }, // Corrected based on image
-    { day: DayOfWeek.MONDAY, period: 4, subjectId: getSubjectId('現代の国語') },
-    { day: DayOfWeek.MONDAY, period: 5, subjectId: getSubjectId('英コミュII') },
-    { day: DayOfWeek.MONDAY, period: 6, subjectId: getSubjectId('電子回路') },
-    { day: DayOfWeek.MONDAY, period: 7, subjectId: getSubjectId('プログラミング技術') },
+    { day: DayOfWeek.MONDAY, period: 1, subjectId: getSubjectId('電気回路', '友田') },
+    { day: DayOfWeek.MONDAY, period: 2, subjectId: getSubjectId('体育', '石/高/篠/瀬') },
+    { day: DayOfWeek.MONDAY, period: 3, subjectId: getSubjectId('選択A', '奥/前/大') },
+    { day: DayOfWeek.MONDAY, period: 4, subjectId: getSubjectId('現代の国語', '新井') },
+    { day: DayOfWeek.MONDAY, period: 5, subjectId: getSubjectId('英コミュII', '奥/前/大') },
+    { day: DayOfWeek.MONDAY, period: 6, subjectId: getSubjectId('電子回路', '永田') },
+    { day: DayOfWeek.MONDAY, period: 7, subjectId: getSubjectId('プログラミング技術', '住原/友田') },
     // Tuesday
-    { day: DayOfWeek.TUESDAY, period: 1, subjectId: getSubjectId('実習A') },
-    { day: DayOfWeek.TUESDAY, period: 2, subjectId: getSubjectId('実習A') }, // Corrected based on image
-    { day: DayOfWeek.TUESDAY, period: 3, subjectId: getSubjectId('実習A') }, // Corrected based on image
-    { day: DayOfWeek.TUESDAY, period: 4, subjectId: getSubjectId('数II') },
-    { day: DayOfWeek.TUESDAY, period: 5, subjectId: getSubjectId('保健') },
-    { day: DayOfWeek.TUESDAY, period: 6, subjectId: getSubjectId('化学基礎') },
+    { day: DayOfWeek.TUESDAY, period: 1, subjectId: getSubjectId('実習A', '担当A') },
+    { day: DayOfWeek.TUESDAY, period: 2, subjectId: getSubjectId('実習A', '担当A') },
+    { day: DayOfWeek.TUESDAY, period: 3, subjectId: getSubjectId('実習A', '担当A') },
+    { day: DayOfWeek.TUESDAY, period: 4, subjectId: getSubjectId('数II', '小出') },
+    { day: DayOfWeek.TUESDAY, period: 5, subjectId: getSubjectId('保健', '濵田') },
+    { day: DayOfWeek.TUESDAY, period: 6, subjectId: getSubjectId('化学基礎', '前田') },
     { day: DayOfWeek.TUESDAY, period: 7, subjectId: null }, // Empty slot
     // Wednesday
-    { day: DayOfWeek.WEDNESDAY, period: 1, subjectId: getSubjectId('体育') },
-    { day: DayOfWeek.WEDNESDAY, period: 2, subjectId: getSubjectId('家庭基礎') },
-    { day: DayOfWeek.WEDNESDAY, period: 3, subjectId: getSubjectId('英コミュII') },
-    { day: DayOfWeek.WEDNESDAY, period: 4, subjectId: getSubjectId('数II') },
-    { day: DayOfWeek.WEDNESDAY, period: 5, subjectId: getSubjectId('現代の国語') },
-    { day: DayOfWeek.WEDNESDAY, period: 6, subjectId: getSubjectId('プログラミング技術') }, // Corrected based on image
-    { day: DayOfWeek.WEDNESDAY, period: 7, subjectId: getSubjectId('電気回路') }, // Corrected based on image
+    { day: DayOfWeek.WEDNESDAY, period: 1, subjectId: getSubjectId('体育', '石/高/篠/瀬') },
+    { day: DayOfWeek.WEDNESDAY, period: 2, subjectId: getSubjectId('家庭基礎', '森部') },
+    { day: DayOfWeek.WEDNESDAY, period: 3, subjectId: getSubjectId('英コミュII', '奥/前/大') },
+    { day: DayOfWeek.WEDNESDAY, period: 4, subjectId: getSubjectId('数II', '小出') },
+    { day: DayOfWeek.WEDNESDAY, period: 5, subjectId: getSubjectId('現代の国語', '新井') },
+    { day: DayOfWeek.WEDNESDAY, period: 6, subjectId: getSubjectId('プログラミング技術', '住原/友田') },
+    { day: DayOfWeek.WEDNESDAY, period: 7, subjectId: getSubjectId('電気回路', '友田') },
     // Thursday
-    { day: DayOfWeek.THURSDAY, period: 1, subjectId: getSubjectId('化学基礎') },
-    { day: DayOfWeek.THURSDAY, period: 2, subjectId: getSubjectId('家庭基礎') }, // Corrected based on image
-    { day: DayOfWeek.THURSDAY, period: 3, subjectId: getSubjectId('選択A') }, // Corrected based on image
-    { day: DayOfWeek.THURSDAY, period: 4, subjectId: getSubjectId('電子回路') },
-    { day: DayOfWeek.THURSDAY, period: 5, subjectId: getSubjectId('公共') },
-    { day: DayOfWeek.THURSDAY, period: 6, subjectId: getSubjectId('HR') },
+    { day: DayOfWeek.THURSDAY, period: 1, subjectId: getSubjectId('化学基礎', '前田') },
+    { day: DayOfWeek.THURSDAY, period: 2, subjectId: getSubjectId('家庭基礎', '森部') },
+    { day: DayOfWeek.THURSDAY, period: 3, subjectId: getSubjectId('選択A', '奥/前/大') },
+    { day: DayOfWeek.THURSDAY, period: 4, subjectId: getSubjectId('電子回路', '永田') },
+    { day: DayOfWeek.THURSDAY, period: 5, subjectId: getSubjectId('公共', '黒崎') },
+    { day: DayOfWeek.THURSDAY, period: 6, subjectId: getSubjectId('HR', '担任') }, // Use '担任'
     { day: DayOfWeek.THURSDAY, period: 7, subjectId: null }, // Empty slot
     // Friday
-    { day: DayOfWeek.FRIDAY, period: 1, subjectId: getSubjectId('公共') },
-    { day: DayOfWeek.FRIDAY, period: 2, subjectId: getSubjectId('数II') },
-    { day: DayOfWeek.FRIDAY, period: 3, subjectId: getSubjectId('英コミュII') },
-    { day: DayOfWeek.FRIDAY, period: 4, subjectId: getSubjectId('実習B') }, // Corrected based on image
-    { day: DayOfWeek.FRIDAY, period: 5, subjectId: getSubjectId('実習B') }, // Corrected based on image
-    { day: DayOfWeek.FRIDAY, period: 6, subjectId: getSubjectId('実習B') }, // Corrected based on image
+    { day: DayOfWeek.FRIDAY, period: 1, subjectId: getSubjectId('公共', '黒崎') },
+    { day: DayOfWeek.FRIDAY, period: 2, subjectId: getSubjectId('数II', '小出') },
+    { day: DayOfWeek.FRIDAY, period: 3, subjectId: getSubjectId('英コミュII', '奥/前/大') },
+    { day: DayOfWeek.FRIDAY, period: 4, subjectId: getSubjectId('実習B', '担当B') },
+    { day: DayOfWeek.FRIDAY, period: 5, subjectId: getSubjectId('実習B', '担当B') },
+    { day: DayOfWeek.FRIDAY, period: 6, subjectId: getSubjectId('実習B', '担当B') },
     { day: DayOfWeek.FRIDAY, period: 7, subjectId: null }, // Empty slot
   ];
 
@@ -151,3 +161,4 @@ export const runSeedData = async () => {
 //     console.log("Detected SEED_DATA flag, running seed function...");
 //     runSeedData();
 // }
+
