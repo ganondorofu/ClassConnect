@@ -491,6 +491,4 @@ export default function SettingsPage() {
         </QueryClientProvider>
     );
 }
-
-
-    
+```
