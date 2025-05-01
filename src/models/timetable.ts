@@ -83,6 +83,6 @@ export function getDayOfWeekName(day: DayOfWeek): string {
 
 // Default settings
 export const DEFAULT_TIMETABLE_SETTINGS: TimetableSettings = {
-  numberOfPeriods: 6,
+  numberOfPeriods: 7, // Changed default to 7 based on the image
   activeDays: WeekDays,
 };

@@ -27,6 +27,7 @@ import type {
 } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
 import type { Subject } from '@/models/subject'; // Import Subject
+// Correctly import DEFAULT_TIMETABLE_SETTINGS from the model file
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays, DayOfWeek as DayOfWeekEnum } from '@/models/timetable';
 import { format, addDays, startOfDay, getDay, parseISO } from 'date-fns';
 import { getSubjects } from './subjectController'; // Import getSubjects
@@ -60,12 +61,18 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
 
     if (docSnap.exists()) {
       const data = docSnap.data();
+      // Ensure activeDays defaults correctly if missing
+      const activeDays = data.activeDays && Array.isArray(data.activeDays) && data.activeDays.length > 0
+        ? data.activeDays
+        : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+
       return {
           numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
-          activeDays: data.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
+          activeDays: activeDays,
       } as TimetableSettings;
     } else {
       console.log("No settings found, initializing with defaults.");
+      // Use the imported DEFAULT_TIMETABLE_SETTINGS
       await setDoc(docRef, DEFAULT_TIMETABLE_SETTINGS);
       await logAction('initialize_settings', { settings: DEFAULT_TIMETABLE_SETTINGS });
       return DEFAULT_TIMETABLE_SETTINGS;
@@ -74,6 +81,7 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
     console.error("Error fetching timetable settings:", error);
     if ((error as FirestoreError).code === 'unavailable') {
        console.warn("Client is offline. Returning default settings.");
+       // Use the imported DEFAULT_TIMETABLE_SETTINGS
        return DEFAULT_TIMETABLE_SETTINGS;
     }
     throw error;
@@ -96,9 +104,10 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
       throw fetchError;
   }
 
+  // Use imported DEFAULT_TIMETABLE_SETTINGS for defaults
   const newSettings: TimetableSettings = {
-      numberOfPeriods: settingsUpdates.numberOfPeriods ?? currentSettings.numberOfPeriods,
-      activeDays: settingsUpdates.activeDays ?? currentSettings.activeDays,
+      numberOfPeriods: settingsUpdates.numberOfPeriods ?? currentSettings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
+      activeDays: settingsUpdates.activeDays ?? currentSettings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
   };
   const docRef = doc(settingsCollection, 'timetable');
 
@@ -106,48 +115,64 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     let fixedTimetableNeedsUpdate = false;
     await runTransaction(db, async (transaction) => {
       const settingsDoc = await transaction.get(docRef);
-      const currentSettingsInTx = settingsDoc.exists() ? (settingsDoc.data() as TimetableSettings) : DEFAULT_TIMETABLE_SETTINGS;
+      // Use imported DEFAULT_TIMETABLE_SETTINGS for defaults in transaction
+      const currentSettingsInTx = settingsDoc.exists()
+          ? (settingsDoc.data() as TimetableSettings)
+          : DEFAULT_TIMETABLE_SETTINGS;
 
-      const currentActiveDays = currentSettingsInTx.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
-      const newActiveDays = newSettings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      // Ensure activeDays defaults correctly if missing in transaction
+      const currentActiveDays = currentSettingsInTx.activeDays && Array.isArray(currentSettingsInTx.activeDays) && currentSettingsInTx.activeDays.length > 0
+          ? currentSettingsInTx.activeDays
+          : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      const newActiveDays = newSettings.activeDays && Array.isArray(newSettings.activeDays) && newSettings.activeDays.length > 0
+          ? newSettings.activeDays
+          : DEFAULT_TIMETABLE_SETTINGS.activeDays;
 
       transaction.set(docRef, newSettings); // Update settings document
 
-      if (settingsUpdates.numberOfPeriods !== undefined && settingsUpdates.numberOfPeriods !== currentSettingsInTx.numberOfPeriods) {
+      // Check if number of periods changed
+      const currentPeriods = currentSettingsInTx.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
+      const newPeriodsValue = settingsUpdates.numberOfPeriods; // Use the update value directly
+
+      if (newPeriodsValue !== undefined && newPeriodsValue !== currentPeriods) {
         fixedTimetableNeedsUpdate = true;
-        const oldPeriods = currentSettingsInTx.numberOfPeriods;
-        const newPeriods = settingsUpdates.numberOfPeriods;
         const daysToUpdate = newActiveDays; // Use the potentially updated active days
 
-        if (newPeriods > oldPeriods) {
+        if (newPeriodsValue > currentPeriods) {
+          // Add new period slots
           for (let day of daysToUpdate) {
-            for (let period = oldPeriods + 1; period <= newPeriods; period++) {
+            for (let period = currentPeriods + 1; period <= newPeriodsValue; period++) {
               const slotId = `${day}_${period}`;
               const newSlotRef = doc(fixedTimetableCollection, slotId);
-              const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null }; // Use subjectId: null
+              const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null };
               transaction.set(newSlotRef, defaultSlot);
             }
           }
         } else {
-          // Query outside transaction, delete inside
-          const q = query(fixedTimetableCollection, where('period', '>', newPeriods), where('day', 'in', daysToUpdate));
+          // Remove extra period slots
+          const q = query(fixedTimetableCollection, where('period', '>', newPeriodsValue), where('day', 'in', daysToUpdate));
           const snapshot = await getDocs(q); // This requires network
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
-      } else if (settingsUpdates.activeDays) {
+      }
+      // Check if active days changed, even if number of periods didn't
+      else if (settingsUpdates.activeDays && JSON.stringify(newActiveDays.sort()) !== JSON.stringify(currentActiveDays.sort())) {
           fixedTimetableNeedsUpdate = true;
           const addedDays = newActiveDays.filter(d => !currentActiveDays.includes(d));
           const removedDays = currentActiveDays.filter(d => !newActiveDays.includes(d));
+          const periodsToManage = newSettings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
 
+          // Add slots for newly added days
           for (const day of addedDays) {
-              for (let period = 1; period <= newSettings.numberOfPeriods; period++) {
+              for (let period = 1; period <= periodsToManage; period++) {
                   const slotId = `${day}_${period}`;
                   const newSlotRef = doc(fixedTimetableCollection, slotId);
-                  const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null }; // Use subjectId: null
+                  const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subjectId: null };
                   transaction.set(newSlotRef, defaultSlot);
               }
           }
 
+          // Remove slots for removed days
           if (removedDays.length > 0) {
               const q = query(fixedTimetableCollection, where('day', 'in', removedDays));
               const snapshot = await getDocs(q); // Requires network
@@ -158,7 +183,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
 
     await logAction('update_settings', { oldSettings: currentSettings, newSettings });
 
-    // Trigger future application *after* transaction succeeds
+    // Trigger future application *after* transaction succeeds if changes occurred
     if (fixedTimetableNeedsUpdate) {
       console.log("Settings changed, applying fixed timetable to future...");
       await applyFixedTimetableForFuture();
@@ -188,13 +213,18 @@ export const onTimetableSettingsUpdate = (
   return onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
        const data = docSnap.data();
+       // Use imported DEFAULT_TIMETABLE_SETTINGS for defaults
+       const activeDays = data.activeDays && Array.isArray(data.activeDays) && data.activeDays.length > 0
+          ? data.activeDays
+          : DEFAULT_TIMETABLE_SETTINGS.activeDays;
       const settings: TimetableSettings = {
           numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
-          activeDays: data.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
+          activeDays: activeDays,
       };
       callback(settings);
     } else {
        console.log("Settings document deleted, attempting to re-initialize.");
+       // Re-initialize using the function which now uses the imported default
        getTimetableSettings().then(callback).catch(err => onError ? onError(err) : console.error("Error re-fetching settings after deletion:", err));
     }
   }, (error) => {
@@ -214,7 +244,8 @@ export const onTimetableSettingsUpdate = (
  */
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
    try {
-      const snapshot = await getDocs(fixedTimetableCollection);
+      const q = query(fixedTimetableCollection, orderBy('day'), orderBy('period'));
+      const snapshot = await getDocs(q);
       let slots = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
 
       // Ensure subjectId exists, default to null if not
@@ -223,9 +254,13 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
           subjectId: slot.subjectId === undefined ? null : slot.subjectId
       }));
 
+       // Custom sort based on AllDays order
        slots.sort((a, b) => {
-           const dayOrder = AllDays.indexOf(a.day) - AllDays.indexOf(b.day); // Use AllDays for correct sorting
-           if (dayOrder !== 0) return dayOrder;
+           const dayAIndex = AllDays.indexOf(a.day);
+           const dayBIndex = AllDays.indexOf(b.day);
+           if (dayAIndex !== dayBIndex) {
+               return dayAIndex - dayBIndex;
+           }
            return a.period - b.period;
        });
        return slots;
@@ -236,8 +271,9 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
           return [];
       }
         if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-            console.error("Firestore query requires an index. Please create the index in the Firebase console using the link provided in the error message.");
-            throw new Error("Firestore クエリに必要なインデックスがありません。Firebaseコンソールのエラーメッセージ内のリンクを使用して作成してください。");
+            // Provide a more specific message if possible, or guide user to check console
+            console.error("Firestore query requires an index. Please check the Firebase console error for a link to create it: ", (error as FirestoreError).message);
+            throw new Error("Firestore クエリに必要なインデックスがありません。Firebaseコンソールのエラーメッセージを確認し、リンクから作成してください。");
         }
       throw error;
    }
@@ -263,10 +299,12 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
       if ((error as FirestoreError).code === 'unavailable') {
           throw new Error("オフラインのため現在の時間割を取得できず、保存できませんでした。");
       }
-      if (error instanceof Error && error.message.includes("Firestore クエリに必要なインデックスがありません")) {
+       if (error instanceof Error && error.message.includes("Firestore クエリに必要なインデックスがありません")) {
           throw error; // Rethrow the specific index error
       }
-      throw error; // Rethrow other fetch errors
+      // Log and rethrow other fetch errors
+      console.error("Failed to fetch current fixed timetable for comparison:", error);
+      throw new Error(`現在の固定時間割の取得に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
   }
 
 
@@ -286,7 +324,6 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
             day: slot.day,
             period: slot.period,
             subjectId: newSubjectId, // Save null if no subject
-            // room: slot.room ?? null, // Handle room if needed
         };
         batch.set(docRef, dataToSet);
         changesMade = true;
@@ -311,6 +348,10 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
     if ((error as FirestoreError).code === 'unavailable') {
       throw new Error("オフラインのため固定時間割を一括更新できませんでした。");
     }
+     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+          console.error("Firestore Error: Attempted to save 'undefined' during batch update. Check slot data:", slots.filter(s => !existingSlotsMap.has(s.id) || (existingSlotsMap.get(s.id)?.subjectId ?? null) !== (s.subjectId ?? null)));
+          throw new Error("固定時間割データに無効な値(undefined)が含まれていました。");
+     }
     throw error;
   }
 };
@@ -326,6 +367,7 @@ export const onFixedTimetableUpdate = (
     callback: (timetable: FixedTimeSlot[]) => void,
     onError?: (error: Error) => void
 ): Unsubscribe => {
+    // Order by day (using AllDays order) and then period for consistency
     const q = query(fixedTimetableCollection);
     return onSnapshot(q, (snapshot) => {
         let timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
@@ -334,18 +376,22 @@ export const onFixedTimetableUpdate = (
             ...slot,
             subjectId: slot.subjectId === undefined ? null : slot.subjectId
         }));
+        // Custom sort based on AllDays order
         timetable.sort((a, b) => {
-             const dayOrder = AllDays.indexOf(a.day) - AllDays.indexOf(b.day); // Use AllDays
-            if (dayOrder !== 0) return dayOrder;
+            const dayAIndex = AllDays.indexOf(a.day);
+            const dayBIndex = AllDays.indexOf(b.day);
+            if (dayAIndex !== dayBIndex) {
+                return dayAIndex - dayBIndex;
+            }
             return a.period - b.period;
         });
         callback(timetable);
     }, (error) => {
      console.error("Snapshot error on fixed timetable:", error);
       if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-           console.error("Firestore query requires an index for realtime updates. Please create the index in the Firebase console using the link provided in previous errors.");
+           console.error("Firestore query requires an index for realtime updates. Please check Firebase console error: ", (error as FirestoreError).message);
            if (onError) {
-                onError(new Error("Firestore クエリに必要なインデックスがありません (realtime)。Firebaseコンソールのエラーメッセージ内のリンクを使用して作成してください。"));
+                onError(new Error("Firestore 固定時間割のリアルタイム更新に必要なインデックスがありません。Firebaseコンソールのエラーメッセージを確認してください。"));
            }
        } else if (onError) {
          onError(error);
@@ -378,8 +424,8 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
         }
          // Check for index error
         if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-            console.error(`Firestore query for daily announcements on ${date} requires an index on 'date'. Please create it.`);
-            throw new Error(`Firestore 連絡クエリ(日付: ${date})に必要なインデックス(date)がありません。作成してください。`);
+            console.error(`Firestore query for daily announcements on ${date} requires an index on 'date'. Please create it via the Firebase console link.`);
+            throw new Error(`Firestore 連絡クエリ(日付: ${date})に必要なインデックス(date)がありません。Firebaseコンソールのリンクから作成してください。`);
         }
         throw error;
     }
@@ -521,8 +567,13 @@ export const onDailyAnnouncementsUpdate = (
     callback(announcements);
   }, (error) => {
     console.error(`Snapshot error on daily announcements for ${date}:`, error);
-    if (onError) {
-      onError(error);
+     if (onError) {
+      // Pass the specific index error message if available
+      if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+          onError(new Error(`Firestore 連絡のリアルタイム更新に必要なインデックス(date)がありません(日付:${date})。Firebaseコンソールのリンクから作成してください。`));
+      } else {
+         onError(error);
+      }
     }
   });
 };
@@ -545,8 +596,8 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
            return [];
        }
        if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-            console.error("Firestore query for events requires an index on 'startDate'. Please create it.");
-            throw new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません。作成してください。");
+            console.error("Firestore query for events requires an index on 'startDate'. Please create it via the Firebase console link.");
+            throw new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません。Firebaseコンソールのリンクから作成してください。");
         }
        throw error;
     }
@@ -659,9 +710,9 @@ export const onSchoolEventsUpdate = (
     }, (error) => {
       console.error("Snapshot error on school events:", error);
        if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-           console.error("Firestore query for events requires an index on 'startDate' for realtime updates. Please create it.");
+           console.error("Firestore query for events requires an index on 'startDate' for realtime updates. Please create it via Firebase console.");
             if (onError) {
-                onError(new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません (realtime)。作成してください。"));
+                onError(new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません (realtime)。Firebaseコンソールのリンクから作成してください。"));
             }
         } else if (onError) {
            onError(error);
@@ -683,9 +734,6 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
     try {
         const settings = await getTimetableSettings();
         const fixedTimetable = await getFixedTimetable();
-        // Subjects are not strictly needed here unless we want to log teacher names
-        // const subjects = await getSubjects();
-        // const subjectsMap = new Map(subjects.map(s => [s.id, s]));
 
         if (!fixedTimetable || fixedTimetable.length === 0) {
             console.warn("No fixed timetable data found. Cannot apply to future.");
@@ -699,8 +747,11 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
         const dayMapping: { [key: number]: DayOfWeek } = {
             1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY,
             4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY,
-            6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY, // Include weekends if potentially active
+            6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY,
         };
+
+        // Use the activeDays from settings
+        const activeDaysSet = new Set(settings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays);
 
         // Iterate through the next N weeks
         for (let i = 0; i < FUTURE_WEEKS_TO_APPLY * 7; i++) {
@@ -710,7 +761,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
             const dayOfWeekEnum = dayMapping[dayOfWeekJs];
 
             // Skip if it's not an active day according to settings
-            if (!dayOfWeekEnum || !settings.activeDays.includes(dayOfWeekEnum)) {
+            if (!dayOfWeekEnum || !activeDaysSet.has(dayOfWeekEnum)) {
                 continue;
             }
 
@@ -724,6 +775,12 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
             for (const fixedSlot of fixedSlotsForDay) {
                 const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
 
+                // Only create/update if the period is within the defined number of periods
+                 if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) {
+                     continue;
+                 }
+
+
                 if (!existingAnn) {
                     // No existing announcement, create a default one based on fixed slot
                     const docId = `${dateStr}_${fixedSlot.period}`;
@@ -731,7 +788,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
                     const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = {
                         date: dateStr,
                         period: fixedSlot.period,
-                        subjectIdOverride: fixedSlot.subjectId, // Apply fixed subject ID
+                        subjectIdOverride: fixedSlot.subjectId ?? null, // Apply fixed subject ID (or null)
                         text: '',
                         updatedAt: Timestamp.now(),
                     };
@@ -739,25 +796,19 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
                     operationsCount++;
                 } else {
                      // If existing announcement has NO text and NO subject override,
-                     // update it with the fixed subject ID.
+                     // update it with the fixed subject ID (or null if fixed slot has no subject).
                      if (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null) {
-                          if ((fixedSlot.subjectId ?? null) !== null) { // Only update if fixed slot has a subject
-                              const docId = `${dateStr}_${fixedSlot.period}`;
-                              const docRef = doc(dailyAnnouncementsCollection, docId);
-                              batch.update(docRef, {
-                                  subjectIdOverride: fixedSlot.subjectId,
-                                  updatedAt: Timestamp.now()
-                              });
-                              operationsCount++;
-                          }
+                         // Only update if the fixed slot's subject ID is different
+                         if ((existingAnn.subjectIdOverride ?? null) !== (fixedSlot.subjectId ?? null)) {
+                            const docId = `${dateStr}_${fixedSlot.period}`;
+                            const docRef = doc(dailyAnnouncementsCollection, docId);
+                            batch.update(docRef, {
+                                subjectIdOverride: fixedSlot.subjectId ?? null, // Update with fixed ID or null
+                                updatedAt: Timestamp.now()
+                            });
+                            operationsCount++;
+                         }
                      }
-                      // Optional: If existing has NO text, but the override differs from fixed, update it?
-                    //  else if (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) !== (fixedSlot.subjectId ?? null)) {
-                    //      const docId = `${dateStr}_${fixedSlot.period}`;
-                    //      const docRef = doc(dailyAnnouncementsCollection, docId);
-                    //      batch.update(docRef, { subjectIdOverride: fixedSlot.subjectId, updatedAt: Timestamp.now() });
-                    //      operationsCount++;
-                    // }
                 }
             }
         }
@@ -776,7 +827,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
          if ((error as FirestoreError).code === 'unavailable') {
             console.warn("Client is offline. Cannot apply fixed timetable to future.");
         } else if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-             console.error("Firestore index required for applying fixed timetable to future. Check getDailyAnnouncements index requirements.");
+             console.error("Firestore index required for applying fixed timetable to future. Check getDailyAnnouncements index requirements. ", (error as FirestoreError).message);
         }
     }
 };
@@ -834,8 +885,8 @@ export const getLogs = async (limitCount: number = 50): Promise<any[]> => {
            return [];
        }
         if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
-            console.error("Firestore query for logs requires an index on 'timestamp'. Please create it.");
-            throw new Error("Firestore ログクエリに必要なインデックス(timestamp)がありません。作成してください。");
+            console.error("Firestore query for logs requires an index on 'timestamp'. Please create it via Firebase console.");
+            throw new Error("Firestore ログクエリに必要なインデックス(timestamp)がありません。Firebaseコンソールのリンクから作成してください。");
         }
        throw error;
     }
