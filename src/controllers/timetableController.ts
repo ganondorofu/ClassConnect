@@ -54,7 +54,12 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      return docSnap.data() as TimetableSettings;
+      // Ensure activeDays is always present, falling back to default if missing
+      const data = docSnap.data();
+      return {
+          numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
+          activeDays: data.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
+      } as TimetableSettings;
     } else {
       // Initialize with default settings if not found
       console.log("No settings found, initializing with defaults.");
@@ -91,7 +96,10 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
       throw fetchError;
   }
 
-  const newSettings = { ...currentSettings, ...settingsUpdates };
+  const newSettings: TimetableSettings = {
+      numberOfPeriods: settingsUpdates.numberOfPeriods ?? currentSettings.numberOfPeriods,
+      activeDays: settingsUpdates.activeDays ?? currentSettings.activeDays,
+  };
   const docRef = doc(settingsCollection, 'timetable');
 
   try {
@@ -99,8 +107,11 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     await runTransaction(db, async (transaction) => {
       const settingsDoc = await transaction.get(docRef);
       // Use fetched settings within transaction if needed for consistency check,
-      // but for this logic, currentSettings fetched outside is likely okay.
-      const currentSettingsInTx = settingsDoc.exists() ? settingsDoc.data() as TimetableSettings : DEFAULT_TIMETABLE_SETTINGS;
+      const currentSettingsInTx = settingsDoc.exists() ? (settingsDoc.data() as TimetableSettings) : DEFAULT_TIMETABLE_SETTINGS;
+
+       // Ensure activeDays are always arrays
+      const currentActiveDays = currentSettingsInTx.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      const newActiveDays = newSettings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
 
       transaction.set(docRef, newSettings); // Update settings document
 
@@ -108,7 +119,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
       if (settingsUpdates.numberOfPeriods !== undefined && settingsUpdates.numberOfPeriods !== currentSettingsInTx.numberOfPeriods) {
         const oldPeriods = currentSettingsInTx.numberOfPeriods;
         const newPeriods = settingsUpdates.numberOfPeriods;
-        const daysToUpdate = newSettings.activeDays; // Use the potentially updated activeDays
+        const daysToUpdate = newActiveDays;
 
         if (newPeriods > oldPeriods) {
           // Add new empty slots
@@ -132,8 +143,8 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
         }
       } else if (settingsUpdates.activeDays) {
           // Handle changes in activeDays (add/remove rows for entire days)
-          const addedDays = settingsUpdates.activeDays.filter(d => !currentSettingsInTx.activeDays.includes(d));
-          const removedDays = currentSettingsInTx.activeDays.filter(d => !settingsUpdates.activeDays!.includes(d));
+          const addedDays = newActiveDays.filter(d => !currentActiveDays.includes(d));
+          const removedDays = currentActiveDays.filter(d => !newActiveDays.includes(d));
 
           // Add slots for newly activated days
           for (const day of addedDays) {
@@ -180,7 +191,13 @@ export const onTimetableSettingsUpdate = (
   const docRef = doc(settingsCollection, 'timetable');
   return onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
-      callback(docSnap.data() as TimetableSettings);
+       const data = docSnap.data();
+      // Ensure activeDays is always present
+      const settings: TimetableSettings = {
+          numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
+          activeDays: data.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
+      };
+      callback(settings);
     } else {
       // Handle case where settings might be deleted, potentially reset to default
        console.log("Settings document deleted, attempting to re-initialize.");
@@ -203,10 +220,16 @@ export const onTimetableSettingsUpdate = (
  */
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
    try {
-      // Optionally order by day and period for consistency
-      const q = query(fixedTimetableCollection, orderBy('day'), orderBy('period'));
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+      // No longer sorting here as index is not guaranteed for multi-field sorts without explicit index
+      const snapshot = await getDocs(fixedTimetableCollection);
+      // Sort manually after fetching
+      const slots = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+       slots.sort((a, b) => {
+           const dayOrder = WeekDays.indexOf(a.day) - WeekDays.indexOf(b.day);
+           if (dayOrder !== 0) return dayOrder;
+           return a.period - b.period;
+       });
+       return slots;
    } catch (error) {
       console.error("Error fetching fixed timetable:", error);
       if ((error as FirestoreError).code === 'unavailable') {
@@ -214,6 +237,12 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
           // Consider returning cached data if available
           return []; // Or throw a specific offline error
       }
+       // Check for index error specifically
+        if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+            console.error("Firestore query requires an index. Please create the index in the Firebase console using the link provided in the error message.");
+            // Optionally, re-throw a more specific error or handle it gracefully
+            throw new Error("Firestore クエリに必要なインデックスがありません。Firebaseコンソールのエラーメッセージ内のリンクを使用して作成してください。");
+        }
       throw error;
    }
 };
@@ -271,6 +300,10 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
       if ((error as FirestoreError).code === 'unavailable') {
           throw new Error("オフラインのため現在の時間割を取得できず、保存できませんでした。");
       }
+      // Handle index error from getFixedTimetable
+       if (error instanceof Error && error.message.includes("Firestore クエリに必要なインデックスがありません")) {
+           throw error; // Rethrow the specific index error
+       }
       throw error; // Rethrow other fetch errors
   }
 
@@ -324,15 +357,27 @@ export const onFixedTimetableUpdate = (
     callback: (timetable: FixedTimeSlot[]) => void,
     onError?: (error: Error) => void
 ): Unsubscribe => {
-    const q = query(fixedTimetableCollection, orderBy('day'), orderBy('period'));
+    // No longer sorting here to avoid index requirement on snapshot listener
+    const q = query(fixedTimetableCollection);
     return onSnapshot(q, (snapshot) => {
+         // Sort manually after receiving snapshot
         const timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+        timetable.sort((a, b) => {
+            const dayOrder = WeekDays.indexOf(a.day) - WeekDays.indexOf(b.day);
+            if (dayOrder !== 0) return dayOrder;
+            return a.period - b.period;
+        });
         callback(timetable);
     }, (error) => {
      console.error("Snapshot error on fixed timetable:", error);
-     if (onError) {
-       onError(error);
-     }
+      if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+           console.error("Firestore query requires an index for realtime updates. Please create the index in the Firebase console using the link provided in previous errors.");
+           if (onError) {
+                onError(new Error("Firestore クエリに必要なインデックスがありません (realtime)。Firebaseコンソールのエラーメッセージ内のリンクを使用して作成してください。"));
+           }
+       } else if (onError) {
+         onError(error);
+       }
   });
 };
 
@@ -378,14 +423,14 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
 
   // Ensure text is defined, default to empty string if not
   const text = announcementData.text ?? '';
-  // Handle subjectOverride, ensuring it's either a string or undefined
-  const subjectOverride = announcementData.subjectOverride || undefined;
+  // Handle subjectOverride, ensuring it's either a string or null (instead of undefined)
+  const subjectOverride = announcementData.subjectOverride || null;
 
 
   const dataToSet: Omit<DailyAnnouncement, 'id'> = {
     date: announcementData.date,
     period: announcementData.period,
-    subjectOverride: subjectOverride, // Include subjectOverride
+    subjectOverride: subjectOverride, // Include subjectOverride (now null if empty)
     text: text, // Use sanitized text
     updatedAt: Timestamp.now(), // Use server timestamp for consistency
   };
@@ -395,7 +440,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
     const oldData = oldDataSnap.exists() ? oldDataSnap.data() as DailyAnnouncement : null;
 
     // Only log if data actually changed (text or subjectOverride)
-    const hasChanged = !oldData || oldData.text !== text || oldData.subjectOverride !== subjectOverride;
+    const hasChanged = !oldData || oldData.text !== text || (oldData.subjectOverride ?? null) !== subjectOverride;
 
     await setDoc(docRef, dataToSet); // This will create or overwrite
 
@@ -404,8 +449,8 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
             docId,
             oldText: oldData?.text,
             newText: text,
-            oldSubjectOverride: oldData?.subjectOverride,
-            newSubjectOverride: subjectOverride
+            oldSubjectOverride: oldData?.subjectOverride ?? null, // Log null instead of undefined
+            newSubjectOverride: subjectOverride // Log null instead of undefined
         });
     }
 
@@ -413,6 +458,11 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
      console.error("Error upserting daily announcement:", error);
      if ((error as FirestoreError).code === 'unavailable') {
         throw new Error("オフラインのため連絡を保存できませんでした。");
+     }
+      // Check for invalid data error (likely due to undefined)
+     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+          console.error("Firestore Error: Attempted to save 'undefined'. Check data structure.", dataToSet);
+          throw new Error("保存データに無効な値(undefined)が含まれていました。");
      }
      throw error;
   }
@@ -435,7 +485,7 @@ export const deleteDailyAnnouncement = async (date: string, period: number): Pro
             await logAction('delete_announcement', {
                  docId,
                  oldText: oldData.text,
-                 oldSubjectOverride: oldData.subjectOverride
+                 oldSubjectOverride: oldData.subjectOverride ?? null // Log null instead of undefined
             });
         } else {
             console.log(`Announcement ${docId} not found for deletion.`);
@@ -497,6 +547,11 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
            // Consider returning cached data if available
            return []; // Or throw a specific offline error
        }
+       // Check for index error
+        if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+            console.error("Firestore query for events requires an index on 'startDate'. Please create it.");
+            throw new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません。作成してください。");
+        }
        throw error;
     }
 };
@@ -518,6 +573,11 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id'>): Promis
        if ((error as FirestoreError).code === 'unavailable') {
           throw new Error("オフラインのため行事を追加できませんでした。");
        }
+       // Check for invalid data error (likely due to undefined)
+       if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+            console.error("Firestore Error: Attempted to save 'undefined' in event. Check data structure.", dataToSet);
+            throw new Error("行事データに無効な値(undefined)が含まれていました。");
+       }
        throw error;
     }
 };
@@ -530,18 +590,33 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id'>): Promis
 export const updateSchoolEvent = async (eventData: SchoolEvent): Promise<void> => {
     if (!eventData.id) throw new Error("Event ID is required for updates.");
     const docRef = doc(eventsCollection, eventData.id);
+    // Ensure no undefined values are being sent
+    const dataToUpdate = JSON.parse(JSON.stringify(eventData, (key, value) =>
+        value === undefined ? null : value
+    ));
+    delete dataToUpdate.id; // Don't overwrite ID in the document data itself
+
     try {
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         const oldData = oldDataSnap.exists() ? oldDataSnap.data() : null;
-        await setDoc(docRef, eventData, { merge: true }); // Use merge if structure might vary
+        await setDoc(docRef, dataToUpdate, { merge: true }); // Use merge to update fields
+
          // Log only if data actually changed
-        if (JSON.stringify(oldData) !== JSON.stringify(eventData)) {
+        // Compare cleaned objects (null instead of undefined)
+         const oldDataCleaned = oldData ? JSON.parse(JSON.stringify(oldData, (key, value) => value === undefined ? null : value)) : null;
+
+        if (JSON.stringify(oldDataCleaned) !== JSON.stringify(dataToUpdate)) {
             await logAction('update_event', { eventId: eventData.id, oldTitle: oldData?.title, newTitle: eventData.title });
         }
     } catch (error) {
        console.error("Error updating school event:", error);
        if ((error as FirestoreError).code === 'unavailable') {
           throw new Error("オフラインのため行事を更新できませんでした。");
+       }
+       // Check for invalid data error (likely due to undefined)
+       if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+            console.error("Firestore Error: Attempted to save 'undefined' in event update. Check data structure.", dataToUpdate);
+            throw new Error("更新データに無効な値(undefined)が含まれていました。");
        }
        throw error;
     }
@@ -585,9 +660,14 @@ export const onSchoolEventsUpdate = (
         callback(events);
     }, (error) => {
       console.error("Snapshot error on school events:", error);
-      if (onError) {
-        onError(error);
-      }
+       if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+           console.error("Firestore query for events requires an index on 'startDate' for realtime updates. Please create it.");
+            if (onError) {
+                onError(new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません (realtime)。作成してください。"));
+            }
+        } else if (onError) {
+           onError(error);
+        }
     });
 };
 
@@ -597,25 +677,34 @@ export const onSchoolEventsUpdate = (
 /**
  * Logs an action performed by a user (or system).
  * Attempts to log even if offline, but might fail.
+ * Replaces undefined values in details with null.
  * @param {string} actionType - Type of action (e.g., 'update_settings', 'add_announcement').
  * @param {object} details - Additional details about the action.
  * @param {string} [userId='anonymous'] - ID of the user performing the action.
  */
 const logAction = async (actionType: string, details: object, userId: string = 'anonymous') => {
   // Basic logging - In a real app, expand this with more structured data, user info, etc.
-  // Consider using a dedicated logging service or more robust Firestore structure.
+  // Recursively replace undefined with null in the details object
+  const cleanDetails = JSON.parse(JSON.stringify(details, (key, value) =>
+      value === undefined ? null : value
+  ));
+
   try {
     const logEntry = {
       action: actionType,
       timestamp: Timestamp.now(), // Firestore handles offline timestamping
       userId: userId, // Placeholder for future authentication
-      details: details, // Store relevant data changes
+      details: cleanDetails, // Store cleaned data
     };
     const newLogRef = doc(logsCollection); // Auto-generate ID
     await setDoc(newLogRef, logEntry);
   } catch (error) {
     // Don't throw error here, logging is best-effort, but log the logging failure itself
     console.error(`Failed to log action '${actionType}' (might be offline):`, error);
+     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+        console.error("Firestore Logging Error: Attempted to save 'undefined' in log details.", logEntry);
+        // Don't throw, but maybe send to a different logging service if critical
+    }
   }
 };
 
@@ -640,6 +729,11 @@ export const getLogs = async (limitCount: number = 50): Promise<any[]> => {
            // Consider returning cached data if available
            return []; // Or throw a specific offline error
        }
+        // Check for index error
+        if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+            console.error("Firestore query for logs requires an index on 'timestamp'. Please create it.");
+            throw new Error("Firestore ログクエリに必要なインデックス(timestamp)がありません。作成してください。");
+        }
        throw error;
     }
 };
