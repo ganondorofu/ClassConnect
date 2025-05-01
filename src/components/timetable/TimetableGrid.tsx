@@ -12,15 +12,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert components
 
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
 import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName } from '@/models/timetable'; // Combined imports
-import type { DailyAnnouncement, AnnouncementType } from '@/models/announcement';
-import { AnnouncementType as AnnouncementTypeEnum } from '@/models/announcement'; // Import the enum
+import type { DailyAnnouncement } from '@/models/announcement';
 import {
   queryFnGetTimetableSettings,
   queryFnGetFixedTimetable,
@@ -38,16 +36,6 @@ import { AlertCircle, CalendarDays, Edit2, Trash2, PlusCircle, Info, AlertTriang
 
 const DAY_CELL_WIDTH = "min-w-[150px]"; // Adjust width as needed
 
-// Map AnnouncementType to Icons and Colors
-const announcementTypeDetails: Record<AnnouncementType, { icon: React.ElementType, color: string }> = {
-  [AnnouncementTypeEnum.BELONGINGS]: { icon: BookOpen, color: 'text-blue-500 dark:text-blue-400' },
-  [AnnouncementTypeEnum.TEST]: { icon: Edit2, color: 'text-red-500 dark:text-red-400' },
-  [AnnouncementTypeEnum.CHANGE]: { icon: AlertTriangle, color: 'text-orange-500 dark:text-orange-400' },
-  [AnnouncementTypeEnum.CALL]: { icon: BellRing, color: 'text-purple-500 dark:text-purple-400' },
-  [AnnouncementTypeEnum.EVENT]: { icon: CalendarDays, color: 'text-teal-500 dark:text-teal-400' }, // Event icon
-  [AnnouncementTypeEnum.OTHER]: { icon: Info, color: 'text-gray-500 dark:text-gray-400' },
-};
-
 
 interface TimetableGridProps {
   currentDate: Date; // Pass current date as prop
@@ -59,7 +47,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const [selectedSlot, setSelectedSlot] = useState<{ date: string, period: number, day: DayOfWeek, fixedSubject: string, announcement?: DailyAnnouncement } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [announcementText, setAnnouncementText] = useState('');
-  const [announcementType, setAnnouncementType] = useState<AnnouncementType>(AnnouncementTypeEnum.OTHER);
   const [isSaving, setIsSaving] = useState(false); // State for save/delete operations
   const [isOffline, setIsOffline] = useState(false); // State to track offline status
 
@@ -265,7 +252,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         announcement
     });
     setAnnouncementText(announcement?.text ?? '');
-    setAnnouncementType(announcement?.type ?? AnnouncementTypeEnum.OTHER);
     setIsModalOpen(true);
   };
 
@@ -282,45 +268,62 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         return;
     }
 
-    // Basic validation
-    if (!announcementText.trim() && announcementType !== AnnouncementTypeEnum.CHANGE) { // Allow empty text for '変更' if needed, adjust logic if not
-        toast({
-            title: "エラー",
-            description: "連絡内容を入力してください。",
-            variant: "destructive",
-        });
-        return;
-    }
+    // Basic validation (allow empty text to clear announcement)
+    // if (!announcementText.trim()) {
+    //     toast({
+    //         title: "エラー",
+    //         description: "連絡内容を入力してください。",
+    //         variant: "destructive",
+    //     });
+    //     return;
+    // }
 
     setIsSaving(true);
     try {
-      const announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = {
-        date: selectedSlot.date,
-        period: selectedSlot.period,
-        text: announcementText,
-        type: announcementType, // Include the type
-      };
-      await upsertDailyAnnouncement(announcementData);
-      toast({
-        title: "成功",
-        description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡を保存しました。`,
-      });
+      // If text is empty, delete the announcement instead of saving empty string
+      if (!announcementText.trim()) {
+          if (selectedSlot.announcement) {
+              await deleteDailyAnnouncement(selectedSlot.date, selectedSlot.period);
+              toast({
+                 title: "削除しました",
+                 description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡を削除しました。`,
+               });
+          } else {
+              // No existing announcement and text is empty, do nothing
+              toast({
+                  title: "情報",
+                  description: "連絡内容が空のため、何も保存されませんでした。",
+              });
+          }
+      } else {
+          // Save non-empty text
+          const announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = {
+            date: selectedSlot.date,
+            period: selectedSlot.period,
+            text: announcementText,
+          };
+          await upsertDailyAnnouncement(announcementData);
+          toast({
+            title: "成功",
+            description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡を保存しました。`,
+          });
+      }
+
       setIsModalOpen(false);
-      // Reset state after successful save
+      // Reset state after successful save/delete
       setSelectedSlot(null);
       setAnnouncementText('');
-      setAnnouncementType(AnnouncementTypeEnum.OTHER);
       // Invalidate query to ensure data consistency, even with realtime updates
       queryClient.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
     } catch (error) {
-      console.error("Failed to save announcement:", error);
+      console.error("Failed to save/delete announcement:", error);
       const isFirebaseOfflineError = (error as any)?.code === 'unavailable';
        setIsOffline(isFirebaseOfflineError || !navigator.onLine);
       toast({
         title: isFirebaseOfflineError ? "オフライン" : "エラー",
         description: isFirebaseOfflineError
-            ? "連絡の保存に失敗しました。オフラインの可能性があります。"
-            : "連絡の保存に失敗しました。",
+            ? "操作に失敗しました。オフラインの可能性があります。"
+            : "操作に失敗しました。",
         variant: "destructive",
       });
     } finally {
@@ -352,7 +355,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
          // Reset state after successful delete
          setSelectedSlot(null);
          setAnnouncementText('');
-         setAnnouncementType(AnnouncementTypeEnum.OTHER);
           // Invalidate query
          queryClient.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
      } catch (error) {
@@ -464,15 +466,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                      const dateStr = format(date, 'yyyy-MM-dd');
                      const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
                      const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
-                     const TypeIcon = announcement ? announcementTypeDetails[announcement.type]?.icon : null;
-                     const iconColor = announcement ? announcementTypeDetails[announcement.type]?.color : '';
                      const hasEvent = !isActive && getEventsForDay(date).length > 0; // Check if inactive day has event
 
-                     const displaySubject = (announcement?.type === AnnouncementTypeEnum.CHANGE && announcement?.text)
-                        ? announcement.text // Show announcement text if type is CHANGE and text exists
-                        : fixedSlot?.subject || '未設定'; // Otherwise, show fixed subject or '未設定'
+                     // Display subject from fixed timetable
+                     const displaySubject = fixedSlot?.subject || '未設定';
 
-                     const showAnnouncementDetails = announcement && announcement.type !== AnnouncementTypeEnum.CHANGE;
+                     // Announcement text to display
+                     const announcementDisplay = announcement?.text;
 
 
                     return (
@@ -482,31 +482,20 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       >
                        {isActive ? (
                              <>
-                                 {/* Top Section: Subject (Potentially overridden by CHANGE announcement) */}
+                                 {/* Top Section: Subject */}
                                 <div
-                                    className={`text-sm truncate mb-1 ${announcement?.type === AnnouncementTypeEnum.CHANGE ? 'font-bold text-foreground' : 'text-muted-foreground'}`}
+                                    className="text-sm truncate mb-1 text-muted-foreground"
                                     title={displaySubject}
                                 >
                                     {displaySubject}
                                  </div>
 
-                                 {/* Middle Section: Announcement Details (if not CHANGE type) */}
+                                 {/* Middle Section: Announcement Details */}
                                  <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                                     {showAnnouncementDetails && (
-                                         <div className={`p-1 rounded bg-card border border-dashed ${iconColor} border-opacity-50`}>
-                                             <div className="flex items-center gap-1 font-medium mb-0.5">
-                                                 {TypeIcon && <TypeIcon className={`w-3 h-3 shrink-0 ${iconColor}`} />}
-                                                 <span>{announcement.type}</span>
-                                             </div>
-                                             <p className="text-foreground whitespace-pre-wrap">{announcement.text}</p>
+                                     {announcementDisplay && (
+                                         <div className="p-1 rounded bg-card border border-dashed border-accent/50 text-accent-foreground">
+                                             <p className="text-foreground whitespace-pre-wrap">{announcementDisplay}</p>
                                         </div>
-                                     )}
-                                     {/* Explicitly show icon for CHANGE type even if details aren't shown here */}
-                                      {announcement?.type === AnnouncementTypeEnum.CHANGE && (
-                                         <div className="flex items-center gap-1 font-medium mb-0.5 text-xs">
-                                             <AlertTriangle className={`w-3 h-3 shrink-0 ${iconColor}`} />
-                                             <span>{announcement.type}</span>
-                                         </div>
                                      )}
                                  </div>
 
@@ -517,7 +506,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                         size="sm"
                                         className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
                                         onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                        aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
+                                        aria-label={`${dateStr} ${period}限目の連絡を編集`}
                                         disabled={isOffline} // Disable edit button when offline
                                     >
                                         <Edit2 className="w-3 h-3" />
@@ -543,68 +532,33 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>連絡・変更を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
+                    <DialogTitle>連絡を編集: {selectedSlot?.date} ({getDayOfWeekName(selectedSlot?.day ?? DayOfWeekEnum.MONDAY)}) {selectedSlot?.period}限目</DialogTitle>
                      <p className="text-sm text-muted-foreground pt-1">
                          時間割: {selectedSlot?.fixedSubject || '未設定'}
-                         {selectedSlot?.announcement?.type === AnnouncementTypeEnum.CHANGE && ' (変更中)'}
                      </p>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                         <Label htmlFor="announcement-type" className="text-right">
-                             種別
-                         </Label>
-                         <Select
-                            value={announcementType}
-                            onValueChange={(value) => setAnnouncementType(value as AnnouncementType)}
-                            disabled={isSaving}
-                         >
-                            <SelectTrigger id="announcement-type" className="col-span-3">
-                                <SelectValue placeholder="種別を選択" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {Object.values(AnnouncementTypeEnum).map(type => {
-                                     const IconComponent = announcementTypeDetails[type]?.icon; // Get the icon component
-                                     const colorClass = announcementTypeDetails[type]?.color ?? ''; // Get the color class
-                                     return (
-                                         <SelectItem key={type} value={type}>
-                                             <div className="flex items-center gap-2">
-                                                 {IconComponent && <IconComponent className={`w-4 h-4 ${colorClass}`} />}
-                                                 {type}
-                                             </div>
-                                         </SelectItem>
-                                     );
-                                })}
-                            </SelectContent>
-                        </Select>
-                    </div>
                      <div className="grid grid-cols-4 items-center gap-4">
-                         <Label htmlFor="announcement-text" className="text-right">
-                             {announcementType === AnnouncementTypeEnum.CHANGE ? '変更後の教科' : '連絡内容'}
+                         <Label htmlFor="announcement-text" className="text-right col-span-1">
+                             連絡内容
                          </Label>
                          <Textarea
                             id="announcement-text"
                             value={announcementText}
                             onChange={(e) => setAnnouncementText(e.target.value)}
                             className="col-span-3 min-h-[100px]"
-                            placeholder={
-                                announcementType === AnnouncementTypeEnum.CHANGE
-                                ? "変更後の教科名を入力 (例: 体育)"
-                                : "特別な持ち物、テスト範囲、教室変更などを入力..."
-                            }
+                            placeholder="特別な持ち物、テスト範囲、教室変更などを入力... (空にすると連絡が削除されます)"
                             disabled={isSaving}
                         />
                     </div>
-                     {announcementType === AnnouncementTypeEnum.CHANGE && (
-                        <p className="col-span-4 text-xs text-muted-foreground px-2">
-                            種別「変更」の場合、ここで入力した内容が時間割の教科名の代わりに表示されます。
-                        </p>
-                    )}
+                     <p className="col-span-4 text-xs text-muted-foreground px-2 text-center">
+                         内容を空にして保存すると、この時間の連絡は削除されます。
+                     </p>
                 </div>
                 <DialogFooter className="flex justify-between sm:justify-between w-full">
-                     {/* Delete Button Aligned Left */}
+                     {/* Delete Button Aligned Left (Now primarily handled by saving empty text) */}
                      <div>
-                         {selectedSlot?.announcement && ( // Only show delete if there's an existing announcement
+                         {selectedSlot?.announcement && announcementText && ( // Show delete only if existing and text is NOT empty (otherwise save handles deletion)
                              <Button
                                  variant="destructive"
                                  onClick={handleDeleteAnnouncement}

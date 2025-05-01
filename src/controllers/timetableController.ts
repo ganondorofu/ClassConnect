@@ -15,6 +15,7 @@ import {
   orderBy,
   limit, // Import limit
   FirestoreError, // Import FirestoreError type
+  runTransaction, // Import runTransaction
 } from 'firebase/firestore';
 import type {
   FixedTimeSlot,
@@ -22,8 +23,8 @@ import type {
   DayOfWeek,
   SchoolEvent,
 } from '@/models/timetable';
-import type { DailyAnnouncement, AnnouncementType } from '@/models/announcement';
-import { DEFAULT_TIMETABLE_SETTINGS } from '@/models/timetable';
+import type { DailyAnnouncement } from '@/models/announcement'; // Updated import
+import { DEFAULT_TIMETABLE_SETTINGS, WeekDays } from '@/models/timetable';
 
 /**
  * Placeholder for the current class ID.
@@ -55,6 +56,7 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
       return docSnap.data() as TimetableSettings;
     } else {
       // Initialize with default settings if not found
+      console.log("No settings found, initializing with defaults.");
       await setDoc(docRef, DEFAULT_TIMETABLE_SETTINGS);
       await logAction('initialize_settings', { settings: DEFAULT_TIMETABLE_SETTINGS });
       return DEFAULT_TIMETABLE_SETTINGS;
@@ -78,42 +80,82 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
  * @returns {Promise<void>}
  */
 export const updateTimetableSettings = async (settingsUpdates: Partial<TimetableSettings>): Promise<void> => {
-  const currentSettings = await getTimetableSettings(); // This might return default if offline
+  // Fetch current settings even if offline might return defaults, which is acceptable for comparison
+  let currentSettings: TimetableSettings;
+  try {
+      currentSettings = await getTimetableSettings();
+  } catch (fetchError) {
+      // If fetching fails drastically (not just offline defaults), rethrow
+      console.error("Critical error fetching current settings before update:", fetchError);
+      throw fetchError;
+  }
+
   const newSettings = { ...currentSettings, ...settingsUpdates };
   const docRef = doc(settingsCollection, 'timetable');
 
   try {
-    const batch = writeBatch(db);
-    batch.set(docRef, newSettings); // Update settings document
+    // Use a transaction for atomicity
+    await runTransaction(db, async (transaction) => {
+      const settingsDoc = await transaction.get(docRef);
+      // Use fetched settings within transaction if needed for consistency check,
+      // but for this logic, currentSettings fetched outside is likely okay.
+      const currentSettingsInTx = settingsDoc.exists() ? settingsDoc.data() as TimetableSettings : DEFAULT_TIMETABLE_SETTINGS;
 
-    // Adjust fixed timetable if numberOfPeriods changed
-    if (settingsUpdates.numberOfPeriods !== undefined && settingsUpdates.numberOfPeriods !== currentSettings.numberOfPeriods) {
-      const oldPeriods = currentSettings.numberOfPeriods;
-      const newPeriods = settingsUpdates.numberOfPeriods;
+      transaction.set(docRef, newSettings); // Update settings document
 
-      if (newPeriods > oldPeriods) {
-        // Add new empty slots
-        for (let day of newSettings.activeDays) {
-          for (let period = oldPeriods + 1; period <= newPeriods; period++) {
-            const slotId = `${day}_${period}`;
-            const newSlotRef = doc(fixedTimetableCollection, slotId);
-            const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subject: '', room: '' };
-            batch.set(newSlotRef, defaultSlot);
+      // Adjust fixed timetable if numberOfPeriods changed
+      if (settingsUpdates.numberOfPeriods !== undefined && settingsUpdates.numberOfPeriods !== currentSettingsInTx.numberOfPeriods) {
+        const oldPeriods = currentSettingsInTx.numberOfPeriods;
+        const newPeriods = settingsUpdates.numberOfPeriods;
+        const daysToUpdate = newSettings.activeDays; // Use the potentially updated activeDays
+
+        if (newPeriods > oldPeriods) {
+          // Add new empty slots
+          for (let day of daysToUpdate) {
+            for (let period = oldPeriods + 1; period <= newPeriods; period++) {
+              const slotId = `${day}_${period}`;
+              const newSlotRef = doc(fixedTimetableCollection, slotId);
+              const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subject: '' }; // Removed room
+              transaction.set(newSlotRef, defaultSlot);
+            }
           }
+        } else {
+          // Remove excess slots - Query outside transaction, delete inside
+          const q = query(fixedTimetableCollection, where('period', '>', newPeriods));
+          const snapshot = await getDocs(q); // This requires network
+          snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
+
+          // Also remove corresponding future daily announcements (optional, consider implications)
+          // Example: Query and delete dailyAnnouncements where period > newPeriods
+          // This might be complex and better handled separately or via user confirmation
         }
-      } else {
-        // Remove excess slots
-        const q = query(fixedTimetableCollection, where('period', '>', newPeriods));
-        const snapshot = await getDocs(q); // This might fail offline
-        snapshot.forEach((doc) => batch.delete(doc.ref));
+      } else if (settingsUpdates.activeDays) {
+          // Handle changes in activeDays (add/remove rows for entire days)
+          const addedDays = settingsUpdates.activeDays.filter(d => !currentSettingsInTx.activeDays.includes(d));
+          const removedDays = currentSettingsInTx.activeDays.filter(d => !settingsUpdates.activeDays!.includes(d));
 
-        // Also remove corresponding future daily announcements (optional, consider implications)
-        // Example: Query and delete dailyAnnouncements where period > newPeriods
+          // Add slots for newly activated days
+          for (const day of addedDays) {
+              for (let period = 1; period <= newSettings.numberOfPeriods; period++) {
+                  const slotId = `${day}_${period}`;
+                  const newSlotRef = doc(fixedTimetableCollection, slotId);
+                  const defaultSlot: FixedTimeSlot = { id: slotId, day, period, subject: '' };
+                  transaction.set(newSlotRef, defaultSlot);
+              }
+          }
+
+          // Remove slots for deactivated days
+           // Query outside transaction, delete inside
+           if (removedDays.length > 0) {
+              const q = query(fixedTimetableCollection, where('day', 'in', removedDays));
+              const snapshot = await getDocs(q); // Requires network
+              snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
+           }
       }
-    }
+    });
 
-    await batch.commit(); // Commit all changes atomically
     await logAction('update_settings', { oldSettings: currentSettings, newSettings });
+
   } catch (error) {
     console.error("Error updating timetable settings:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -122,6 +164,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     throw error; // Re-throw other errors
   }
 };
+
 
 /**
  * Subscribes to real-time updates for timetable settings.
@@ -139,6 +182,7 @@ export const onTimetableSettingsUpdate = (
       callback(docSnap.data() as TimetableSettings);
     } else {
       // Handle case where settings might be deleted, potentially reset to default
+       console.log("Settings document deleted, attempting to re-initialize.");
        getTimetableSettings().then(callback).catch(err => onError ? onError(err) : console.error("Error re-fetching settings after deletion:", err));
     }
   }, (error) => {
@@ -158,7 +202,9 @@ export const onTimetableSettingsUpdate = (
  */
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
    try {
-      const snapshot = await getDocs(fixedTimetableCollection);
+      // Optionally order by day and period for consistency
+      const q = query(fixedTimetableCollection, orderBy('day'), orderBy('period'));
+      const snapshot = await getDocs(q);
       return snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
    } catch (error) {
       console.error("Error fetching fixed timetable:", error);
@@ -172,18 +218,30 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
 };
 
 /**
- * Updates a specific fixed time slot.
- * @param {FixedTimeSlot} slotData - The updated slot data.
+ * Updates a specific fixed time slot. Use for saving changes from settings page.
+ * @param {FixedTimeSlot} slotData - The updated slot data (must include id, day, period).
  * @returns {Promise<void>}
  */
 export const updateFixedTimeSlot = async (slotData: FixedTimeSlot): Promise<void> => {
     if (!slotData.id) throw new Error("Slot ID is required for updates.");
+    if (!slotData.day || !slotData.period) throw new Error("Day and Period are required.");
     const docRef = doc(fixedTimetableCollection, slotData.id);
     try {
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         const oldData = oldDataSnap.exists() ? oldDataSnap.data() : null;
-        await setDoc(docRef, slotData, { merge: true }); // Use merge to avoid overwriting other fields if any
-        await logAction('update_fixed_slot', { slotId: slotData.id, oldData, newData: slotData });
+        // Explicitly set fields to ensure structure
+        const dataToSet: FixedTimeSlot = {
+            id: slotData.id,
+            day: slotData.day,
+            period: slotData.period,
+            subject: slotData.subject || '', // Ensure subject is always a string
+            // room: slotData.room || '', // Ensure room is always a string if needed
+        };
+        await setDoc(docRef, dataToSet); // Overwrite with new data, ensures clean structure
+        // Log only if data actually changed
+        if (JSON.stringify(oldData) !== JSON.stringify(dataToSet)) {
+             await logAction('update_fixed_slot', { slotId: slotData.id, oldSubject: oldData?.subject, newSubject: dataToSet.subject });
+        }
     } catch (error) {
         console.error("Error updating fixed time slot:", error);
         if ((error as FirestoreError).code === 'unavailable') {
@@ -192,6 +250,68 @@ export const updateFixedTimeSlot = async (slotData: FixedTimeSlot): Promise<void
         throw error;
     }
 };
+
+/**
+ * Updates multiple fixed timetable slots in a batch.
+ * Ideal for saving all changes from the settings page at once.
+ * @param {FixedTimeSlot[]} slots - Array of slots to update.
+ * @returns {Promise<void>}
+ */
+export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise<void> => {
+  const batch = writeBatch(db);
+  let changesMade = false;
+
+  // Fetch existing data to compare (requires network)
+  let existingSlotsMap: Map<string, FixedTimeSlot> = new Map();
+  try {
+      const currentTimetable = await getFixedTimetable();
+      currentTimetable.forEach(slot => existingSlotsMap.set(slot.id, slot));
+  } catch (error) {
+      if ((error as FirestoreError).code === 'unavailable') {
+          throw new Error("オフラインのため現在の時間割を取得できず、保存できませんでした。");
+      }
+      throw error; // Rethrow other fetch errors
+  }
+
+
+  slots.forEach(slot => {
+    if (!slot.id) {
+      console.warn("Skipping slot update due to missing ID:", slot);
+      return; // Skip if ID is missing
+    }
+    const docRef = doc(fixedTimetableCollection, slot.id);
+    const existingSlot = existingSlotsMap.get(slot.id);
+
+     // Only add to batch if the subject has changed
+    if (!existingSlot || existingSlot.subject !== (slot.subject || '')) {
+        const dataToSet: FixedTimeSlot = {
+            id: slot.id,
+            day: slot.day,
+            period: slot.period,
+            subject: slot.subject || '',
+        };
+        batch.set(docRef, dataToSet);
+        changesMade = true;
+    }
+  });
+
+  if (!changesMade) {
+      console.log("No changes detected in fixed timetable.");
+      return; // Nothing to commit
+  }
+
+  try {
+    await batch.commit();
+    await logAction('batch_update_fixed_timetable', { count: slots.length }); // Log the batch operation
+  } catch (error) {
+    console.error("Error batch updating fixed timetable:", error);
+    if ((error as FirestoreError).code === 'unavailable') {
+      throw new Error("オフラインのため固定時間割を一括更新できませんでした。");
+    }
+    throw error;
+  }
+};
+
 
 /**
  * Subscribes to real-time updates for the fixed timetable.
@@ -203,10 +323,11 @@ export const onFixedTimetableUpdate = (
     callback: (timetable: FixedTimeSlot[]) => void,
     onError?: (error: Error) => void
 ): Unsubscribe => {
-  return onSnapshot(fixedTimetableCollection, (snapshot) => {
-    const timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
-    callback(timetable);
-  }, (error) => {
+    const q = query(fixedTimetableCollection, orderBy('day'), orderBy('period'));
+    return onSnapshot(q, (snapshot) => {
+        const timetable = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
+        callback(timetable);
+    }, (error) => {
      console.error("Snapshot error on fixed timetable:", error);
      if (onError) {
        onError(error);
@@ -243,9 +364,9 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
 };
 
 /**
- * Creates or updates a daily announcement for a specific date and period.
+ * Creates or updates a daily announcement/note for a specific date and period.
  * Overwrites existing announcement for that slot on that day.
- * @param {Omit<DailyAnnouncement, 'id' | 'updatedAt'>} announcementData - The announcement data.
+ * @param {Omit<DailyAnnouncement, 'id' | 'updatedAt'>} announcementData - The announcement data (date, period, text).
  * @returns {Promise<void>}
  */
 export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>): Promise<void> => {
@@ -254,17 +375,29 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
   const docId = `${date}_${period}`;
   const docRef = doc(dailyAnnouncementsCollection, docId);
 
+  // Ensure text is defined, default to empty string if not
+  const text = announcementData.text ?? '';
+
   const dataToSet: Omit<DailyAnnouncement, 'id'> = {
-    ...announcementData,
-    updatedAt: new Date(), // Set update timestamp
+    date: announcementData.date,
+    period: announcementData.period,
+    text: text, // Use sanitized text
+    updatedAt: new Date(), // Set update timestamp using client time (Firestore server timestamp is better if needed)
   };
 
   try {
     const oldDataSnap = await getDoc(docRef); // Might fail offline
     const oldData = oldDataSnap.exists() ? oldDataSnap.data() : null;
 
-    await setDoc(docRef, dataToSet);
-    await logAction('upsert_announcement', { docId, oldData, newData: dataToSet });
+    // Only log if data actually changed
+    const hasChanged = !oldData || oldData.text !== text;
+
+    await setDoc(docRef, dataToSet); // This will create or overwrite
+
+    if (hasChanged) {
+         await logAction('upsert_announcement', { docId, oldText: oldData?.text, newText: text });
+    }
+
   } catch (error) {
      console.error("Error upserting daily announcement:", error);
      if ((error as FirestoreError).code === 'unavailable') {
@@ -287,7 +420,9 @@ export const deleteDailyAnnouncement = async (date: string, period: number): Pro
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         if (oldDataSnap.exists()) {
             await deleteDoc(docRef);
-            await logAction('delete_announcement', { docId, oldData: oldDataSnap.data() });
+            await logAction('delete_announcement', { docId, oldText: oldDataSnap.data().text });
+        } else {
+            console.log(`Announcement ${docId} not found for deletion.`);
         }
     } catch (error) {
        console.error("Error deleting daily announcement:", error);
@@ -360,7 +495,7 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id'>): Promis
     const dataToSet = { ...eventData, createdAt: Timestamp.now() }; // Add creation timestamp
     try {
         await setDoc(newDocRef, dataToSet);
-        await logAction('add_event', { eventId: newDocRef.id, eventData: dataToSet });
+        await logAction('add_event', { eventId: newDocRef.id, title: eventData.title, startDate: eventData.startDate });
         return newDocRef.id;
     } catch (error) {
        console.error("Error adding school event:", error);
@@ -382,8 +517,11 @@ export const updateSchoolEvent = async (eventData: SchoolEvent): Promise<void> =
     try {
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         const oldData = oldDataSnap.exists() ? oldDataSnap.data() : null;
-        await setDoc(docRef, eventData, { merge: true });
-        await logAction('update_event', { eventId: eventData.id, oldData, newData: eventData });
+        await setDoc(docRef, eventData, { merge: true }); // Use merge if structure might vary
+         // Log only if data actually changed
+        if (JSON.stringify(oldData) !== JSON.stringify(eventData)) {
+            await logAction('update_event', { eventId: eventData.id, oldTitle: oldData?.title, newTitle: eventData.title });
+        }
     } catch (error) {
        console.error("Error updating school event:", error);
        if ((error as FirestoreError).code === 'unavailable') {
@@ -404,7 +542,7 @@ export const deleteSchoolEvent = async (eventId: string): Promise<void> => {
         const oldDataSnap = await getDoc(docRef); // Might fail offline
         if (oldDataSnap.exists()) {
             await deleteDoc(docRef);
-            await logAction('delete_event', { eventId, oldData: oldDataSnap.data() });
+            await logAction('delete_event', { eventId, oldTitle: oldDataSnap.data()?.title });
         }
     } catch (error) {
        console.error("Error deleting school event:", error);
@@ -460,8 +598,8 @@ const logAction = async (actionType: string, details: object, userId: string = '
     const newLogRef = doc(logsCollection); // Auto-generate ID
     await setDoc(newLogRef, logEntry);
   } catch (error) {
-    console.error("Failed to log action (might be offline):", error);
-    // Don't throw error here, logging is best-effort
+    // Don't throw error here, logging is best-effort, but log the logging failure itself
+    console.error(`Failed to log action '${actionType}' (might be offline):`, error);
   }
 };
 
@@ -504,3 +642,4 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 
 // Example: Wrap getSchoolEvents for React Query
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
+
