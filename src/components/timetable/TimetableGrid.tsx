@@ -348,8 +348,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const hasConnectivityError = queryError && !isOffline;
 
 
-  const numberOfPeriods = settings.numberOfPeriods;
-  const activeDays = settings.activeDays;
+  const numberOfPeriods = settings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
+  const activeDays = settings?.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
 
   const displayDays = useMemo(() => weekDays.map(date => {
         const dayOfWeekJs = date.getDay(); // 0 for Sunday, 6 for Saturday
@@ -394,37 +394,47 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
               時間
             </div>
             {/* Day Headers */}
-            {displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => (
-              <div
-                key={format(date, 'yyyy-MM-dd')}
-                className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''}`}
-              >
-                <div>{dayOfWeek ? getDayOfWeekName(dayOfWeek) : ''}</div>
-                 <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
-                  {getEventsForDay(date).map(event => (
-                      <div key={event.id} className="mt-1 p-1 bg-accent/20 text-accent-foreground rounded text-xs truncate flex items-center gap-1" title={event.title}>
-                           <CalendarDays className="w-3 h-3 shrink-0" />
-                           <span>{event.title}</span>
-                      </div>
-                  ))}
-              </div>
-            ))}
+            {displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => {
+               const dateStr = format(date, 'yyyy-MM-dd');
+               const headerKey = `header-${dateStr}`;
+               return (
+                  <div
+                     key={headerKey}
+                     className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''}`}
+                  >
+                      <div>{dayOfWeek ? getDayOfWeekName(dayOfWeek) : ''}</div>
+                      <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
+                      {getEventsForDay(date).map(event => {
+                          const eventKey = `event-${event.id}-${dateStr}`; // Ensure unique key
+                          return (
+                              <div key={eventKey} className="mt-1 p-1 bg-accent/20 text-accent-foreground rounded text-xs truncate flex items-center gap-1" title={event.title}>
+                                  <CalendarDays className="w-3 h-3 shrink-0" />
+                                  <span>{event.title}</span>
+                              </div>
+                          );
+                      })}
+                  </div>
+               );
+            })}
           </div>
 
           {/* Timetable Rows */}
           {isLoading ? (
-              Array.from({ length: numberOfPeriods || 6 }, (_, i) => i + 1).map((period) => (
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => (
                  <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">
                     <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
                         <Skeleton className="h-6 w-8" />
                     </div>
-                    {displayDays.map(({ date }) => (
-                        <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r flex flex-col justify-between`}>
-                            <Skeleton className="h-4 w-3/4 mb-1" /> {/* Subject name skel */}
-                            <Skeleton className="h-3 w-1/2 mb-2" /> {/* Teacher name skel */}
-                            <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
-                        </div>
-                    ))}
+                    {displayDays.map(({ date }) => {
+                       const skeletonCellKey = `skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`;
+                       return (
+                          <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r flex flex-col justify-between`}>
+                              <Skeleton className="h-4 w-3/4 mb-1" /> {/* Subject name skel */}
+                              <Skeleton className="h-3 w-1/2 mb-2" /> {/* Teacher name skel */}
+                              <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
+                          </div>
+                       );
+                    })}
                 </div>
               ))
           ) : (
@@ -437,7 +447,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   {/* Timetable Cells */}
                   {displayDays.map(({ date, dayOfWeek, isActive }) => {
                      const dateStr = format(date, 'yyyy-MM-dd');
-                     if (!dayOfWeek) return <div key={`${dateStr}-${period}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r bg-muted/30 h-full`}></div>;
+                     const cellKey = `${dateStr}-${period}`;
+
+                     if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r bg-muted/30 h-full`}></div>;
 
                      const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
                      const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
@@ -449,13 +461,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
                      // Check if the subject has changed compared to the fixed timetable
                      const fixedSubjectId = fixedSlot?.subjectId ?? null;
-                     // Check if subjectIdOverride exists AND is different from the fixedSubjectId
-                     const hasSubjectChanged = announcement?.subjectIdOverride !== undefined &&
-                                               announcement.subjectIdOverride !== fixedSubjectId;
+                     // Condition for showing '(変更)': Check if subjectIdOverride exists AND is different from fixedSubjectId
+                     const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined &&
+                                                      announcement.subjectIdOverride !== fixedSubjectId;
 
-                    const cells = (
+
+                    return (
                       <div
-                        key={`${dateStr}-${period}`}
+                        key={cellKey}
                         className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
                       >
                        {isActive ? (
@@ -468,7 +481,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                     >
                                         {displaySubject?.name ?? '未設定'}
                                         {/* Display '(変更)' only if subject ID override exists and is different */}
-                                        {hasSubjectChanged && (
+                                        {showSubjectChangeIndicator && (
                                             <span className="text-xs text-destructive ml-1">(変更)</span>
                                         )}
                                      </div>
@@ -510,7 +523,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                         )}
                       </div>
                     );
-                     return cells; // Explicitly return the cells
                   })}
                 </div>
               ))
