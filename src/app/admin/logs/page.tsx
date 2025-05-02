@@ -180,6 +180,9 @@ function LogsPageContent() {
     const showLoading = isLoading && !isOffline;
     const showError = error && !isOffline;
 
+    const tableHeaders = ['日時', '操作', 'ユーザー', '詳細', '操作'];
+    const headerWidths = ['w-[180px]', 'w-[150px]', 'w-[100px]', '', 'w-[100px] text-right'];
+
 
     return (
         <MainLayout>
@@ -218,62 +221,61 @@ function LogsPageContent() {
                     ) : (
                         <Table>
                             <TableHeader>
+                                {/* Render TableHeader Row using map */}
                                 <TableRow>
-                                    <TableHead className="w-[180px]">日時</TableHead>
-                                    <TableHead className="w-[150px]">操作</TableHead>
-                                    <TableHead className="w-[100px]">ユーザー</TableHead>
-                                    <TableHead>詳細</TableHead>
-                                    <TableHead className="w-[100px] text-right">操作</TableHead> {/* Header for Rollback */}
+                                    {tableHeaders.map((header, index) => (
+                                        <TableHead key={header} className={headerWidths[index]}>
+                                            {header}
+                                        </TableHead>
+                                    ))}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {logs.map((log) => {
                                     const canRollback = isRollbackPossible(log.action);
                                     const isCurrentlyRollingBack = rollingBackId === log.id;
-                                    return (
-                                        <TableRow key={log.id}>
-                                            <TableCell>{formatTimestamp(log.timestamp)}</TableCell>
-                                            <TableCell className="font-medium">{getActionDescription(log.action)}</TableCell>
-                                            <TableCell className="text-muted-foreground">{log.userId}</TableCell>
-                                            <TableCell>
-                                                {renderDetails(log.details)}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {canRollback && (
-                                                    <AlertDialog>
-                                                      <AlertDialogTrigger asChild>
-                                                         <Button
-                                                             variant="outline"
-                                                             size="sm"
-                                                             disabled={isOffline || !!rollingBackId} // Disable if offline or any rollback is in progress
-                                                             className={`h-8 ${isCurrentlyRollingBack ? 'animate-pulse' : ''}`}
-                                                         >
-                                                             <RotateCcw className={`mr-1 h-3 w-3 ${isCurrentlyRollingBack ? 'animate-spin' : ''}`} />
-                                                             {isCurrentlyRollingBack ? '処理中' : '元に戻す'}
-                                                         </Button>
-                                                      </AlertDialogTrigger>
-                                                      <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                          <AlertDialogTitle>操作を元に戻しますか？</AlertDialogTitle>
-                                                          <AlertDialogDescription>
-                                                             ログID: {log.id} ({getActionDescription(log.action)}) の操作を元に戻します。
-                                                             関連するデータが変更前の状態に復元されます。
-                                                             この操作はロールバックログとして記録されます。
-                                                             <strong className="block mt-2 text-destructive">注意: 複雑な操作や依存関係のある変更は、予期せぬ結果を招く可能性があります。</strong>
-                                                          </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                          <AlertDialogCancel disabled={isCurrentlyRollingBack}>キャンセル</AlertDialogCancel>
-                                                          <AlertDialogAction onClick={() => handleRollback(log.id!)} disabled={isCurrentlyRollingBack}>
-                                                            元に戻す
-                                                          </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                      </AlertDialogContent>
-                                                    </AlertDialog>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    );
+                                    const cells = [
+                                        <TableCell key={`${log.id}-timestamp`}>{formatTimestamp(log.timestamp)}</TableCell>,
+                                        <TableCell key={`${log.id}-action`} className="font-medium">{getActionDescription(log.action)}</TableCell>,
+                                        <TableCell key={`${log.id}-user`} className="text-muted-foreground">{log.userId}</TableCell>,
+                                        <TableCell key={`${log.id}-details`}>{renderDetails(log.details)}</TableCell>,
+                                        <TableCell key={`${log.id}-rollback`} className="text-right">
+                                            {canRollback && (
+                                                <AlertDialog>
+                                                  <AlertDialogTrigger asChild>
+                                                     <Button
+                                                         variant="outline"
+                                                         size="sm"
+                                                         disabled={isOffline || !!rollingBackId} // Disable if offline or any rollback is in progress
+                                                         className={`h-8 ${isCurrentlyRollingBack ? 'animate-pulse' : ''}`}
+                                                     >
+                                                         <RotateCcw className={`mr-1 h-3 w-3 ${isCurrentlyRollingBack ? 'animate-spin' : ''}`} />
+                                                         {isCurrentlyRollingBack ? '処理中' : '元に戻す'}
+                                                     </Button>
+                                                  </AlertDialogTrigger>
+                                                  <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                      <AlertDialogTitle>操作を元に戻しますか？</AlertDialogTitle>
+                                                      <AlertDialogDescription>
+                                                         ログID: {log.id} ({getActionDescription(log.action)}) の操作を元に戻します。
+                                                         関連するデータが変更前の状態に復元されます。
+                                                         この操作はロールバックログとして記録されます。
+                                                         <strong className="block mt-2 text-destructive">注意: 複雑な操作や依存関係のある変更は、予期せぬ結果を招く可能性があります。</strong>
+                                                      </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                      <AlertDialogCancel disabled={isCurrentlyRollingBack}>キャンセル</AlertDialogCancel>
+                                                      <AlertDialogAction onClick={() => handleRollback(log.id!)} disabled={isCurrentlyRollingBack}>
+                                                        元に戻す
+                                                      </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                  </AlertDialogContent>
+                                                </AlertDialog>
+                                            )}
+                                        </TableCell>
+                                    ];
+                                    // Render TableRow with cells from the array
+                                    return <TableRow key={log.id}>{cells}</TableRow>;
                                 })}
                             </TableBody>
                         </Table>
@@ -292,4 +294,3 @@ export default function LogsPage() {
         </QueryClientProvider>
     );
 }
-
