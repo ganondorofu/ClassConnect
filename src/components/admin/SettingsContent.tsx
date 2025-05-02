@@ -10,13 +10,14 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable, applyFixedTimetableForFuture } from '@/controllers/timetableController';
+import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable, applyFixedTimetableForFuture, resetFixedTimetable } from '@/controllers/timetableController';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, WifiOff, Save, Send } from 'lucide-react'; // Added Send icon
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertCircle, WifiOff, Save, Send, RotateCcw } from 'lucide-react'; // Added Send and RotateCcw icons
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
 
 // This component contains the core logic previously in SettingsPageContent
@@ -32,6 +33,7 @@ export default function SettingsContent() {
   // --- State for Fixed Timetable Editor ---
   const [editedFixedTimetable, setEditedFixedTimetable] = useState<FixedTimeSlot[]>([]);
   const [initialFixedTimetableData, setInitialFixedTimetableData] = useState<FixedTimeSlot[]>([]); // Store initial data for comparison
+  const [isResetting, setIsResetting] = useState(false); // State for reset operation
 
   // --- State for Subjects ---
   const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
@@ -253,6 +255,45 @@ export default function SettingsContent() {
       },
   });
 
+    // --- Mutation for Resetting Fixed Timetable ---
+   const resetTimetableMutation = useMutation({
+       mutationFn: resetFixedTimetable,
+       onSuccess: async () => {
+           toast({
+               title: "成功",
+               description: "固定時間割を初期化しました。",
+           });
+           // Invalidate queries to reflect the reset
+           await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
+           await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] }); // Also invalidate announcements
+           // Reset local state as well
+           const resetGrid: FixedTimeSlot[] = [];
+           (settings.activeDays ?? WeekDays).forEach(day => {
+               for (let period = 1; period <= settings.numberOfPeriods; period++) {
+                   resetGrid.push({
+                       id: `${day}_${period}`,
+                       day,
+                       period,
+                       subjectId: null,
+                   });
+               }
+           });
+           setEditedFixedTimetable(resetGrid);
+           setInitialFixedTimetableData(resetGrid);
+       },
+       onError: (error: Error) => {
+           console.error("Failed to reset fixed timetable:", error);
+           const isOfflineError = error.message.includes("オフラインのため");
+           setIsOffline(isOfflineError || !navigator.onLine);
+           toast({
+               title: isOfflineError ? "オフライン" : "エラー",
+               description: isOfflineError ? "固定時間割の初期化に失敗しました。接続を確認してください。" : `固定時間割の初期化に失敗しました: ${error.message}`,
+               variant: "destructive",
+           });
+       },
+       onSettled: () => setIsResetting(false),
+   });
+
 
   const handleSaveSettings = () => {
     if (isOffline) {
@@ -312,6 +353,16 @@ export default function SettingsContent() {
        applyFutureMutation.mutate();
    };
 
+   const handleResetTimetable = () => {
+        if (isOffline || isResetting) {
+           toast({ title: isOffline ? "オフライン" : "処理中", description: "固定時間割を初期化できません。", variant: "destructive" });
+           return;
+        }
+        setIsResetting(true);
+        resetTimetableMutation.mutate();
+   };
+
+
    const showLoadingSettings = isLoadingSettings && !isOffline;
    const showErrorSettings = errorSettings && !isOffline;
    const showLoadingFixed = isLoadingFixed && !isOffline;
@@ -332,18 +383,8 @@ export default function SettingsContent() {
      <div>
        <h1 className="text-2xl font-semibold mb-6">設定</h1>
 
-        {isOffline && (
-           <Alert variant="destructive" className="mb-6">
-             <WifiOff className="h-4 w-4" />
-             <AlertTitle>オフライン</AlertTitle>
-             <AlertDescription>
-               現在オフラインです。設定の表示や変更はできません。接続が回復するまでお待ちください。
-             </AlertDescription>
-           </Alert>
-         )}
-
         {/* --- Basic Settings Card --- */}
-        <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>基本設定</CardTitle>
             <CardDescription>クラスの1日の時間数を設定します。</CardDescription>
@@ -388,7 +429,7 @@ export default function SettingsContent() {
         </Card>
 
         {/* --- Fixed Timetable Card --- */}
-        <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+        <Card>
           <CardHeader>
             <CardTitle>固定時間割の設定</CardTitle>
             <CardDescription>基本的な曜日ごとの時間割を設定します。保存後、自動的に3週間先までの予定に適用されます。</CardDescription>
@@ -452,7 +493,7 @@ export default function SettingsContent() {
              )}
           </CardContent>
           <CardFooter className="flex justify-between items-center">
-             <div className="flex gap-2">
+             <div className="flex gap-2 items-center">
                   <Button
                       onClick={handleSaveFixedTimetable}
                       disabled={!hasFixedTimetableChanged || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline}
@@ -464,15 +505,43 @@ export default function SettingsContent() {
                         <p className="text-sm text-muted-foreground self-center">変更はありません。</p>
                    )}
              </div>
-             <Button
-                onClick={handleApplyFixedTimetable}
-                variant="outline"
-                disabled={applyFutureMutation.isPending || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline || hasFixedTimetableChanged}
-                title={hasFixedTimetableChanged ? "先に固定時間割を保存してください" : "現在の固定時間割を将来の日付に適用します"}
-             >
-                <Send className="mr-2 h-4 w-4" />
-                {applyFutureMutation.isPending ? '適用中...' : '固定時間割を将来に適用'}
-             </Button>
+             <div className="flex gap-2">
+                 <AlertDialog>
+                   <AlertDialogTrigger asChild>
+                     <Button
+                       variant="destructive"
+                       disabled={resetTimetableMutation.isPending || showLoadingFixed || isOffline}
+                     >
+                       <RotateCcw className="mr-2 h-4 w-4" />
+                       {resetTimetableMutation.isPending ? '初期化中...' : '時間割を初期化'}
+                     </Button>
+                   </AlertDialogTrigger>
+                   <AlertDialogContent>
+                     <AlertDialogHeader>
+                       <AlertDialogTitle>時間割を初期化しますか？</AlertDialogTitle>
+                       <AlertDialogDescription>
+                         すべての固定時間割の科目が「未設定」に戻ります。この操作は元に戻せません。
+                       </AlertDialogDescription>
+                     </AlertDialogHeader>
+                     <AlertDialogFooter>
+                       <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                       <AlertDialogAction onClick={handleResetTimetable} disabled={resetTimetableMutation.isPending || isOffline}>
+                         初期化する
+                       </AlertDialogAction>
+                     </AlertDialogFooter>
+                   </AlertDialogContent>
+                 </AlertDialog>
+
+                 <Button
+                    onClick={handleApplyFixedTimetable}
+                    variant="outline"
+                    disabled={applyFutureMutation.isPending || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline || hasFixedTimetableChanged}
+                    title={hasFixedTimetableChanged ? "先に固定時間割を保存してください" : "現在の固定時間割を将来の日付に適用します"}
+                 >
+                    <Send className="mr-2 h-4 w-4" />
+                    {applyFutureMutation.isPending ? '適用中...' : '固定時間割を将来に適用'}
+                 </Button>
+             </div>
           </CardFooter>
         </Card>
      </div>
