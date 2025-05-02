@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay, getDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -34,6 +34,7 @@ import {
 } from '@/controllers/timetableController';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController'; // Import subject functions
 import { AlertCircle, CalendarDays, Edit2, Trash2, WifiOff, User } from 'lucide-react'; // Added User icon
+import type { Timestamp, FirestoreError } from 'firebase/firestore';
 
 
 const DAY_CELL_WIDTH = "min-w-[180px]"; // Adjust width as needed
@@ -90,8 +91,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   // --- Tanstack Query Fetching ---
     const handleQueryError = (queryKey: string) => (error: unknown) => {
         console.error(`Query Error (${queryKey}):`, error);
-        const isOfflineError = (error as any)?.code === 'unavailable';
-        setIsOffline(isOfflineError || !navigator.onLine); // Update offline state based on error
+        const isOfflineError = (error as FirestoreError)?.code === 'unavailable';
+        setIsOffline(isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)); // Update offline state based on error
         toast({
           title: isOfflineError ? "オフライン" : "エラー",
           description: isOfflineError
@@ -323,8 +324,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     } catch (error: any) {
       console.error("Failed to save/delete announcement:", error);
        // Ensure FirestoreError type is imported or handled properly
-       const isFirebaseOfflineError = (error as any)?.code === 'unavailable' || error?.message?.includes("オフラインのため");
-      setIsOffline(isFirebaseOfflineError || !navigator.onLine);
+       const isFirebaseOfflineError = (error as FirestoreError)?.code === 'unavailable' || error?.message?.includes("オフラインのため");
+      setIsOffline(isFirebaseOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine));
       toast({
         title: isFirebaseOfflineError ? "オフライン" : "エラー",
         description: isFirebaseOfflineError
@@ -448,9 +449,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
                      // Check if the subject has changed compared to the fixed timetable
                      const fixedSubjectId = fixedSlot?.subjectId ?? null;
-                     const hasSubjectChanged = announcement?.subjectIdOverride !== undefined && (announcement.subjectIdOverride ?? null) !== fixedSubjectId;
+                     // Check if subjectIdOverride exists AND is different from the fixedSubjectId
+                     const hasSubjectChanged = announcement?.subjectIdOverride !== undefined &&
+                                               announcement.subjectIdOverride !== fixedSubjectId;
 
-                    return (
+                    const cells = (
                       <div
                         key={`${dateStr}-${period}`}
                         className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
@@ -464,7 +467,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                         title={displaySubject?.name ?? '未設定'}
                                     >
                                         {displaySubject?.name ?? '未設定'}
-                                        {/* Indicate change only if the subject ID override exists and is different from the fixed slot */}
+                                        {/* Display '(変更)' only if subject ID override exists and is different */}
                                         {hasSubjectChanged && (
                                             <span className="text-xs text-destructive ml-1">(変更)</span>
                                         )}
@@ -507,6 +510,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                         )}
                       </div>
                     );
+                     return cells; // Explicitly return the cells
                   })}
                 </div>
               ))
