@@ -62,8 +62,8 @@ function LogsPageContent() {
          mutationFn: (logId: string) => rollbackAction(logId, 'admin_user'), // Pass user ID if available
          onSuccess: (data, logId) => {
             toast({
-                 title: "ロールバック成功",
-                 description: `ログID: ${logId} の操作を元に戻しました。関連データが更新されるまで時間がかかる場合があります。`,
+                 title: "ロールバック/取り消し 成功",
+                 description: `ログID: ${logId} の操作を元に戻しました/取り消しました。関連データが更新されるまで時間がかかる場合があります。`,
              });
             // Invalidate relevant queries to reflect the rollback
              queryClientHook.invalidateQueries({ queryKey: ['actionLogs'] });
@@ -76,7 +76,7 @@ function LogsPageContent() {
          },
          onError: (error: Error, logId) => {
              toast({
-                 title: "ロールバック失敗",
+                 title: "ロールバック/取り消し 失敗",
                  description: `ログID: ${logId} の操作を元に戻せませんでした: ${error.message}`,
                  variant: "destructive",
                  duration: 7000, // Show error longer
@@ -100,11 +100,12 @@ function LogsPageContent() {
          const nonReversibleActions = [
             'apply_fixed_timetable_future',
             'reset_future_daily_announcements',
-            'reset_fixed_timetable', // Can be complex, disable automatic for safety
+            // 'reset_fixed_timetable', // Can be complex, but now potentially reversible
             'initialize_settings', // Might be okay, but disable for safety
-            'rollback_action', // Cannot rollback a rollback
-            'rollback_action_failed'
+            'rollback_action_failed', // Cannot rollback a failed rollback
+            'rollback_rollback_action', // Cannot rollback a rollback of a rollback (prevents loops)
          ];
+          // Allow rollback_action to be rolled back
          return !nonReversibleActions.includes(action);
      };
 
@@ -112,7 +113,13 @@ function LogsPageContent() {
     const formatTimestamp = (timestamp: Date | undefined): string => {
         if (!timestamp) return 'N/A';
         try {
-            return format(timestamp, 'yyyy/MM/dd HH:mm:ss', { locale: ja });
+            // Ensure timestamp is a Date object before formatting
+            const dateObject = timestamp instanceof Date ? timestamp : new Date(timestamp);
+             if (isNaN(dateObject.getTime())) {
+                 console.error("Invalid Date object passed to formatTimestamp:", timestamp);
+                 return 'Invalid Date';
+             }
+            return format(dateObject, 'yyyy/MM/dd HH:mm:ss', { locale: ja });
         } catch (e) {
             console.error("Error formatting timestamp:", e);
             return 'Invalid Date';
@@ -125,8 +132,8 @@ function LogsPageContent() {
             case 'update_settings': return '時間割設定変更';
             case 'initialize_settings': return '時間割設定初期化';
             case 'update_fixed_slot': return '固定時間割更新'; // Note: Might be part of batch now
-            case 'upsert_announcement': return '今日の連絡 更新/作成';
-            case 'delete_announcement': return '今日の連絡 削除';
+            case 'upsert_announcement': return '連絡(特定日) 更新/作成';
+            case 'delete_announcement': return '連絡(特定日) 削除';
             case 'add_event': return '行事追加';
             case 'update_event': return '行事更新';
             case 'delete_event': return '行事削除';
@@ -142,6 +149,7 @@ function LogsPageContent() {
             case 'delete_general_announcement': return '全体連絡 削除';
             case 'rollback_action': return '操作のロールバック'; // Log for rollback
             case 'rollback_action_failed': return 'ロールバック失敗'; // Log for failed rollback
+            case 'rollback_rollback_action': return 'ロールバックの取り消し'; // Log for rollback of a rollback
             default: return action;
         }
     };
@@ -152,14 +160,17 @@ function LogsPageContent() {
              if (!details) return '詳細なし';
 
              // Special handling for rollback logs
-             if (details.originalLogId) {
+             if (details.originalLogId || details.originalRollbackLogId || details.reappliedOriginalLogId) {
                  return (
                      <div className="text-xs text-muted-foreground break-all">
-                        <p>元ログID: {details.originalLogId}</p>
-                        <p>元アクション: {getActionDescription(details.originalAction)}</p>
-                        {details.restoredDocPath && <p>復元パス: {details.restoredDocPath}</p>}
+                        {details.originalLogId && <p>対象ログID: {details.originalLogId}</p>}
+                        {details.originalAction && <p>元アクション: {getActionDescription(details.originalAction)}</p>}
+                        {details.originalRollbackLogId && <p>取り消したロールバックID: {details.originalRollbackLogId}</p>}
+                        {details.reappliedOriginalLogId && <p>再適用した元ログID: {details.reappliedOriginalLogId}</p>}
+                        {details.reappliedAction && <p>再適用アクション: {getActionDescription(details.reappliedAction)}</p>}
+                        {details.restoredDocPath && <p>復元/更新パス: {details.restoredDocPath}</p>}
                         {details.deletedDocPath && <p>削除パス: {details.deletedDocPath}</p>}
-                        {details.restoredSlotsCount !== undefined && <p>復元スロット数: {details.restoredSlotsCount}</p>}
+                        {details.restoredSlotsCount !== undefined && <p>復元/更新スロット数: {details.restoredSlotsCount}</p>}
                         {details.error && <p className="text-destructive">エラー: {details.error}</p>}
                     </div>
                  );
@@ -181,7 +192,7 @@ function LogsPageContent() {
     const showError = error && !isOffline;
 
     const tableHeaders = ['日時', '操作', 'ユーザー', '詳細', '操作'];
-    const headerWidths = ['w-[180px]', 'w-[150px]', 'w-[100px]', '', 'w-[100px] text-right'];
+    const headerWidths = ['w-[180px]', 'w-[180px]', 'w-[100px]', '', 'w-[100px] text-right'];
 
 
     return (
@@ -234,6 +245,13 @@ function LogsPageContent() {
                                 {logs.map((log) => {
                                     const canRollback = isRollbackPossible(log.action);
                                     const isCurrentlyRollingBack = rollingBackId === log.id;
+                                    const isRollbackLog = log.action === 'rollback_action';
+                                    const buttonText = isRollbackLog ? '取り消し' : '元に戻す';
+                                    const dialogTitle = isRollbackLog ? 'ロールバックを取り消しますか？' : '操作を元に戻しますか？';
+                                    const dialogDescription = isRollbackLog
+                                        ? `ログID: ${log.id} のロールバック操作を取り消します。元の操作 (${getActionDescription(log.details?.originalAction ?? '')}) が再適用されます。`
+                                        : `ログID: ${log.id} (${getActionDescription(log.action)}) の操作を元に戻します。関連するデータが変更前の状態に復元されます。`;
+
                                     const cells = [
                                         <TableCell key={`${log.id}-timestamp`}>{formatTimestamp(log.timestamp)}</TableCell>,
                                         <TableCell key={`${log.id}-action`} className="font-medium">{getActionDescription(log.action)}</TableCell>,
@@ -250,23 +268,22 @@ function LogsPageContent() {
                                                          className={`h-8 ${isCurrentlyRollingBack ? 'animate-pulse' : ''}`}
                                                      >
                                                          <RotateCcw className={`mr-1 h-3 w-3 ${isCurrentlyRollingBack ? 'animate-spin' : ''}`} />
-                                                         {isCurrentlyRollingBack ? '処理中' : '元に戻す'}
+                                                         {isCurrentlyRollingBack ? '処理中' : buttonText}
                                                      </Button>
                                                   </AlertDialogTrigger>
                                                   <AlertDialogContent>
                                                     <AlertDialogHeader>
-                                                      <AlertDialogTitle>操作を元に戻しますか？</AlertDialogTitle>
+                                                      <AlertDialogTitle>{dialogTitle}</AlertDialogTitle>
                                                       <AlertDialogDescription>
-                                                         ログID: {log.id} ({getActionDescription(log.action)}) の操作を元に戻します。
-                                                         関連するデータが変更前の状態に復元されます。
-                                                         この操作はロールバックログとして記録されます。
+                                                         {dialogDescription}
+                                                         <br />この操作は{isRollbackLog ? 'ロールバック取り消し' : 'ロールバック'}ログとして記録されます。
                                                          <strong className="block mt-2 text-destructive">注意: 複雑な操作や依存関係のある変更は、予期せぬ結果を招く可能性があります。</strong>
                                                       </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                       <AlertDialogCancel disabled={isCurrentlyRollingBack}>キャンセル</AlertDialogCancel>
                                                       <AlertDialogAction onClick={() => handleRollback(log.id!)} disabled={isCurrentlyRollingBack}>
-                                                        元に戻す
+                                                        {buttonText}
                                                       </AlertDialogAction>
                                                     </AlertDialogFooter>
                                                   </AlertDialogContent>
@@ -294,3 +311,4 @@ export default function LogsPage() {
         </QueryClientProvider>
     );
 }
+
