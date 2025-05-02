@@ -1,28 +1,28 @@
 // src/lib/seedData.ts
 import { addSubject, getSubjects } from '@/controllers/subjectController'; // Import getSubjects
-import { batchUpdateFixedTimetable } from '@/controllers/timetableController';
+import { batchUpdateFixedTimetable, resetFixedTimetable } from '@/controllers/timetableController'; // Added resetFixedTimetable for potential full reset
 import type { Subject } from '@/models/subject'; // Correct import for Subject type
 import { FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 
-// Updated teacher names based on the image
+// Updated teacher names and subjects based on the image
 const seedSubjectsData: Omit<Subject, 'id'>[] = [
   { name: '電気回路', teacherName: '友田' },
-  { name: '実習A', teacherName: '担当A' }, // Placeholder for 実習A as no teacher is listed
+  { name: '実習A', teacherName: '担A' }, // Changed teacher name to match image
   { name: '体育', teacherName: '石/高/篠/瀬' },
   { name: '化学基礎', teacherName: '前田' },
   { name: '公共', teacherName: '黒崎' },
   { name: '家庭基礎', teacherName: '森部' },
   { name: '数II', teacherName: '小出' },
-  { name: 'ソフトウェア技術', teacherName: '中村' }, // Assuming this is the same as プログラミング技術 or keeping placeholder
+  // Note: "ソフトウェア技術" is not explicitly in the image, using "プロ技"
   { name: '英コミュII', teacherName: '奥/前/大' },
   { name: '現代の国語', teacherName: '新井' },
   { name: '電子回路', teacherName: '永田' },
-  { name: '実習B', teacherName: '担当B' }, // Placeholder for 実習B
-  { name: '保健', teacherName: '濵田' },
-  // { name: '化学基礎', teacherName: '前田' }, // Already added
-  { name: 'プログラミング技術', teacherName: '住原/友田' }, // Explicitly add this based on 7th period
-  { name: 'HR', teacherName: '担任' }, // Updated HR teacher name as per image (generic "担任")
-  { name: '選択A', teacherName: '奥/前/大' }, // Add 選択A
+  { name: '実習B', teacherName: '担B' }, // Changed teacher name to match image
+  { name: '保健', teacherName: '濱田' },
+  { name: 'プロ技', teacherName: '住原/友田' }, // Changed name to "プロ技" to match image
+  { name: 'HR', teacherName: '担' }, // Changed teacher name to match image
+  { name: '選択A', teacherName: '奥/前/大' },
+  // Add any other subjects if missed, ensuring names/teachers match image
 ];
 
 export const seedSubjects = async (): Promise<Subject[]> => {
@@ -60,8 +60,7 @@ export const seedSubjects = async (): Promise<Subject[]> => {
 export const seedFixedTimetable = async (subjects: Subject[]) => {
   console.log('Seeding fixed timetable...');
 
-  // Create a map for easy subject lookup by name AND teacher for more accuracy if needed
-  // Using name and teacher name for the key
+  // Create a map for easy subject lookup by name AND teacher
   const subjectMap = new Map(subjects.map(s => [`${s.name}-${s.teacherName}`, s.id]));
 
   const getSubjectId = (name: string, teacher: string): string | null => {
@@ -80,7 +79,7 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
     return id;
   };
 
-  // Use the timetable structure from the image
+  // Use the timetable structure directly from the image
   const fixedTimetableData: Omit<FixedTimeSlot, 'id'>[] = [
     // Monday
     { day: DayOfWeek.MONDAY, period: 1, subjectId: getSubjectId('電気回路', '友田') },
@@ -89,13 +88,13 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
     { day: DayOfWeek.MONDAY, period: 4, subjectId: getSubjectId('現代の国語', '新井') },
     { day: DayOfWeek.MONDAY, period: 5, subjectId: getSubjectId('英コミュII', '奥/前/大') },
     { day: DayOfWeek.MONDAY, period: 6, subjectId: getSubjectId('電子回路', '永田') },
-    { day: DayOfWeek.MONDAY, period: 7, subjectId: getSubjectId('プログラミング技術', '住原/友田') },
+    { day: DayOfWeek.MONDAY, period: 7, subjectId: getSubjectId('プロ技', '住原/友田') }, // Use プロ技
     // Tuesday
-    { day: DayOfWeek.TUESDAY, period: 1, subjectId: getSubjectId('実習A', '担当A') },
-    { day: DayOfWeek.TUESDAY, period: 2, subjectId: getSubjectId('実習A', '担当A') },
-    { day: DayOfWeek.TUESDAY, period: 3, subjectId: getSubjectId('実習A', '担当A') },
+    { day: DayOfWeek.TUESDAY, period: 1, subjectId: getSubjectId('実習A', '担A') }, // Use 担A
+    { day: DayOfWeek.TUESDAY, period: 2, subjectId: getSubjectId('実習A', '担A') }, // Use 担A
+    { day: DayOfWeek.TUESDAY, period: 3, subjectId: getSubjectId('実習A', '担A') }, // Use 担A
     { day: DayOfWeek.TUESDAY, period: 4, subjectId: getSubjectId('数II', '小出') },
-    { day: DayOfWeek.TUESDAY, period: 5, subjectId: getSubjectId('保健', '濵田') },
+    { day: DayOfWeek.TUESDAY, period: 5, subjectId: getSubjectId('保健', '濱田') },
     { day: DayOfWeek.TUESDAY, period: 6, subjectId: getSubjectId('化学基礎', '前田') },
     { day: DayOfWeek.TUESDAY, period: 7, subjectId: null }, // Empty slot
     // Wednesday
@@ -104,7 +103,7 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
     { day: DayOfWeek.WEDNESDAY, period: 3, subjectId: getSubjectId('英コミュII', '奥/前/大') },
     { day: DayOfWeek.WEDNESDAY, period: 4, subjectId: getSubjectId('数II', '小出') },
     { day: DayOfWeek.WEDNESDAY, period: 5, subjectId: getSubjectId('現代の国語', '新井') },
-    { day: DayOfWeek.WEDNESDAY, period: 6, subjectId: getSubjectId('プログラミング技術', '住原/友田') },
+    { day: DayOfWeek.WEDNESDAY, period: 6, subjectId: getSubjectId('プロ技', '住原/友田') }, // Use プロ技
     { day: DayOfWeek.WEDNESDAY, period: 7, subjectId: getSubjectId('電気回路', '友田') },
     // Thursday
     { day: DayOfWeek.THURSDAY, period: 1, subjectId: getSubjectId('化学基礎', '前田') },
@@ -112,15 +111,15 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
     { day: DayOfWeek.THURSDAY, period: 3, subjectId: getSubjectId('選択A', '奥/前/大') },
     { day: DayOfWeek.THURSDAY, period: 4, subjectId: getSubjectId('電子回路', '永田') },
     { day: DayOfWeek.THURSDAY, period: 5, subjectId: getSubjectId('公共', '黒崎') },
-    { day: DayOfWeek.THURSDAY, period: 6, subjectId: getSubjectId('HR', '担任') }, // Use '担任'
+    { day: DayOfWeek.THURSDAY, period: 6, subjectId: getSubjectId('HR', '担') }, // Use 担
     { day: DayOfWeek.THURSDAY, period: 7, subjectId: null }, // Empty slot
     // Friday
     { day: DayOfWeek.FRIDAY, period: 1, subjectId: getSubjectId('公共', '黒崎') },
     { day: DayOfWeek.FRIDAY, period: 2, subjectId: getSubjectId('数II', '小出') },
     { day: DayOfWeek.FRIDAY, period: 3, subjectId: getSubjectId('英コミュII', '奥/前/大') },
-    { day: DayOfWeek.FRIDAY, period: 4, subjectId: getSubjectId('実習B', '担当B') },
-    { day: DayOfWeek.FRIDAY, period: 5, subjectId: getSubjectId('実習B', '担当B') },
-    { day: DayOfWeek.FRIDAY, period: 6, subjectId: getSubjectId('実習B', '担当B') },
+    { day: DayOfWeek.FRIDAY, period: 4, subjectId: getSubjectId('実習B', '担B') }, // Use 担B
+    { day: DayOfWeek.FRIDAY, period: 5, subjectId: getSubjectId('実習B', '担B') }, // Use 担B
+    { day: DayOfWeek.FRIDAY, period: 6, subjectId: getSubjectId('実習B', '担B') }, // Use 担B
     { day: DayOfWeek.FRIDAY, period: 7, subjectId: null }, // Empty slot
   ];
 
@@ -135,7 +134,7 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
     // Fetch existing timetable to avoid overwriting unnecessarily if run multiple times.
     // However, for a seed, we usually *want* to overwrite to ensure a consistent state.
     // Let's proceed with batchUpdate which handles applying to future.
-    console.log("Updating fixed timetable with seed data...");
+    console.log("Updating fixed timetable with seed data based on the image...");
     await batchUpdateFixedTimetable(slotsWithIds);
     console.log('Seeded fixed timetable data based on image.');
   } catch (error) {
@@ -146,6 +145,15 @@ export const seedFixedTimetable = async (subjects: Subject[]) => {
 // Function to run all seed operations
 export const runSeedData = async () => {
     console.log("Starting data seeding...");
+    // Optionally reset timetable first to ensure clean state
+    // try {
+    //     console.log("Resetting timetable before seeding...");
+    //     await resetFixedTimetable();
+    // } catch (resetError) {
+    //     console.error("Error resetting timetable before seeding:", resetError);
+    //     // Decide if you want to continue seeding even if reset fails
+    // }
+
     const subjects = await seedSubjects(); // Ensure subjects are created/fetched first
     if (subjects.length > 0) {
         await seedFixedTimetable(subjects);
@@ -161,4 +169,3 @@ export const runSeedData = async () => {
 //     console.log("Detected SEED_DATA flag, running seed function...");
 //     runSeedData();
 // }
-
