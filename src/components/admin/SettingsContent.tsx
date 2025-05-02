@@ -415,7 +415,7 @@ export default function SettingsContent() {
    const tableHeaderCells = [
        <TableHead key="period-header" className="w-[60px]">時限</TableHead>,
        ...(settings?.activeDays ?? WeekDays).map((day) => (
-           <TableHead key={day} className="min-w-[180px]">{getDayOfWeekName(day)}</TableHead>
+           <TableHead key={`header-${day}`} className="min-w-[180px]">{getDayOfWeekName(day)}</TableHead>
        ))
    ];
 
@@ -506,7 +506,7 @@ export default function SettingsContent() {
                                     const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
                                     const subjectId = slot?.subjectId ?? null;
                                     return (
-                                     <TableCell key={`${day}-${period}`}>
+                                     <TableCell key={`${day}-${period}-cell`}>
                                        <SubjectSelector
                                            subjects={subjects}
                                            selectedSubjectId={subjectId}
