@@ -224,7 +224,7 @@ function LogsPageContent() {
                                 {/* Render TableHeader Row using map */}
                                 <TableRow>
                                     {tableHeaders.map((header, index) => (
-                                        <TableHead key={header} className={headerWidths[index]}>
+                                        <TableHead key={`${header}-${index}`} className={headerWidths[index]}>
                                             {header}
                                         </TableHead>
                                     ))}

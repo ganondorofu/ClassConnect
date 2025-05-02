@@ -231,7 +231,7 @@ function SubjectsPageContent() {
               <TableHeader>
                 <TableRow>
                   {tableHeaders.map((header, index) => (
-                    <TableHead key={header} className={headerWidths[index]}>{header}</TableHead>
+                    <TableHead key={`${header}-${index}`} className={headerWidths[index]}>{header}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
