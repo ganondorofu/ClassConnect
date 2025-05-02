@@ -18,7 +18,7 @@ import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Imp
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
 import type { Subject } from '@/models/subject'; // Import Subject type
-import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable'; // Combined imports
 import type { DailyAnnouncement } from '@/models/announcement';
 import {
   queryFnGetTimetableSettings,
@@ -445,7 +445,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                      const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
                      const displaySubject = getSubjectById(displaySubjectId);
                      const announcementDisplay = announcement?.text;
-                     const fixedSubject = getSubjectById(fixedSlot?.subjectId ?? null);
+
+                     // Check if the subject has changed compared to the fixed timetable
+                     const fixedSubjectId = fixedSlot?.subjectId ?? null;
+                     const hasSubjectChanged = announcement?.subjectIdOverride !== undefined && (announcement.subjectIdOverride ?? null) !== fixedSubjectId;
 
                     return (
                       <div
@@ -461,8 +464,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                                         title={displaySubject?.name ?? '未設定'}
                                     >
                                         {displaySubject?.name ?? '未設定'}
-                                        {/* Indicate change only if override exists and differs from fixed */}
-                                        {announcement?.subjectIdOverride !== undefined && announcement.subjectIdOverride !== (fixedSlot?.subjectId ?? null) && (
+                                        {/* Indicate change only if the subject ID override exists and is different from the fixed slot */}
+                                        {hasSubjectChanged && (
                                             <span className="text-xs text-destructive ml-1">(変更)</span>
                                         )}
                                      </div>
@@ -595,3 +598,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </Card>
   );
 }
+
