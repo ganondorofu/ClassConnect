@@ -412,6 +412,13 @@ export default function SettingsContent() {
        return JSON.stringify(editedFixedTimetable) !== JSON.stringify(initialFixedTimetableData);
    }, [editedFixedTimetable, initialFixedTimetableData]);
 
+   const tableHeaderCells = [
+       <TableHead key="period-header" className="w-[60px]">時限</TableHead>,
+       ...(settings?.activeDays ?? WeekDays).map((day) => (
+           <TableHead key={day} className="min-w-[180px]">{getDayOfWeekName(day)}</TableHead>
+       ))
+   ];
+
    // Return the actual JSX
    return (
      <div>
@@ -489,36 +496,30 @@ export default function SettingsContent() {
                  <div className="overflow-x-auto">
                      <Table>
                        <TableHeader>
-                         <TableRow>
-                           <TableHead className="w-[60px]">時限</TableHead>
-                           {(settings?.activeDays ?? WeekDays).map((day) => (
-                             <TableHead key={day} className="min-w-[180px]">
-                               {getDayOfWeekName(day)}
-                             </TableHead>
-                           ))}
-                         </TableRow>
+                         <TableRow>{tableHeaderCells}</TableRow>
                        </TableHeader>
                        <TableBody>
-                         {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => (
-                           <TableRow key={period}>
-                             <TableCell className="font-medium text-center">{period}</TableCell>
-                             {(settings?.activeDays ?? WeekDays).map((day) => {
-                               const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
-                               const subjectId = slot?.subjectId ?? null;
-                               return (
-                                 <TableCell key={day}>
-                                   <SubjectSelector
-                                       subjects={subjects}
-                                       selectedSubjectId={subjectId}
-                                       onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)}
-                                       placeholder="科目未設定"
-                                       disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
-                                   />
-                                 </TableCell>
-                               );
-                             })}
-                           </TableRow>
-                         ))}
+                         {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                            const cells = [
+                                <TableCell key={`period-cell-${period}`} className="font-medium text-center">{period}</TableCell>,
+                                ...(settings?.activeDays ?? WeekDays).map((day) => {
+                                    const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
+                                    const subjectId = slot?.subjectId ?? null;
+                                    return (
+                                     <TableCell key={`${day}-${period}`}>
+                                       <SubjectSelector
+                                           subjects={subjects}
+                                           selectedSubjectId={subjectId}
+                                           onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)}
+                                           placeholder="科目未設定"
+                                           disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
+                                       />
+                                     </TableCell>
+                                   );
+                                })
+                            ];
+                            return <TableRow key={period}>{cells}</TableRow>;
+                         })}
                        </TableBody>
                      </Table>
                  </div>
