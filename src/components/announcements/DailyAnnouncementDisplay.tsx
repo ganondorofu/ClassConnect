@@ -123,8 +123,8 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     }
 
     return (
+      // Add Tailwind typography styles for proper Markdown rendering
       <div className="prose dark:prose-invert max-w-none text-sm">
-        {/* Add Tailwind typography styles if installed: className="prose dark:prose-invert" */}
         <ReactMarkdown>{announcement.content}</ReactMarkdown>
       </div>
     );
