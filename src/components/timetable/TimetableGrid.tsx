@@ -19,7 +19,7 @@ import { SubjectSelector } from '@/components/timetable/SubjectSelector'; // Imp
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
 import type { Subject } from '@/models/subject'; // Import Subject type
 import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable'; // Combined imports
-import type { DailyAnnouncement } from '@/models/announcement';
+import type { DailyAnnouncement } from '@/models/announcement'; // Import the type
 import {
   queryFnGetTimetableSettings,
   queryFnGetFixedTimetable,
@@ -463,9 +463,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
                         // Check if the subject has changed compared to the fixed timetable
                         const fixedSubjectId = fixedSlot?.subjectId ?? null;
-                         // Condition for showing '(変更)': Check if subjectIdOverride exists AND is different from fixedSubjectId
-                         const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined &&
-                                                             announcement.subjectIdOverride !== fixedSubjectId;
+                         // Corrected condition: Show '(変更)' only if subjectIdOverride exists (not null/undefined) AND is different from fixedSubjectId
+                         const showSubjectChangeIndicator = announcement?.subjectIdOverride !== null &&
+                                                            announcement?.subjectIdOverride !== undefined &&
+                                                            announcement.subjectIdOverride !== fixedSubjectId;
 
 
                        return (
@@ -618,3 +619,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   );
 }
 
+
+
+    
