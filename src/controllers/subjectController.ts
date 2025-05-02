@@ -27,6 +27,15 @@ const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
 // --- Firestore Collection References ---
 const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
 
+// Helper function to create a plain object suitable for logging
+const prepareSubjectForLog = (subject: Subject | null): object | null => {
+  if (!subject) return null;
+  // Return a plain object without the ID if it exists, as ID is often the doc key
+  const { id, ...loggableSubject } = subject;
+  return loggableSubject;
+};
+
+
 // --- Subject Management Functions ---
 
 /**
@@ -69,10 +78,10 @@ export const addSubject = async (name: string, teacherName: string): Promise<str
   };
   try {
     const docRef = await addDoc(subjectsCollectionRef, dataToSet); // Automatically generates ID
-    const newSubject = { id: docRef.id, ...dataToSet };
+    const newSubjectLogData = { id: docRef.id, ...dataToSet }; // Include ID for context in log if needed
     await logAction('add_subject', {
         before: null,
-        after: newSubject
+        after: prepareSubjectForLog(newSubjectLogData) // Log the plain object
     });
     return docRef.id;
   } catch (error) {
@@ -116,8 +125,8 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
     await setDoc(docRef, dataToSet, { merge: true }); // Use merge:true or simply setDoc to overwrite
     const afterState = { id, ...dataToSet };
     await logAction('update_subject', {
-        before: beforeState,
-        after: afterState
+        before: prepareSubjectForLog(beforeState), // Log plain objects
+        after: prepareSubjectForLog(afterState)
      });
   } catch (error) {
     console.error("Error updating subject:", error);
@@ -164,7 +173,7 @@ export const deleteSubject = async (id: string): Promise<void> => {
 
     if (beforeState) { // Only log if the document actually existed
         await logAction('delete_subject', {
-            before: beforeState,
+            before: prepareSubjectForLog(beforeState), // Log plain object
             after: null
         });
     }
@@ -207,3 +216,4 @@ export const onSubjectsUpdate = (
 
 // --- React Query Integration Helpers ---
 export const queryFnGetSubjects = () => getSubjects();
+
