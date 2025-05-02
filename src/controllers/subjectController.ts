@@ -13,8 +13,10 @@ import {
   Unsubscribe,
   FirestoreError,
   addDoc, // Use addDoc for auto-generated IDs
+  getDoc, // Import getDoc
 } from 'firebase/firestore';
 import type { Subject } from '@/models/subject';
+import { logAction } from '@/services/logService'; // Import logAction
 
 /**
  * Placeholder for the current class ID.
@@ -23,32 +25,7 @@ import type { Subject } from '@/models/subject';
 const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
 
 // --- Firestore Collection References ---
-const subjectsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
-const logsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'logs'); // For audit logs (reuse from timetableController or separate)
-
-// --- Helper for Logging (Consider moving to a shared logging service) ---
-import { Timestamp } from 'firebase/firestore';
-const logAction = async (actionType: string, details: object, userId: string = 'anonymous') => {
-  const cleanDetails = JSON.parse(JSON.stringify(details, (key, value) =>
-      value === undefined ? null : value
-  ));
-  const logEntry = {
-      action: actionType,
-      timestamp: Timestamp.now(),
-      userId: userId,
-      details: cleanDetails,
-    };
-  try {
-    const newLogRef = doc(logsCollection);
-    await setDoc(newLogRef, logEntry);
-  } catch (error) {
-    console.error(`Failed to log action '${actionType}' (might be offline):`, error);
-     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
-        console.error("Firestore Logging Error: Attempted to save 'undefined' in log details.", logEntry);
-    }
-  }
-};
-
+const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
 
 // --- Subject Management Functions ---
 
@@ -58,7 +35,7 @@ const logAction = async (actionType: string, details: object, userId: string = '
  */
 export const getSubjects = async (): Promise<Subject[]> => {
   try {
-    const q = query(subjectsCollection, orderBy('name'));
+    const q = query(subjectsCollectionRef, orderBy('name'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject));
   } catch (error) {
@@ -91,8 +68,12 @@ export const addSubject = async (name: string, teacherName: string): Promise<str
     teacherName: teacherName.trim(),
   };
   try {
-    const docRef = await addDoc(subjectsCollection, dataToSet); // Automatically generates ID
-    await logAction('add_subject', { subjectId: docRef.id, name: dataToSet.name, teacherName: dataToSet.teacherName });
+    const docRef = await addDoc(subjectsCollectionRef, dataToSet); // Automatically generates ID
+    const newSubject = { id: docRef.id, ...dataToSet };
+    await logAction('add_subject', {
+        before: null,
+        after: newSubject
+    });
     return docRef.id;
   } catch (error) {
     console.error("Error adding subject:", error);
@@ -118,15 +99,26 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
    if (!id) throw new Error("Subject ID is required for updates.");
    if (!name || !teacherName) throw new Error("科目名と教員名は必須です。");
 
-  const docRef = doc(subjectsCollection, id);
+  const docRef = doc(subjectsCollectionRef, id);
   const dataToSet: Omit<Subject, 'id'> = {
     name: name.trim(),
     teacherName: teacherName.trim(),
   };
+  let beforeState: Subject | null = null;
+
   try {
-    // Consider fetching old data if detailed logging is needed
+    // Fetch old data for logging 'before' state
+    const oldSnap = await getDoc(docRef);
+    if (oldSnap.exists()) {
+        beforeState = { id: oldSnap.id, ...oldSnap.data() } as Subject;
+    }
+
     await setDoc(docRef, dataToSet, { merge: true }); // Use merge:true or simply setDoc to overwrite
-    await logAction('update_subject', { subjectId: id, newName: dataToSet.name, newTeacherName: dataToSet.teacherName });
+    const afterState = { id, ...dataToSet };
+    await logAction('update_subject', {
+        before: beforeState,
+        after: afterState
+     });
   } catch (error) {
     console.error("Error updating subject:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -142,14 +134,13 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
 
 /**
  * Deletes a subject.
- * TODO: Consider implications - what happens to timetable slots using this subject?
- *       Option 1: Prevent deletion if in use.
- *       Option 2: Set subjectId to null in related slots (requires extra logic).
  * @param {string} id - The ID of the subject to delete.
  * @returns {Promise<void>}
  */
 export const deleteSubject = async (id: string): Promise<void> => {
   if (!id) throw new Error("Subject ID is required for deletion.");
+  const docRef = doc(subjectsCollectionRef, id);
+  let beforeState: Subject | null = null;
 
   // --- Optional: Check if subject is in use before deleting ---
   // This requires querying fixedTimetable and potentially dailyAnnouncements
@@ -162,11 +153,21 @@ export const deleteSubject = async (id: string): Promise<void> => {
   // }
   // --- End Optional Check ---
 
-  const docRef = doc(subjectsCollection, id);
   try {
-     // Consider fetching old data if detailed logging is needed
+     // Fetch old data for logging 'before' state
+     const oldSnap = await getDoc(docRef);
+     if (oldSnap.exists()) {
+         beforeState = { id: oldSnap.id, ...oldSnap.data() } as Subject;
+     }
+
     await deleteDoc(docRef);
-    await logAction('delete_subject', { subjectId: id });
+
+    if (beforeState) { // Only log if the document actually existed
+        await logAction('delete_subject', {
+            before: beforeState,
+            after: null
+        });
+    }
   } catch (error) {
     console.error("Error deleting subject:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -186,7 +187,7 @@ export const onSubjectsUpdate = (
     callback: (subjects: Subject[]) => void,
     onError?: (error: Error) => void
 ): Unsubscribe => {
-    const q = query(subjectsCollection, orderBy('name'));
+    const q = query(subjectsCollectionRef, orderBy('name'));
     return onSnapshot(q, (snapshot) => {
         const subjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject));
         callback(subjects);
