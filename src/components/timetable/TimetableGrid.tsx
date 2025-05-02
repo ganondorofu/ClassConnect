@@ -364,6 +364,35 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         return { date, dayOfWeek: dayOfWeekStr, isActive, isWeekend };
     }), [weekDays, activeDays]);
 
+  const headers = [
+    <div key="header-time" className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10`}>
+      時間
+    </div>,
+    ...displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const headerKey = `header-${dateStr}`;
+      return (
+        <div
+          key={headerKey}
+          className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''}`}
+        >
+          <div>{dayOfWeek ? getDayOfWeekName(dayOfWeek) : ''}</div>
+          <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
+          {getEventsForDay(date).map(event => {
+            const eventKey = `event-${event.id}-${dateStr}`; // Ensure unique key
+            return (
+              <div key={eventKey} className="mt-1 p-1 bg-accent/20 text-accent-foreground rounded text-xs truncate flex items-center gap-1" title={event.title}>
+                <CalendarDays className="w-3 h-3 shrink-0" />
+                <span>{event.title}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    })
+  ];
+
+
   return (
     <Card className="w-full overflow-hidden shadow-lg rounded-lg">
       <CardHeader className="p-4 border-b">
@@ -389,43 +418,17 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <div className="flex border-b">
-            {/* Time Column Header */}
-            <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10`}>
-              時間
-            </div>
-            {/* Day Headers */}
-            {displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => {
-               const dateStr = format(date, 'yyyy-MM-dd');
-               const headerKey = `header-${dateStr}`;
-               return (
-                  <div
-                     key={headerKey}
-                     className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''}`}
-                  >
-                      <div>{dayOfWeek ? getDayOfWeekName(dayOfWeek) : ''}</div>
-                      <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
-                      {getEventsForDay(date).map(event => {
-                          const eventKey = `event-${event.id}-${dateStr}`; // Ensure unique key
-                          return (
-                              <div key={eventKey} className="mt-1 p-1 bg-accent/20 text-accent-foreground rounded text-xs truncate flex items-center gap-1" title={event.title}>
-                                  <CalendarDays className="w-3 h-3 shrink-0" />
-                                  <span>{event.title}</span>
-                              </div>
-                          );
-                      })}
-                  </div>
-               );
-            })}
+            {headers}
           </div>
 
           {/* Timetable Rows */}
           {isLoading ? (
-              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => (
-                 <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">
-                    <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                 const skeletonCells = [
+                    <div key={`skeleton-period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
                         <Skeleton className="h-6 w-8" />
-                    </div>
-                    {displayDays.map(({ date }) => {
+                    </div>,
+                    ...displayDays.map(({ date }) => {
                        const skeletonCellKey = `skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`;
                        return (
                           <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r flex flex-col justify-between`}>
@@ -434,98 +437,98 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
                           </div>
                        );
-                    })}
-                </div>
-              ))
+                    })
+                 ];
+                 return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">{skeletonCells}</div>;
+              })
           ) : (
-              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => (
-                <div key={period} className="flex border-b min-h-[90px]"> {/* Increased min-height */}
-                  {/* Period Number Column */}
-                  <div className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
-                    {period}限
-                  </div>
-                  {/* Timetable Cells */}
-                  {displayDays.map(({ date, dayOfWeek, isActive }) => {
-                     const dateStr = format(date, 'yyyy-MM-dd');
-                     const cellKey = `${dateStr}-${period}`;
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                 const cells = [
+                     <div key={`period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-background z-10 flex items-center justify-center`}>
+                       {period}限
+                     </div>,
+                     ...displayDays.map(({ date, dayOfWeek, isActive }) => {
+                        const dateStr = format(date, 'yyyy-MM-dd');
+                        const cellKey = `${dateStr}-${period}`;
 
-                     if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r bg-muted/30 h-full`}></div>;
+                        if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r bg-muted/30 h-full`}></div>;
 
-                     const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
-                     const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
-                     const hasEvent = !isActive && getEventsForDay(date).length > 0;
+                        const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
+                        const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
+                        const hasEvent = !isActive && getEventsForDay(date).length > 0;
 
-                     const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
-                     const displaySubject = getSubjectById(displaySubjectId);
-                     const announcementDisplay = announcement?.text;
+                        const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
+                        const displaySubject = getSubjectById(displaySubjectId);
+                        const announcementDisplay = announcement?.text;
 
-                     // Check if the subject has changed compared to the fixed timetable
-                     const fixedSubjectId = fixedSlot?.subjectId ?? null;
-                     // Condition for showing '(変更)': Check if subjectIdOverride exists AND is different from fixedSubjectId
-                     const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined &&
-                                                      announcement.subjectIdOverride !== fixedSubjectId;
+                        // Check if the subject has changed compared to the fixed timetable
+                        const fixedSubjectId = fixedSlot?.subjectId ?? null;
+                         // Condition for showing '(変更)': Check if subjectIdOverride exists AND is different from fixedSubjectId
+                         const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined &&
+                                                             announcement.subjectIdOverride !== fixedSubjectId;
 
 
-                    return (
-                      <div
-                        key={cellKey}
-                        className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
-                      >
-                       {isActive ? (
-                             <>
-                                {/* Subject and Teacher */}
-                                <div className="mb-1">
-                                    <div
-                                        className="text-sm truncate font-medium"
-                                        title={displaySubject?.name ?? '未設定'}
-                                    >
-                                        {displaySubject?.name ?? '未設定'}
-                                        {/* Display '(変更)' only if subject ID override exists and is different */}
-                                        {showSubjectChangeIndicator && (
-                                            <span className="text-xs text-destructive ml-1">(変更)</span>
-                                        )}
-                                     </div>
-                                      {displaySubject?.teacherName && (
-                                          <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
-                                             <User className="w-3 h-3 shrink-0" />
-                                             {displaySubject.teacherName}
-                                          </div>
-                                      )}
-                                 </div>
-
-                                 {/* Announcement Text */}
-                                 <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                                     {announcementDisplay && (
-                                         <div className="p-1 rounded bg-card border border-dashed border-accent/50">
-                                             <p className="text-foreground whitespace-pre-wrap">{announcementDisplay}</p>
+                       return (
+                         <div
+                           key={cellKey}
+                           className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''}`}
+                         >
+                          {isActive ? (
+                                <>
+                                   {/* Subject and Teacher */}
+                                   <div className="mb-1">
+                                       <div
+                                           className="text-sm truncate font-medium"
+                                           title={displaySubject?.name ?? '未設定'}
+                                       >
+                                           {displaySubject?.name ?? '未設定'}
+                                           {/* Display '(変更)' only if subject ID override exists and is different */}
+                                           {showSubjectChangeIndicator && (
+                                               <span className="text-xs text-destructive ml-1">(変更)</span>
+                                           )}
                                         </div>
-                                     )}
-                                 </div>
+                                         {displaySubject?.teacherName && (
+                                             <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
+                                                <User className="w-3 h-3 shrink-0" />
+                                                {displaySubject.teacherName}
+                                             </div>
+                                         )}
+                                    </div>
 
-                                 {/* Edit Button */}
-                                 <div className="mt-auto">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
-                                        onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                        aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
-                                        disabled={isOffline}
-                                    >
-                                        <Edit2 className="w-3 h-3" />
-                                    </Button>
-                                </div>
-                             </>
-                        ) : hasEvent ? (
-                            <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
-                        ) : (
-                             <div className="h-full"></div> // Empty cell for inactive days
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))
+                                    {/* Announcement Text */}
+                                    <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
+                                        {announcementDisplay && (
+                                            <div className="p-1 rounded bg-card border border-dashed border-accent/50">
+                                                <p className="text-foreground whitespace-pre-wrap">{announcementDisplay}</p>
+                                           </div>
+                                        )}
+                                    </div>
+
+                                    {/* Edit Button */}
+                                    <div className="mt-auto">
+                                       <Button
+                                           variant="ghost"
+                                           size="sm"
+                                           className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
+                                           onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
+                                           aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
+                                           disabled={isOffline}
+                                       >
+                                           <Edit2 className="w-3 h-3" />
+                                       </Button>
+                                   </div>
+                                </>
+                           ) : hasEvent ? (
+                               <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
+                           ) : (
+                                <div className="h-full"></div> // Empty cell for inactive days
+                           )}
+                         </div>
+                       );
+                     })
+                 ];
+                 return <div key={`row-${period}`} className="flex border-b min-h-[90px]">{cells}</div>;
+               })
           )}
         </div>
 
