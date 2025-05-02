@@ -10,14 +10,14 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable, applyFixedTimetableForFuture, resetFixedTimetable } from '@/controllers/timetableController';
+import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable, applyFixedTimetableForFuture, resetFixedTimetable, resetFutureDailyAnnouncements } from '@/controllers/timetableController'; // Added resetFutureDailyAnnouncements
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { AlertCircle, WifiOff, Save, Send, RotateCcw } from 'lucide-react'; // Added Send and RotateCcw icons
+import { AlertCircle, WifiOff, Save, Send, RotateCcw, RefreshCw } from 'lucide-react'; // Added Send, RotateCcw, RefreshCw icons
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
 
 // This component contains the core logic previously in SettingsPageContent
@@ -34,6 +34,7 @@ export default function SettingsContent() {
   const [editedFixedTimetable, setEditedFixedTimetable] = useState<FixedTimeSlot[]>([]);
   const [initialFixedTimetableData, setInitialFixedTimetableData] = useState<FixedTimeSlot[]>([]); // Store initial data for comparison
   const [isResetting, setIsResetting] = useState(false); // State for reset operation
+  const [isOverwritingFuture, setIsOverwritingFuture] = useState(false); // State for overwrite future operation
 
   // --- State for Subjects ---
   const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
@@ -294,6 +295,30 @@ export default function SettingsContent() {
        onSettled: () => setIsResetting(false),
    });
 
+    // --- Mutation for Overwriting Future Daily Announcements ---
+    const overwriteFutureMutation = useMutation({
+        mutationFn: resetFutureDailyAnnouncements,
+        onSuccess: async () => {
+            toast({
+                title: "成功",
+                description: "将来の時間割を基本時間割で上書きしました。",
+            });
+            // Invalidate daily announcements to reflect the reset
+            await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
+        },
+        onError: (error: Error) => {
+            console.error("Failed to overwrite future daily announcements:", error);
+            const isOfflineError = error.message.includes("オフラインのため");
+            setIsOffline(isOfflineError || !navigator.onLine);
+            toast({
+                title: isOfflineError ? "オフライン" : "エラー",
+                description: isOfflineError ? "将来の時間割の上書きに失敗しました。接続を確認してください。" : `将来の時間割の上書きに失敗しました: ${error.message}`,
+                variant: "destructive",
+            });
+        },
+        onSettled: () => setIsOverwritingFuture(false),
+    });
+
 
   const handleSaveSettings = () => {
     if (isOffline) {
@@ -360,6 +385,15 @@ export default function SettingsContent() {
         }
         setIsResetting(true);
         resetTimetableMutation.mutate();
+   };
+
+   const handleOverwriteFuture = () => {
+        if (isOffline || isOverwritingFuture) {
+            toast({ title: isOffline ? "オフライン" : "処理中", description: "将来の時間割を上書きできません。", variant: "destructive" });
+            return;
+        }
+        setIsOverwritingFuture(true);
+        overwriteFutureMutation.mutate();
    };
 
 
@@ -492,7 +526,7 @@ export default function SettingsContent() {
                  <p className="text-muted-foreground text-center py-4">時間割データがありません。</p>
              )}
           </CardContent>
-          <CardFooter className="flex justify-between items-center">
+          <CardFooter className="flex justify-between items-center flex-wrap gap-2">
              <div className="flex gap-2 items-center">
                   <Button
                       onClick={handleSaveFixedTimetable}
@@ -505,7 +539,7 @@ export default function SettingsContent() {
                         <p className="text-sm text-muted-foreground self-center">変更はありません。</p>
                    )}
              </div>
-             <div className="flex gap-2">
+             <div className="flex gap-2 flex-wrap">
                  <AlertDialog>
                    <AlertDialogTrigger asChild>
                      <Button
@@ -520,7 +554,7 @@ export default function SettingsContent() {
                      <AlertDialogHeader>
                        <AlertDialogTitle>時間割を初期化しますか？</AlertDialogTitle>
                        <AlertDialogDescription>
-                         すべての固定時間割の科目が「未設定」に戻ります。この操作は元に戻せません。
+                         すべての固定時間割の科目が「未設定」に戻ります。将来の時間割も未設定で上書きされます。この操作は元に戻せません。
                        </AlertDialogDescription>
                      </AlertDialogHeader>
                      <AlertDialogFooter>
@@ -532,15 +566,45 @@ export default function SettingsContent() {
                    </AlertDialogContent>
                  </AlertDialog>
 
+                 <AlertDialog>
+                     <AlertDialogTrigger asChild>
+                         <Button
+                             variant="outline"
+                             disabled={overwriteFutureMutation.isPending || fixedTimetableMutation.isPending || isResetting || isOffline}
+                             title="現在保存されている固定時間割で、将来の変更を含むすべての日付を上書きします"
+                         >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            {overwriteFutureMutation.isPending ? '上書き中...' : '将来の時間割を基本で上書き'}
+                         </Button>
+                     </AlertDialogTrigger>
+                     <AlertDialogContent>
+                         <AlertDialogHeader>
+                             <AlertDialogTitle>将来の時間割を上書きしますか？</AlertDialogTitle>
+                             <AlertDialogDescription>
+                                現在保存されている固定時間割の内容で、将来の日付のすべての時間割（手動での変更を含む）を上書きします。この操作は元に戻せません。
+                             </AlertDialogDescription>
+                         </AlertDialogHeader>
+                         <AlertDialogFooter>
+                             <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                             <AlertDialogAction onClick={handleOverwriteFuture} disabled={overwriteFutureMutation.isPending || isOffline}>
+                                 上書きする
+                             </AlertDialogAction>
+                         </AlertDialogFooter>
+                     </AlertDialogContent>
+                 </AlertDialog>
+
+                 {/* Kept the 'Apply to Future' button for non-destructive application */}
+                 {/*
                  <Button
                     onClick={handleApplyFixedTimetable}
                     variant="outline"
                     disabled={applyFutureMutation.isPending || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline || hasFixedTimetableChanged}
-                    title={hasFixedTimetableChanged ? "先に固定時間割を保存してください" : "現在の固定時間割を将来の日付に適用します"}
+                    title={hasFixedTimetableChanged ? "先に固定時間割を保存してください" : "現在の固定時間割を将来の日付に適用します（既存の変更は保持）"}
                  >
                     <Send className="mr-2 h-4 w-4" />
                     {applyFutureMutation.isPending ? '適用中...' : '固定時間割を将来に適用'}
                  </Button>
+                 */}
              </div>
           </CardFooter>
         </Card>

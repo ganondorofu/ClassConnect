@@ -914,6 +914,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
         const today = startOfDay(new Date());
         const batch = writeBatch(db);
         let operationsCount = 0;
+        let datesAffected: string[] = [];
 
         const dayMapping: { [key: number]: DayOfWeek } = {
             1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY,
@@ -942,11 +943,12 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
             // Apply fixed slots for this day
             const fixedSlotsForDay = fixedTimetable.filter(slot => slot.day === dayOfWeekEnum);
+            let dateNeedsUpdate = false;
 
             for (const fixedSlot of fixedSlotsForDay) {
                 const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
 
-                // Only create/update if the period is within the defined number of periods
+                // Only consider periods within the defined number of periods
                  if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) {
                      continue;
                  }
@@ -965,6 +967,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
                     };
                     batch.set(docRef, newAnnouncementData);
                     operationsCount++;
+                    dateNeedsUpdate = true;
                 } else {
                      // If existing announcement has NO text and NO subject override,
                      // update it with the fixed subject ID (or null if fixed slot has no subject).
@@ -978,16 +981,20 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
                                 updatedAt: Timestamp.now()
                             });
                             operationsCount++;
+                            dateNeedsUpdate = true;
                          }
                      }
                 }
+            }
+            if (dateNeedsUpdate && !datesAffected.includes(dateStr)) {
+                datesAffected.push(dateStr);
             }
         }
 
         if (operationsCount > 0) {
             await batch.commit();
-            console.log(`Successfully applied/updated fixed timetable for ${operationsCount} future slots.`);
-            await logAction('apply_fixed_timetable_future', { operationsCount, weeksApplied: FUTURE_WEEKS_TO_APPLY });
+            console.log(`Successfully applied/updated fixed timetable for ${operationsCount} future slots across ${datesAffected.length} days.`);
+            await logAction('apply_fixed_timetable_future', { operationsCount, daysAffected: datesAffected.length, weeksApplied: FUTURE_WEEKS_TO_APPLY });
         } else {
             console.log("No future slots needed updating based on fixed timetable.");
         }
@@ -999,6 +1006,113 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
             console.warn("Client is offline. Cannot apply fixed timetable to future.");
         } else if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
              console.error("Firestore index required for applying fixed timetable to future. Check getDailyAnnouncements index requirements. ", (error as FirestoreError).message);
+        }
+    }
+};
+
+/**
+ * Overwrites future daily announcements with the fixed timetable data for the next N weeks.
+ * Unlike `applyFixedTimetableForFuture`, this function *always* overwrites existing announcements.
+ * @returns {Promise<void>}
+ */
+export const resetFutureDailyAnnouncements = async (): Promise<void> => {
+    console.log("Starting to reset future daily announcements with fixed timetable...");
+    try {
+        const settings = await getTimetableSettings();
+        const fixedTimetable = await getFixedTimetable();
+
+        if (!fixedTimetable || fixedTimetable.length === 0) {
+            console.warn("No fixed timetable data found. Cannot reset future.");
+            // Consider deleting future announcements if fixed timetable is empty? For now, just return.
+            return;
+        }
+
+        const today = startOfDay(new Date());
+        const batch = writeBatch(db);
+        let operationsCount = 0;
+        let datesAffected: string[] = [];
+
+        const dayMapping: { [key: number]: DayOfWeek } = {
+            1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY,
+            4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY,
+            6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY,
+        };
+
+        const activeDaysSet = new Set(settings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays);
+
+        // Iterate through the next N weeks
+        for (let i = 0; i < FUTURE_WEEKS_TO_APPLY * 7; i++) {
+            const futureDate = addDays(today, i + 1); // Start from tomorrow
+            const dateStr = format(futureDate, 'yyyy-MM-dd');
+            const dayOfWeekJs = getDay(futureDate);
+            const dayOfWeekEnum = dayMapping[dayOfWeekJs];
+
+            if (!dayOfWeekEnum || !activeDaysSet.has(dayOfWeekEnum)) {
+                continue;
+            }
+
+            // Fetch existing announcements for deletion/overwrite check (optional but good for logging)
+            const existingAnnouncements = await getDailyAnnouncements(dateStr);
+            const existingAnnouncementsMap = new Map(existingAnnouncements.map(a => [a.period, a]));
+            let dateNeedsUpdate = false;
+
+            const fixedSlotsForDay = fixedTimetable.filter(slot => slot.day === dayOfWeekEnum);
+
+            for (const fixedSlot of fixedSlotsForDay) {
+                if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) {
+                    continue;
+                }
+
+                const docId = `${dateStr}_${fixedSlot.period}`;
+                const docRef = doc(dailyAnnouncementsCollection, docId);
+                const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
+
+                const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = {
+                    date: dateStr,
+                    period: fixedSlot.period,
+                    subjectIdOverride: fixedSlot.subjectId ?? null, // Apply fixed subject ID (or null)
+                    text: '', // Reset text
+                    updatedAt: Timestamp.now(),
+                };
+
+                // Overwrite regardless of existing content
+                batch.set(docRef, newAnnouncementData);
+                operationsCount++;
+                dateNeedsUpdate = true;
+            }
+             if (dateNeedsUpdate && !datesAffected.includes(dateStr)) {
+                datesAffected.push(dateStr);
+            }
+
+            // Optionally delete announcements for periods that *don't* exist in the fixed timetable for this day
+            // This ensures future days perfectly match the fixed schedule after a reset.
+            existingAnnouncementsMap.forEach((ann, period) => {
+                const existsInFixed = fixedSlotsForDay.some(fs => fs.period === period);
+                if (!existsInFixed && period <= (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) {
+                    const docId = `${dateStr}_${period}`;
+                    const docRef = doc(dailyAnnouncementsCollection, docId);
+                    batch.delete(docRef);
+                    operationsCount++; // Count deletions too
+                     if (!datesAffected.includes(dateStr)) datesAffected.push(dateStr);
+                }
+            });
+        }
+
+        if (operationsCount > 0) {
+            await batch.commit();
+            console.log(`Successfully reset future daily announcements for ${operationsCount} slots across ${datesAffected.length} days.`);
+            await logAction('reset_future_daily_announcements', { operationsCount, daysAffected: datesAffected.length, weeksApplied: FUTURE_WEEKS_TO_APPLY });
+        } else {
+            console.log("No future slots needed resetting.");
+        }
+
+    } catch (error) {
+        console.error("Error resetting future daily announcements:", error);
+        await logAction('reset_future_daily_announcements_error', { error: String(error) });
+        if ((error as FirestoreError).code === 'unavailable') {
+            console.warn("Client is offline. Cannot reset future daily announcements.");
+        } else if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
+            console.error("Firestore index required for resetting future daily announcements. Check getDailyAnnouncements index requirements. ", (error as FirestoreError).message);
         }
     }
 };
