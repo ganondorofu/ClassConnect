@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -6,7 +5,7 @@
  */
 
 import { db } from '@/config/firebase';
-import { collection, doc, setDoc, Timestamp, FirestoreError, getDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, Timestamp, FirestoreError, getDoc, writeBatch } from 'firebase/firestore'; // Import writeBatch
 
 // --- Firestore Collection Reference ---
 const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
@@ -25,10 +24,54 @@ export interface LogEntry {
   };
 }
 
+// Helper function to convert Timestamp/Date to ISO string for logging
+const formatTimestampForLog = (timestamp: Date | Timestamp | undefined): string | null => {
+  if (!timestamp) return null;
+  if (timestamp instanceof Timestamp) {
+    return timestamp.toDate().toISOString();
+  }
+  if (timestamp instanceof Date) {
+    return timestamp.toISOString();
+  }
+  return null; // Or handle other cases if necessary
+};
+
+// Helper to prepare state for logging (converts timestamps)
+// Also ensures undefined values are replaced with null
+const prepareStateForLog = (state: any): any => {
+  if (state === undefined || state === null) return null;
+  // Deep clone and replace undefined with null
+  return JSON.parse(JSON.stringify(state, (key, value) =>
+    value === undefined ? null : value
+  ), (key, value) => {
+      // Attempt to parse ISO strings back to Date objects if applicable,
+      // but primarily ensure timestamps are handled correctly before stringify.
+      // For logging, ISO string representation is generally safer.
+      if (typeof value === 'string') {
+          // Basic check for ISO date format - adjust regex if needed
+          const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
+          if (isoDateRegex.test(value)) {
+              // Keep as ISO string for logging to avoid Firestore issues with mixed types
+              return value;
+          }
+      }
+       // Convert Date/Timestamp to ISO string before stringify catches them
+       if (value instanceof Timestamp) {
+          return value.toDate().toISOString();
+       }
+       if (value instanceof Date) {
+           return value.toISOString();
+       }
+      return value;
+  });
+};
+
+
 /**
  * Logs an action performed by a user (or system).
  * Stores 'before' and 'after' states if provided.
  * Replaces undefined values in details with null for Firestore compatibility.
+ * Converts Date/Timestamp objects to ISO strings within details for consistent logging.
  *
  * @param actionType - The type of action being logged (e.g., 'update_subject').
  * @param details - An object containing action details, potentially including 'before' and 'after' states.
@@ -40,14 +83,12 @@ export const logAction = async (
   details: object,
   userId: string = 'anonymous'
 ): Promise<string | null> => {
-  // Ensure details are serializable (replace undefined with null)
-  const cleanDetails = JSON.parse(JSON.stringify(details, (key, value) =>
-    value === undefined ? null : value
-  ));
+  // Ensure details are serializable (replace undefined with null, convert dates/timestamps)
+  const cleanDetails = prepareStateForLog(details);
 
   const logEntry: Omit<LogEntry, 'id'> = {
       action: actionType,
-      timestamp: Timestamp.now(),
+      timestamp: Timestamp.now(), // Store as Firestore Timestamp
       userId: userId,
       details: cleanDetails,
   };
@@ -55,7 +96,7 @@ export const logAction = async (
   try {
     const newLogRef = doc(logsCollectionRef); // Auto-generate ID
     await setDoc(newLogRef, logEntry);
-    console.log(`Action logged: ${actionType}`, logEntry); // Log to console for debugging
+    console.log(`Action logged: ${actionType}`); // Log to console for debugging
     return newLogRef.id;
   } catch (error) {
     console.error(`Failed to log action '${actionType}' (might be offline):`, error);
@@ -89,7 +130,18 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
         if (!logSnap.exists()) {
             throw new Error(`Log entry with ID ${logId} not found.`);
         }
-        logEntry = { id: logSnap.id, ...logSnap.data() } as LogEntry;
+        // Convert Timestamps in log entry details back to Date if needed for logic,
+        // but Firestore operations need Timestamps or direct values.
+        const rawData = logSnap.data();
+        logEntry = {
+            id: logSnap.id,
+            action: rawData.action,
+            timestamp: rawData.timestamp, // Keep as Timestamp
+            userId: rawData.userId,
+            // Keep details as they are, handle potential date strings during restoration
+            details: rawData.details || {},
+        } as LogEntry;
+
 
         // Prevent rolling back a rollback action itself
         if (logEntry.action === 'rollback_action') {
@@ -103,6 +155,30 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
         const batch = writeBatch(db); // Use batch for potential multi-doc changes
 
         console.log(`Attempting rollback for action: ${action}`, logEntry);
+
+        // Helper to convert data for Firestore (e.g., ISO date strings to Timestamps if needed)
+         const prepareDataForFirestore = (data: any): any => {
+            if (!data) return null;
+            const firestoreData = { ...data };
+             Object.keys(firestoreData).forEach(key => {
+                 // Convert ISO strings back to Timestamps if they represent dates
+                 if (typeof firestoreData[key] === 'string') {
+                     const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
+                     if (isoDateRegex.test(firestoreData[key])) {
+                         try {
+                            firestoreData[key] = Timestamp.fromDate(new Date(firestoreData[key]));
+                         } catch (e) {
+                             console.warn(`Could not convert string ${firestoreData[key]} to Timestamp for key ${key}. Keeping as string.`);
+                         }
+                     }
+                 }
+                  // Ensure no undefined values slip through
+                  if (firestoreData[key] === undefined) {
+                      firestoreData[key] = null;
+                  }
+             });
+             return firestoreData;
+         };
 
         // --- Determine Rollback Operation ---
         if (action.startsWith('add_')) {
@@ -134,45 +210,35 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
                  // Ensure 'before' state is clean (no ID if it's part of the data itself)
                  const dataToRestore = { ...before };
                  delete dataToRestore.id; // Remove ID if it exists in the 'before' object
-                 // Handle Timestamp conversion if needed (assuming 'before' might have Date objects from initial log)
-                 Object.keys(dataToRestore).forEach(key => {
-                     if (dataToRestore[key] instanceof Date) {
-                         dataToRestore[key] = Timestamp.fromDate(dataToRestore[key]);
-                     }
-                 });
 
-                 batch.set(docToUpdateRef, dataToRestore); // Set back to 'before' state
+                 const firestoreReadyData = prepareDataForFirestore(dataToRestore);
+
+                 batch.set(docToUpdateRef, firestoreReadyData); // Set back to 'before' state
                  rollbackDetails.restoredDocId = docId;
                  rollbackDetails.restoredDocPath = docToUpdateRef.path;
-                 rollbackDetails.restoredData = dataToRestore; // Log what was restored
+                 // rollbackDetails.restoredData = firestoreReadyData; // Maybe too large for logs
             }
 
         } else if (action.startsWith('delete_')) {
             // Rollback 'delete' means 'set' back to 'before' state
              const docId = before?.id ?? before?.subjectId ?? before?.eventId ?? (action.includes('general_announcement') ? before?.date : null); // Infer ID from 'before' state
-             if (!docId) throw new Error(`Cannot determine document ID/data to restore for rollback of delete action (Log ID: ${logId}).`);
+             if (!docId || before === null) throw new Error(`Cannot determine document ID/data to restore for rollback of delete action (Log ID: ${logId}).`);
              const collectionPath = getCollectionPathForAction(action);
              if (!collectionPath) throw new Error(`Unsupported action type for rollback: ${action}`);
 
              const docToRestoreRef = doc(db, collectionPath, docId);
              const dataToRestore = { ...before };
              delete dataToRestore.id;
-             // Handle Timestamp conversion
-             Object.keys(dataToRestore).forEach(key => {
-                 if (dataToRestore[key] instanceof Date) {
-                     dataToRestore[key] = Timestamp.fromDate(dataToRestore[key]);
-                 }
-             });
 
-            batch.set(docToRestoreRef, dataToRestore); // Restore the document
+             const firestoreReadyData = prepareDataForFirestore(dataToRestore);
+
+            batch.set(docToRestoreRef, firestoreReadyData); // Restore the document
             rollbackDetails.restoredDocId = docId;
             rollbackDetails.restoredDocPath = docToRestoreRef.path;
-            rollbackDetails.restoredData = dataToRestore;
+            // rollbackDetails.restoredData = firestoreReadyData; // Maybe too large
 
         } else if (action === 'batch_update_fixed_timetable') {
-            // Rollback batch update: More complex. Need to revert individual slots.
-            // This requires the log details to contain an array of before/after states for each slot.
-            // Assuming details.before and details.after are arrays of { id: string, subjectId: string | null }
+            // Rollback batch update: Revert individual slots.
             const beforeSlots: Array<{ id: string, subjectId: string | null }> = details.before || [];
             const afterSlots: Array<{ id: string, subjectId: string | null }> = details.after || [];
 
@@ -180,25 +246,32 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
                  throw new Error(`Rollback for ${action} requires 'before' and 'after' details to be arrays of slot changes.`);
             }
 
-            const changedSlotsMap = new Map(afterSlots.map(s => [s.id, s.subjectId]));
+             // Fetch current state of affected slots to ensure idempotency (optional but safer)
+             // For simplicity, we'll directly revert based on the log. Be careful if other changes happened since.
             let restoredCount = 0;
-
             for(const beforeSlot of beforeSlots) {
-                const currentSubjectId = changedSlotsMap.get(beforeSlot.id);
-                // Only revert if the current state matches the 'after' state from the log
-                if (currentSubjectId !== undefined && (beforeSlot.subjectId ?? null) !== (currentSubjectId ?? null)) {
-                    const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
-                    batch.update(slotRef, { subjectId: beforeSlot.subjectId ?? null });
-                    restoredCount++;
-                }
+                if (!beforeSlot || typeof beforeSlot.id !== 'string') continue; // Skip invalid entries
+                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
+                batch.update(slotRef, { subjectId: beforeSlot.subjectId ?? null }); // Revert to the 'before' subjectId
+                restoredCount++;
             }
              rollbackDetails.restoredSlotsCount = restoredCount;
              if (restoredCount === 0) console.warn(`Rollback for ${logId}: No slots needed reverting.`);
 
         } else if (action === 'reset_fixed_timetable') {
-             // Rollback reset: Extremely complex as it requires storing the entire state before reset.
-             // Mark as not directly reversible via this simple mechanism.
-             throw new Error(`Action '${action}' cannot be automatically rolled back. Manual intervention required.`);
+             // Rollback reset: Restore based on 'before' array
+             const beforeSlots: Array<{ id: string, subjectId: string | null }> = details.before || [];
+             if (!Array.isArray(beforeSlots)) {
+                 throw new Error(`Rollback for ${action} requires 'before' details to be an array of slot states.`);
+             }
+             let restoredCount = 0;
+             for(const beforeSlot of beforeSlots) {
+                if (!beforeSlot || typeof beforeSlot.id !== 'string') continue;
+                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
+                batch.update(slotRef, { subjectId: beforeSlot.subjectId ?? null });
+                restoredCount++;
+             }
+             rollbackDetails.restoredSlotsCount = restoredCount;
 
         } else if (action === 'apply_fixed_timetable_future' || action === 'reset_future_daily_announcements') {
              // Rollback future application: Very complex, affects many documents non-atomically.
@@ -238,7 +311,7 @@ function getCollectionPathForAction(action: string): string | null {
     if (action.includes('event')) {
         return `classes/${CURRENT_CLASS_ID}/events`;
     }
-    if (action.includes('fixed_timetable') || action.includes('fixed_slot')) {
+    if (action.includes('fixed_timetable') || action.includes('fixed_slot') || action.includes('reset_fixed_timetable')) {
         return `classes/${CURRENT_CLASS_ID}/fixedTimetable`;
     }
      if (action.includes('announcement') && !action.includes('general')) {
