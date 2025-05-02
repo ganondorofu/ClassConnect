@@ -356,6 +356,51 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[]): Promise
   }
 };
 
+/**
+ * Resets all fixed timetable slots by setting their subjectId to null.
+ * Triggers future application of fixed timetable after reset.
+ * @returns {Promise<void>}
+ */
+export const resetFixedTimetable = async (): Promise<void> => {
+  console.log('Resetting fixed timetable...');
+  const batch = writeBatch(db);
+  let resetCount = 0;
+
+  try {
+    // Fetch all existing slots
+    const q = query(fixedTimetableCollection);
+    const snapshot = await getDocs(q);
+
+    snapshot.forEach((docSnap) => {
+      const slot = docSnap.data() as FixedTimeSlot;
+      // Only add to batch if the subjectId is not already null
+      if ((slot.subjectId ?? null) !== null) {
+        batch.update(docSnap.ref, { subjectId: null });
+        resetCount++;
+      }
+    });
+
+    if (resetCount === 0) {
+      console.log("Fixed timetable is already empty. No reset needed.");
+      return; // Nothing to commit
+    }
+
+    await batch.commit();
+    await logAction('reset_fixed_timetable', { count: resetCount });
+
+    // Apply the reset (empty slots) to future dates
+    console.log("Fixed timetable reset, applying to future...");
+    await applyFixedTimetableForFuture();
+
+  } catch (error) {
+    console.error("Error resetting fixed timetable:", error);
+    if ((error as FirestoreError).code === 'unavailable') {
+      throw new Error("オフラインのため固定時間割を初期化できませんでした。");
+    }
+    throw error;
+  }
+};
+
 
 /**
  * Subscribes to real-time updates for the fixed timetable.
@@ -898,3 +943,4 @@ export const queryFnGetTimetableSettings = () => getTimetableSettings();
 export const queryFnGetFixedTimetable = () => getFixedTimetable();
 export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnnouncements(date);
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
+
