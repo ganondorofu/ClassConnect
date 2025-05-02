@@ -25,7 +25,7 @@ import type {
   DayOfWeek,
   SchoolEvent,
 } from '@/models/timetable';
-import type { DailyAnnouncement } from '@/models/announcement';
+import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement'; // Import DailyGeneralAnnouncement
 import type { Subject } from '@/models/subject'; // Import Subject
 // Correctly import DEFAULT_TIMETABLE_SETTINGS from the model file
 import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, AllDays, DayOfWeek as DayOfWeekEnum } from '@/models/timetable';
@@ -44,6 +44,7 @@ const FUTURE_WEEKS_TO_APPLY = 3; // Number of future weeks to auto-apply fixed t
 const settingsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'settings');
 const fixedTimetableCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
 const dailyAnnouncementsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
+const generalAnnouncementsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'generalAnnouncements'); // New collection for general announcements
 const eventsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'events');
 const logsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'logs'); // For audit logs
 
@@ -623,6 +624,131 @@ export const onDailyAnnouncementsUpdate = (
   });
 };
 
+
+// --- Daily General Announcements ---
+
+/**
+ * Fetches the general announcement for a specific date.
+ * @param {string} date - The date in "YYYY-MM-DD" format.
+ * @returns {Promise<DailyGeneralAnnouncement | null>} The general announcement or null if not found.
+ */
+export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGeneralAnnouncement | null> => {
+    const docRef = doc(generalAnnouncementsCollection, date);
+    try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            return {
+                id: docSnap.id,
+                date: data.date,
+                content: data.content ?? '', // Default to empty string if content is missing
+                updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+            } as DailyGeneralAnnouncement;
+        } else {
+            return null;
+        }
+    } catch (error) {
+        console.error(`Error fetching general announcement for ${date}:`, error);
+        if ((error as FirestoreError).code === 'unavailable') {
+            console.warn(`Client is offline. Cannot fetch general announcement for ${date}.`);
+            return null; // Return null on offline error
+        }
+        throw error;
+    }
+};
+
+/**
+ * Creates or updates a general announcement for a specific date.
+ * If content is empty, deletes the document.
+ * @param {string} date - The date in "YYYY-MM-DD" format.
+ * @param {string} content - The announcement content in Markdown format.
+ * @returns {Promise<void>}
+ */
+export const upsertDailyGeneralAnnouncement = async (date: string, content: string): Promise<void> => {
+    const docRef = doc(generalAnnouncementsCollection, date);
+    const trimmedContent = content.trim();
+
+    if (!trimmedContent) {
+        // Delete if content is empty
+        try {
+            const oldSnap = await getDoc(docRef);
+            if (oldSnap.exists()) {
+                await deleteDoc(docRef);
+                await logAction('delete_general_announcement', { date, oldContent: oldSnap.data().content });
+            }
+        } catch (error) {
+             console.error(`Error deleting empty general announcement for ${date}:`, error);
+             if ((error as FirestoreError).code === 'unavailable') {
+                 throw new Error("オフラインのため空のお知らせを削除できませんでした。");
+             }
+             throw error;
+        }
+        return;
+    }
+
+    const dataToSet: Omit<DailyGeneralAnnouncement, 'id'> = {
+        date: date,
+        content: trimmedContent,
+        updatedAt: Timestamp.now(),
+    };
+
+    try {
+        const oldSnap = await getDoc(docRef);
+        const oldContent = oldSnap.exists() ? oldSnap.data().content : null;
+        if (oldContent !== trimmedContent) {
+            await setDoc(docRef, dataToSet);
+            await logAction('upsert_general_announcement', { date, oldContent, newContent: trimmedContent });
+        } else {
+            console.log(`No changes to save for general announcement on ${date}.`);
+        }
+    } catch (error) {
+        console.error(`Error upserting general announcement for ${date}:`, error);
+        if ((error as FirestoreError).code === 'unavailable') {
+            throw new Error("オフラインのためお知らせを保存できませんでした。");
+        }
+        if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
+             console.error("Firestore Error: Attempted to save 'undefined'. Check data structure.", dataToSet);
+             throw new Error("保存データに無効な値(undefined)が含まれていました。");
+        }
+        throw error;
+    }
+};
+
+/**
+ * Subscribes to real-time updates for the general announcement for a specific date.
+ * @param {string} date - The date in "YYYY-MM-DD" format.
+ * @param {(announcement: DailyGeneralAnnouncement | null) => void} callback - Function to call with the updated announcement or null.
+ * @param {(error: Error) => void} [onError] - Optional function to call on error.
+ * @returns {Unsubscribe} Function to unsubscribe from updates.
+ */
+export const onDailyGeneralAnnouncementUpdate = (
+    date: string,
+    callback: (announcement: DailyGeneralAnnouncement | null) => void,
+    onError?: (error: Error) => void
+): Unsubscribe => {
+    const docRef = doc(generalAnnouncementsCollection, date);
+    return onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const announcement: DailyGeneralAnnouncement = {
+                id: docSnap.id,
+                date: data.date,
+                content: data.content ?? '',
+                updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+            };
+            callback(announcement);
+        } else {
+            callback(null); // No announcement for this date
+        }
+    }, (error) => {
+        console.error(`Snapshot error on general announcement for ${date}:`, error);
+        if (onError) {
+            onError(error);
+        }
+    });
+};
+
+
 // --- School Events ---
 
 /**
@@ -942,5 +1068,5 @@ export const getLogs = async (limitCount: number = 50): Promise<any[]> => {
 export const queryFnGetTimetableSettings = () => getTimetableSettings();
 export const queryFnGetFixedTimetable = () => getFixedTimetable();
 export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnnouncements(date);
+export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDailyGeneralAnnouncement(date); // Added for general announcements
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
-

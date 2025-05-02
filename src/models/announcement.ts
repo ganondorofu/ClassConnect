@@ -20,3 +20,17 @@ export interface DailyAnnouncement {
   updatedAt: Date | Timestamp; // Allow both for easier handling before/after fetch
 }
 
+/**
+ * Represents a general announcement for the entire day.
+ * Stored in Firestore under /classes/{classId}/generalAnnouncements/{date}
+ */
+export interface DailyGeneralAnnouncement {
+    /** Document ID, typically the date YYYY-MM-DD */
+    id?: string;
+    /** The date the announcement applies to (YYYY-MM-DD) */
+    date: string;
+    /** The content of the announcement in Markdown format */
+    content: string;
+    /** Timestamp of the last update */
+    updatedAt: Date | Timestamp;
+}
