@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns'; // Import isValid
 import { ja } from 'date-fns/locale';
 import { Edit, Save, X, AlertCircle, Info, CornerDownLeft } from 'lucide-react';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
@@ -16,7 +16,7 @@ import { upsertDailyGeneralAnnouncement } from '@/controllers/timetableControlle
 import { useToast } from '@/hooks/use-toast';
 
 interface DailyAnnouncementDisplayProps {
-  date: Date;
+  date: Date | null; // Allow date to be null initially
   announcement: DailyGeneralAnnouncement | null | undefined; // Allow undefined for initial loading state
   isLoading: boolean;
   error: unknown; // Accept any error type
@@ -27,7 +27,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const [editText, setEditText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
-  const dateStr = format(date, 'yyyy-MM-dd');
+  const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : ''; // Format only if date is valid
 
   const handleEditClick = () => {
     setEditText(announcement?.content ?? '');
@@ -40,7 +40,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   };
 
   const handleSaveClick = async () => {
-    if (isSaving) return;
+    if (isSaving || !dateStr) return; // Prevent saving if date is not set
     setIsSaving(true);
     try {
       await upsertDailyGeneralAnnouncement(dateStr, editText);
@@ -59,7 +59,8 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   };
 
   const renderContent = () => {
-    if (isLoading) {
+    // Show loading skeleton if date is not yet set or if loading data
+    if (isLoading || !date) {
       return (
         <div className="space-y-2">
           <Skeleton className="h-4 w-3/4" />
@@ -130,16 +131,24 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     );
   };
 
+  const renderTitle = () => {
+    if (!date || !isValid(date)) {
+       return <Skeleton className="h-6 w-48" />; // Show skeleton if date is invalid/null
+    }
+    return `${format(date, 'M月d日', { locale: ja })} (${format(date, 'EEEE', { locale: ja })}) のお知らせ`;
+ };
+
+
   return (
     <Card className="mb-6 shadow-md">
       <CardHeader className="flex flex-row justify-between items-start pb-2">
         <div>
           <CardTitle className="text-lg">
-            {format(date, 'M月d日', { locale: ja })} ({format(date, 'EEEE', { locale: ja })}) のお知らせ
+            {renderTitle()}
           </CardTitle>
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
-        {!isEditing && announcement?.content && (
+        {!isEditing && announcement?.content && date && ( // Only show edit if date exists
           <Button variant="outline" size="sm" onClick={handleEditClick}>
             <Edit className="mr-1 h-4 w-4" />
             編集
