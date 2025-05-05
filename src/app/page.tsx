@@ -7,36 +7,47 @@ import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default i
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay'; // Import the new component
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Database, CalendarDays } from 'lucide-react'; // Added Database icon
+import { ChevronLeft, ChevronRight, Database, CalendarDays, Loader2 } from 'lucide-react'; // Added Database icon and Loader2
 import { format, addWeeks, subWeeks, startOfDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 import { runSeedData } from '@/lib/seedData'; // Import seed function
 import { useToast } from '@/hooks/use-toast'; // Import useToast
 import { queryFnGetDailyGeneralAnnouncement, onDailyGeneralAnnouncementUpdate } from '@/controllers/timetableController'; // Import functions for general announcements
 import type { DailyGeneralAnnouncement } from '@/models/announcement'; // Import the type
+import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 
 // Create a client instance outside the component
 const queryClient = new QueryClient();
 
 // Component containing the actual page content and hooks
 function HomePageContent() {
-   const [currentDate, setCurrentDate] = useState(() => startOfDay(new Date())); // Ensure it starts at the beginning of the day
+   const [currentDate, setCurrentDate] = useState<Date | null>(null); // Initialize with null to prevent hydration mismatch
    const [isSeeding, setIsSeeding] = useState(false);
    const { toast } = useToast();
    const queryClientHook = useQueryClient(); // Now called within the provider context
-   const todayStr = format(currentDate, 'yyyy-MM-dd');
+   const [todayStr, setTodayStr] = useState<string>(''); // State for date string
+
+    // Set currentDate and todayStr on the client after mount
+    useEffect(() => {
+      const now = startOfDay(new Date());
+      setCurrentDate(now);
+      setTodayStr(format(now, 'yyyy-MM-dd'));
+    }, []);
 
     // --- Fetch and Subscribe to Daily General Announcement ---
     const [liveGeneralAnnouncement, setLiveGeneralAnnouncement] = useState<DailyGeneralAnnouncement | null>(null);
 
+    // Use todayStr in queryKey and enable only when todayStr is set
     const { data: initialGeneralAnnouncement, isLoading: isLoadingGeneral, error: errorGeneral } = useQuery({
       queryKey: ['dailyGeneralAnnouncement', todayStr],
       queryFn: queryFnGetDailyGeneralAnnouncement(todayStr),
       staleTime: 1000 * 60 * 5, // 5 minutes
       refetchOnWindowFocus: true,
+      enabled: !!todayStr, // Only fetch when todayStr is available
     });
 
     useEffect(() => {
+        if (!todayStr) return; // Don't subscribe until date is set
         const unsubscribe = onDailyGeneralAnnouncementUpdate(todayStr, (announcement) => {
             setLiveGeneralAnnouncement(announcement);
         }, (error) => {
@@ -44,22 +55,24 @@ function HomePageContent() {
             // Optionally show an error toast
         });
         return () => unsubscribe();
-    }, [todayStr]);
+    }, [todayStr]); // Depend on todayStr
 
     const dailyGeneralAnnouncement = liveGeneralAnnouncement ?? initialGeneralAnnouncement;
     // --- End Fetch and Subscribe ---
 
 
    const handlePreviousWeek = () => {
-     setCurrentDate(prevDate => subWeeks(prevDate, 1));
+     setCurrentDate(prevDate => prevDate ? subWeeks(prevDate, 1) : null);
    };
 
    const handleNextWeek = () => {
-     setCurrentDate(prevDate => addWeeks(prevDate, 1));
+     setCurrentDate(prevDate => prevDate ? addWeeks(prevDate, 1) : null);
    };
 
    const handleToday = () => {
-       setCurrentDate(startOfDay(new Date()));
+       const now = startOfDay(new Date());
+       setCurrentDate(now);
+       setTodayStr(format(now, 'yyyy-MM-dd'));
    };
 
    const handleSeedData = async () => {
@@ -82,6 +95,27 @@ function HomePageContent() {
      }
    };
 
+    // Loading state while currentDate is null
+    if (!currentDate) {
+        return (
+           <MainLayout>
+             <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
+                 <Skeleton className="h-8 w-48" />
+                 <div className="flex items-center gap-1 md:gap-2 flex-wrap">
+                     <Skeleton className="h-9 w-24" />
+                     <Skeleton className="h-9 w-16" />
+                     <Skeleton className="h-9 w-9" />
+                     <Skeleton className="h-6 w-24" />
+                     <Skeleton className="h-9 w-9" />
+                 </div>
+             </div>
+             <Skeleton className="h-32 w-full mb-6" />
+             <Skeleton className="h-96 w-full" />
+          </MainLayout>
+        );
+    }
+
+   // Now that currentDate is guaranteed to be a Date object, render the main content
    return (
       <MainLayout>
          {/* Use flex-col on small screens and flex-row on medium and up */}
@@ -116,7 +150,7 @@ function HomePageContent() {
         <DailyAnnouncementDisplay
              date={currentDate}
              announcement={dailyGeneralAnnouncement}
-             isLoading={isLoadingGeneral}
+             isLoading={isLoadingGeneral || !todayStr} // Also loading if todayStr isn't set
              error={errorGeneral}
          />
         <div className="mt-6"> {/* Add margin top to separate from announcement */}
@@ -134,5 +168,3 @@ export default function Home() {
     </QueryClientProvider>
   );
 }
-
-    
