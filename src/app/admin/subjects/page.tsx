@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -190,6 +189,11 @@ function SubjectsPageContent() {
   const showLoading = isLoading && !isOffline;
   const showError = error && !isOffline;
 
+  // Adjust widths for responsiveness
+  const tableHeaders = ['科目名', '担当教員名', '操作'];
+  const headerWidths = ['', '', 'text-right w-[80px] sm:w-[100px]'];
+
+
   return (
     <MainLayout>
       <h1 className="text-2xl font-semibold mb-6">科目管理</h1>
@@ -223,37 +227,40 @@ function SubjectsPageContent() {
           ) : !subjects || subjects.length === 0 ? (
             <p className="text-muted-foreground text-center py-4">科目が登録されていません。</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>科目名</TableHead>
-                  <TableHead>担当教員名</TableHead>
-                  <TableHead className="text-right w-[100px]">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {subjects.map((subject) => (
-                  <TableRow key={subject.id}>
-                    <TableCell className="font-medium">{subject.name}</TableCell>
-                    <TableCell>{subject.teacherName}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditModal(subject)} className="mr-1 h-8 w-8" disabled={isOffline}>
-                        <Edit className="h-4 w-4" />
-                        <span className="sr-only">編集</span>
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(subject.id!, subject.name)} className="text-destructive hover:text-destructive h-8 w-8" disabled={isOffline || deleteMutation.isPending}>
-                        <Trash2 className="h-4 w-4" />
-                         <span className="sr-only">削除</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {tableHeaders.map((header, index) => (
+                        <TableHead key={`${header}-${index}`} className={headerWidths[index]}>{header}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {subjects.map((subject) => {
+                      const cells = [
+                        <TableCell key={`${subject.id}-name`} className="font-medium">{subject.name}</TableCell>,
+                        <TableCell key={`${subject.id}-teacher`}>{subject.teacherName}</TableCell>,
+                        <TableCell key={`${subject.id}-actions`} className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => openEditModal(subject)} className="mr-1 h-8 w-8" disabled={isOffline}>
+                            <Edit className="h-4 w-4" />
+                            <span className="sr-only">編集</span>
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(subject.id!, subject.name)} className="text-destructive hover:text-destructive h-8 w-8" disabled={isOffline || deleteMutation.isPending}>
+                            <Trash2 className="h-4 w-4" />
+                             <span className="sr-only">削除</span>
+                          </Button>
+                        </TableCell>
+                      ];
+                      return <TableRow key={subject.id}>{cells}</TableRow>;
+                    })}
+                  </TableBody>
+                </Table>
+            </div>
           )}
         </CardContent>
         <CardFooter>
-          <Button onClick={openAddModal} disabled={isOffline || isLoading}>
+          <Button onClick={openAddModal} disabled={isOffline || isLoading} size="sm">
             <PlusCircle className="mr-2 h-4 w-4" />
             新規科目を追加
           </Button>
@@ -296,11 +303,11 @@ function SubjectsPageContent() {
           </div>
           <DialogFooter>
              <DialogClose asChild>
-                  <Button type="button" variant="secondary" disabled={isSaving}>
+                  <Button type="button" variant="secondary" disabled={isSaving} size="sm">
                       キャンセル
                   </Button>
               </DialogClose>
-             <Button onClick={handleSave} disabled={isSaving || isOffline}>
+             <Button onClick={handleSave} disabled={isSaving || isOffline} size="sm">
                   <Save className="mr-2 h-4 w-4" />
                   {isSaving ? '保存中...' : '保存'}
               </Button>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -413,9 +412,9 @@ export default function SettingsContent() {
    }, [editedFixedTimetable, initialFixedTimetableData]);
 
    const tableHeaderCells = [
-       <TableHead key="period-header" className="w-[60px]">時限</TableHead>,
+       <TableHead key="period-header" className="w-[50px] sm:w-[60px]">時限</TableHead>,
        ...(settings?.activeDays ?? WeekDays).map((day) => (
-           <TableHead key={`header-${day}`} className="min-w-[180px]">{getDayOfWeekName(day)}</TableHead>
+           <TableHead key={`header-${day}`} className="min-w-[150px] sm:min-w-[180px]">{getDayOfWeekName(day)}</TableHead>
        ))
    ];
 
@@ -501,18 +500,19 @@ export default function SettingsContent() {
                        <TableBody>
                          {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
                             const cells = [
-                                <TableCell key={`period-cell-${period}`} className="font-medium text-center">{period}</TableCell>,
+                                <TableCell key={`period-cell-${period}`} className="font-medium text-center p-2 sm:p-4">{period}</TableCell>,
                                 ...(settings?.activeDays ?? WeekDays).map((day) => {
                                     const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
                                     const subjectId = slot?.subjectId ?? null;
                                     return (
-                                     <TableCell key={`${day}-${period}-cell`}>
+                                     <TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2"> {/* Reduced padding */}
                                        <SubjectSelector
                                            subjects={subjects}
                                            selectedSubjectId={subjectId}
                                            onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)}
                                            placeholder="科目未設定"
                                            disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
+                                           className="w-full text-xs sm:text-sm" // Adjust width and text size
                                        />
                                      </TableCell>
                                    );
@@ -532,6 +532,7 @@ export default function SettingsContent() {
                   <Button
                       onClick={handleSaveFixedTimetable}
                       disabled={!hasFixedTimetableChanged || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline}
+                      size="sm"
                    >
                     <Save className="mr-2 h-4 w-4" />
                     {fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}
@@ -546,6 +547,7 @@ export default function SettingsContent() {
                      <Button
                        variant="destructive"
                        disabled={resetTimetableMutation.isPending || showLoadingFixed || isOffline}
+                       size="sm"
                      >
                        <RotateCcw className="mr-2 h-4 w-4" />
                        {resetTimetableMutation.isPending ? '初期化中...' : '時間割を初期化'}
@@ -573,6 +575,7 @@ export default function SettingsContent() {
                              variant="outline"
                              disabled={overwriteFutureMutation.isPending || fixedTimetableMutation.isPending || isResetting || isOffline}
                              title="現在保存されている固定時間割で、将来の変更を含むすべての日付を上書きします"
+                             size="sm"
                          >
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {overwriteFutureMutation.isPending ? '上書き中...' : '将来の時間割を基本で上書き'}
@@ -594,18 +597,6 @@ export default function SettingsContent() {
                      </AlertDialogContent>
                  </AlertDialog>
 
-                 {/* Kept the 'Apply to Future' button for non-destructive application */}
-                 {/*
-                 <Button
-                    onClick={handleApplyFixedTimetable}
-                    variant="outline"
-                    disabled={applyFutureMutation.isPending || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline || hasFixedTimetableChanged}
-                    title={hasFixedTimetableChanged ? "先に固定時間割を保存してください" : "現在の固定時間割を将来の日付に適用します（既存の変更は保持）"}
-                 >
-                    <Send className="mr-2 h-4 w-4" />
-                    {applyFutureMutation.isPending ? '適用中...' : '固定時間割を将来に適用'}
-                 </Button>
-                 */}
              </div>
           </CardFooter>
         </Card>
