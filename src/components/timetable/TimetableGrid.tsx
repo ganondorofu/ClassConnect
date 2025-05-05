@@ -423,7 +423,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           {/* Add overflow-x-auto for horizontal scrolling */}
           <div className="overflow-x-auto">
             {/* Header Row - Make sticky */}
-            <div className="flex border-b sticky top-[calc(4rem+1px)] bg-background z-20"> {/* Adjust top value based on actual header height */}
+            {/* Adjust top value based on actual header height (h-14 is 3.5rem) + 1px border */}
+            <div className="flex border-b sticky top-[calc(3.5rem+1px)] bg-background z-20">
               {headers}
             </div>
 
