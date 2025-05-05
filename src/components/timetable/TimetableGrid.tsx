@@ -39,6 +39,7 @@ import type { Timestamp, FirestoreError } from 'firebase/firestore';
 // Adjust width for responsiveness. min-w ensures it doesn't get too small on large screens,
 // but allows shrinking and scrolling on small screens.
 const DAY_CELL_WIDTH = "min-w-[140px] sm:min-w-[160px] md:min-w-[180px]";
+const TIME_CELL_WIDTH = "w-[50px] sm:w-[60px] flex-shrink-0"; // Specific width for time column
 
 
 interface TimetableGridProps {
@@ -367,7 +368,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const headers = [
     // Add sticky positioning and z-index for the time column header
-    <div key="header-time" className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20`}>
+    <div key="header-time" className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20`}>
       時間
     </div>,
     ...displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => {
@@ -399,9 +400,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     // Wrap the Card in a div to handle outer overflow/responsiveness
     <div className="w-full overflow-hidden rounded-lg shadow-lg border">
       <Card className="w-full border-0 shadow-none rounded-none"> {/* Remove border/shadow from inner card */}
-        <CardHeader className="p-2 sm:p-4 border-b sticky top-0 bg-background z-30"> {/* Make header sticky */}
+        <CardHeader className="p-0 border-b sticky top-0 bg-background z-30"> {/* Make header sticky, remove padding */}
           {isOffline && (
-            <Alert variant="destructive" className="mb-4">
+            <Alert variant="destructive" className="m-2 sm:m-4"> {/* Add margin back */}
               <WifiOff className="h-4 w-4" />
               <AlertTitle>オフライン</AlertTitle>
               <AlertDescription>
@@ -410,7 +411,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             </Alert>
           )}
           {hasConnectivityError && !isOffline && (
-              <Alert variant="destructive" className="mb-4">
+              <Alert variant="destructive" className="m-2 sm:m-4"> {/* Add margin back */}
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>接続エラー</AlertTitle>
                   <AlertDescription>
@@ -418,22 +419,20 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   </AlertDescription>
               </Alert>
           )}
+           {/* Header Row - Moved inside CardHeader for proper sticky behavior */}
+           <div className="flex">
+              {headers}
+            </div>
         </CardHeader>
         <CardContent className="p-0">
           {/* Add overflow-x-auto for horizontal scrolling */}
           <div className="overflow-x-auto">
-            {/* Header Row - Make sticky */}
-            {/* Adjust top value based on actual header height (h-14 is 3.5rem) + 1px border */}
-            <div className="flex border-b sticky top-[calc(3.5rem+1px)] bg-background z-20">
-              {headers}
-            </div>
-
             {/* Timetable Rows */}
             {isLoading ? (
                 Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
                    const skeletonCells = [
                       // Add sticky positioning and z-index for the time column cells
-                      <div key={`skeleton-period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                      <div key={`skeleton-period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
                           <Skeleton className="h-6 w-8" />
                       </div>,
                       ...displayDays.map(({ date }) => {
@@ -453,7 +452,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
                    const cells = [
                        // Add sticky positioning and z-index for the time column cells
-                       <div key={`period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                       <div key={`period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
                          {period}限
                        </div>,
                        ...displayDays.map(({ date, dayOfWeek, isActive }) => {
@@ -627,3 +626,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+
