@@ -84,28 +84,30 @@ function HomePageContent() {
 
    return (
       <MainLayout>
-         <div className="flex justify-between items-center mb-4 flex-wrap gap-y-2">
-             <h1 className="text-2xl font-semibold">
+         {/* Use flex-col on small screens and flex-row on medium and up */}
+         <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
+             <h1 className="text-xl md:text-2xl font-semibold">
                 クラス時間割・連絡
             </h1>
-             <div className="flex items-center gap-2 flex-wrap">
+             {/* Adjust button sizes and text for responsiveness */}
+             <div className="flex items-center gap-1 md:gap-2 flex-wrap">
                   {process.env.NODE_ENV === 'development' && (
                      <Button variant="outline" size="sm" onClick={handleSeedData} disabled={isSeeding}>
-                       <Database className="mr-2 h-4 w-4" />
-                       {isSeeding ? "投入中..." : "初期データ投入"}
+                       <Database className="mr-1 h-4 w-4" />
+                       {isSeeding ? "..." : "初期データ"} {/* Shorten text */}
                      </Button>
                    )}
                  <Button variant="outline" size="sm" onClick={handleToday}>
-                     <CalendarDays className="mr-2 h-4 w-4" />
+                     <CalendarDays className="mr-1 h-4 w-4" />
                      今日
                  </Button>
-                <Button variant="outline" size="icon" onClick={handlePreviousWeek} aria-label="前の週">
+                <Button variant="outline" size="icon" onClick={handlePreviousWeek} aria-label="前の週" className="h-9 w-9 md:h-10 md:w-10">
                      <ChevronLeft className="h-4 w-4" />
                 </Button>
-                 <span className="text-sm font-medium w-28 text-center">
+                 <span className="text-sm font-medium w-24 md:w-28 text-center">
                      {format(currentDate, 'yyyy年M月', { locale: ja })}
                 </span>
-                <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="次の週">
+                <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="次の週" className="h-9 w-9 md:h-10 md:w-10">
                      <ChevronRight className="h-4 w-4" />
                  </Button>
             </div>
@@ -132,3 +134,5 @@ export default function Home() {
     </QueryClientProvider>
   );
 }
+
+    
