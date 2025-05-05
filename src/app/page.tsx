@@ -1,4 +1,3 @@
-
 "use client"; // Required for React Query and state hooks
 
 import React, { useState, useEffect } from 'react'; // Import React and useEffect
@@ -7,8 +6,8 @@ import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default i
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay'; // Import the new component
 import { Button } from '@/components/ui/button';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Database, CalendarDays, Loader2 } from 'lucide-react'; // Added Database icon and Loader2, CalendarIcon
-import { format, addWeeks, subWeeks, startOfDay } from 'date-fns';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Database, CalendarDays, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'; // Added ArrowLeft, ArrowRight, RotateCcw
+import { format, addDays, subDays, addWeeks, subWeeks, startOfDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 import { runSeedData } from '@/lib/seedData'; // Import seed function
 import { useToast } from '@/hooks/use-toast'; // Import useToast
@@ -29,21 +28,24 @@ function HomePageContent() {
    const { toast } = useToast();
    const queryClientHook = useQueryClient(); // Now called within the provider context
    const [todayStr, setTodayStr] = useState<string>(''); // State for date string
-   const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date | undefined>(new Date()); // State for Calendar picker
+   const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date | undefined>(undefined); // Initialize calendar picker state
 
     // Set currentDate and todayStr on the client after mount
     useEffect(() => {
       const now = startOfDay(new Date());
       setCurrentDate(now);
-      setTodayStr(format(now, 'yyyy-MM-dd'));
-      setSelectedDateForPicker(now); // Sync picker initial state
+      // No need to set todayStr here, useEffect below handles it
+      // setSelectedDateForPicker is also handled below
     }, []);
 
-    // Update todayStr when currentDate changes (e.g., via calendar selection)
+    // Update todayStr and picker state when currentDate changes
     useEffect(() => {
         if (currentDate) {
           setTodayStr(format(currentDate, 'yyyy-MM-dd'));
           setSelectedDateForPicker(currentDate); // Sync picker state
+        } else {
+           // If currentDate is null (initial state), set picker to undefined
+           setSelectedDateForPicker(undefined);
         }
     }, [currentDate]);
 
@@ -83,6 +85,14 @@ function HomePageContent() {
      setCurrentDate(prevDate => prevDate ? addWeeks(prevDate, 1) : null);
    };
 
+    const handlePreviousDay = () => {
+        setCurrentDate(prevDate => prevDate ? subDays(prevDate, 1) : null);
+    };
+
+    const handleNextDay = () => {
+        setCurrentDate(prevDate => prevDate ? addDays(prevDate, 1) : null);
+    };
+
    const handleToday = () => {
        const now = startOfDay(new Date());
        setCurrentDate(now);
@@ -93,9 +103,12 @@ function HomePageContent() {
         if (date) {
             const selectedDayStart = startOfDay(date);
             setCurrentDate(selectedDayStart);
-            setSelectedDateForPicker(selectedDayStart); // Update picker state
-            // todayStr will be updated by the useEffect depending on currentDate
+            // No need to set picker state here, useEffect handles it
+        } else {
+            // Handle case where date is cleared (optional)
+            setCurrentDate(null);
         }
+        // Close popover after selection (optional) - requires managing Popover open state
    };
 
    const handleSeedData = async () => {
@@ -105,11 +118,8 @@ function HomePageContent() {
      try {
        await runSeedData();
        toast({ title: "成功", description: "初期データの投入が完了しました。ページをリロードしてください。" });
-       await queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
-       await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
-       await queryClientHook.invalidateQueries({ queryKey: ['timetableSettings'] });
-       await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
-       await queryClientHook.invalidateQueries({ queryKey: ['dailyGeneralAnnouncement'] });
+       // Invalidate all relevant queries after seeding
+       await queryClientHook.invalidateQueries();
      } catch (error) {
        console.error("Seed data error:", error);
        toast({ title: "エラー", description: `初期データの投入中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
@@ -118,7 +128,7 @@ function HomePageContent() {
      }
    };
 
-    // Loading state while currentDate is null
+    // Loading state while currentDate is null (only on initial client load)
     if (!currentDate) {
         return (
            <MainLayout>
@@ -127,9 +137,15 @@ function HomePageContent() {
                  <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
                      {process.env.NODE_ENV === 'development' && <Skeleton className="h-9 w-24" />}
                      <Skeleton className="h-9 w-16" />
-                     <Skeleton className="h-9 w-9" />
+                     <div className="flex gap-1"> {/* Group daily nav */}
+                         <Skeleton className="h-9 w-9" />
+                         <Skeleton className="h-9 w-9" />
+                     </div>
                      <Skeleton className="h-9 w-28" /> {/* Placeholder for Date Picker */}
-                     <Skeleton className="h-9 w-9" />
+                      <div className="flex gap-1"> {/* Group weekly nav */}
+                         <Skeleton className="h-9 w-9" />
+                         <Skeleton className="h-9 w-9" />
+                      </div>
                  </div>
              </div>
              <Skeleton className="h-32 w-full mb-6" />
@@ -141,57 +157,74 @@ function HomePageContent() {
    // Now that currentDate is guaranteed to be a Date object, render the main content
    return (
       <MainLayout>
-         {/* Use flex-col on small screens and flex-row on medium and up */}
+         {/* Navigation and Header */}
          <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
              <h1 className="text-xl md:text-2xl font-semibold">
                 クラス時間割・連絡
             </h1>
-             {/* Adjust button sizes and text for responsiveness */}
+            {/* Navigation Buttons - Grouped for clarity */}
              <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
+                  {/* Seed Button (Dev only) */}
                   {process.env.NODE_ENV === 'development' && (
                      <Button variant="outline" size="sm" onClick={handleSeedData} disabled={isSeeding}>
                        <Database className="mr-1 h-4 w-4" />
-                       {isSeeding ? "..." : "初期データ"} {/* Shorten text */}
+                       {isSeeding ? "..." : "初期データ"}
                      </Button>
                    )}
+                   {/* Today Button */}
                  <Button variant="outline" size="sm" onClick={handleToday}>
-                     <CalendarDays className="mr-1 h-4 w-4" />
+                     <RotateCcw className="mr-1 h-4 w-4" /> {/* Changed icon */}
                      今日
                  </Button>
-                <Button variant="outline" size="icon" onClick={handlePreviousWeek} aria-label="前の週" className="h-9 w-9 md:h-9 md:w-9">
-                     <ChevronLeft className="h-4 w-4" />
-                </Button>
 
-                 {/* Date Picker Popover */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-[150px] md:w-[180px] justify-start text-left font-normal h-9 px-3", // Adjusted width and height
-                        !currentDate && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {currentDate ? format(currentDate, "yyyy年 M月 d日", { locale: ja }) : <span>日付を選択</span>}
+                 {/* Daily Navigation */}
+                 <div className="flex items-center gap-1 border rounded-md p-0.5">
+                    <Button variant="ghost" size="icon" onClick={handlePreviousDay} aria-label="前の日" className="h-8 w-8">
+                         <ArrowLeft className="h-4 w-4" />
                     </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDateForPicker}
-                      onSelect={handleDateSelect}
-                      initialFocus
-                      locale={ja} // Set locale for calendar display
-                    />
-                  </PopoverContent>
-                </Popover>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                            variant={"ghost"} // Changed variant to ghost to fit group
+                            className={cn(
+                                "w-[120px] md:w-[150px] justify-center text-center font-normal h-8 px-2", // Adjusted width, height, padding
+                                !currentDate && "text-muted-foreground"
+                            )}
+                            >
+                            <CalendarIcon className="mr-1 h-4 w-4" />
+                            {currentDate ? format(currentDate, "M月d日", { locale: ja }) : <span>日付選択</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar
+                            mode="single"
+                            selected={selectedDateForPicker}
+                            onSelect={handleDateSelect}
+                            initialFocus
+                            locale={ja} // Set locale for calendar display
+                            />
+                        </PopoverContent>
+                    </Popover>
+                    <Button variant="ghost" size="icon" onClick={handleNextDay} aria-label="次の日" className="h-8 w-8">
+                         <ArrowRight className="h-4 w-4" />
+                    </Button>
+                 </div>
 
-                <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="次の週" className="h-9 w-9 md:h-9 md:w-9">
-                     <ChevronRight className="h-4 w-4" />
-                 </Button>
+                 {/* Weekly Navigation */}
+                 <div className="flex items-center gap-1 border rounded-md p-0.5">
+                     <Button variant="ghost" size="icon" onClick={handlePreviousWeek} aria-label="前の週" className="h-8 w-8">
+                         <ChevronLeft className="h-4 w-4" />
+                         <span className="sr-only">前の週</span>
+                    </Button>
+                    <span className="text-xs px-1 text-muted-foreground">週</span>
+                     <Button variant="ghost" size="icon" onClick={handleNextWeek} aria-label="次の週" className="h-8 w-8">
+                         <ChevronRight className="h-4 w-4" />
+                          <span className="sr-only">次の週</span>
+                     </Button>
+                 </div>
             </div>
         </div>
+
         {/* Display Daily General Announcement */}
         <DailyAnnouncementDisplay
              date={currentDate}
@@ -199,6 +232,8 @@ function HomePageContent() {
              isLoading={isLoadingGeneral || !todayStr} // Also loading if todayStr isn't set
              error={errorGeneral}
          />
+
+        {/* Timetable Grid */}
         <div className="mt-6"> {/* Add margin top to separate from announcement */}
            <TimetableGrid currentDate={currentDate} />
         </div>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -23,7 +22,7 @@ export function Header() {
         {/* Mobile Menu Trigger (Placeholder) - Removed for simplicity */}
         <div className="flex flex-1 items-center justify-end space-x-1 md:space-x-2">
           {/* Adjust button padding and hide text on small screens */}
-           <nav className="flex items-center gap-0 md:gap-1">
+           <nav className="flex items-center gap-0 sm:gap-1"> {/* Adjusted gap for sm screens */}
              <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
                  <Link href="/admin/subjects" aria-label="科目管理">
                      <BookMarked className="h-4 w-4" />
@@ -50,5 +49,3 @@ export function Header() {
     </header>
   );
 }
-
-    
