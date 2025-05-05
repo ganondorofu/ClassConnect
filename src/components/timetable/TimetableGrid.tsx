@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -39,7 +38,7 @@ import type { Timestamp, FirestoreError } from 'firebase/firestore';
 
 // Adjust width for responsiveness. min-w ensures it doesn't get too small on large screens,
 // but allows shrinking and scrolling on small screens.
-const DAY_CELL_WIDTH = "min-w-[160px] md:min-w-[180px]";
+const DAY_CELL_WIDTH = "min-w-[140px] sm:min-w-[160px] md:min-w-[180px]";
 
 
 interface TimetableGridProps {
@@ -368,7 +367,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const headers = [
     // Add sticky positioning and z-index for the time column header
-    <div key="header-time" className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-card z-20`}>
+    <div key="header-time" className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20`}>
       時間
     </div>,
     ...displayDays.map(({ date, dayOfWeek, isActive, isWeekend }) => {
@@ -377,7 +376,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       return (
         <div
           key={headerKey}
-          className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''} bg-card`} // Ensure background for sticky headers
+          className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10' : ''} bg-card`} // Ensure background for sticky headers
         >
           <div>{dayOfWeek ? getDayOfWeekName(dayOfWeek) : ''}</div>
           <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
@@ -400,7 +399,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     // Wrap the Card in a div to handle outer overflow/responsiveness
     <div className="w-full overflow-hidden rounded-lg shadow-lg border">
       <Card className="w-full border-0 shadow-none rounded-none"> {/* Remove border/shadow from inner card */}
-        <CardHeader className="p-4 border-b sticky top-0 bg-background z-30"> {/* Make header sticky */}
+        <CardHeader className="p-2 sm:p-4 border-b sticky top-0 bg-background z-30"> {/* Make header sticky */}
           {isOffline && (
             <Alert variant="destructive" className="mb-4">
               <WifiOff className="h-4 w-4" />
@@ -433,13 +432,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
                    const skeletonCells = [
                       // Add sticky positioning and z-index for the time column cells
-                      <div key={`skeleton-period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                      <div key={`skeleton-period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
                           <Skeleton className="h-6 w-8" />
                       </div>,
                       ...displayDays.map(({ date }) => {
                          const skeletonCellKey = `skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`;
                          return (
-                            <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r flex flex-col justify-between bg-card`}>
+                            <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card`}>
                                 <Skeleton className="h-4 w-3/4 mb-1" /> {/* Subject name skel */}
                                 <Skeleton className="h-3 w-1/2 mb-2" /> {/* Teacher name skel */}
                                 <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
@@ -453,14 +452,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
                    const cells = [
                        // Add sticky positioning and z-index for the time column cells
-                       <div key={`period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                       <div key={`period-${period}`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
                          {period}限
                        </div>,
                        ...displayDays.map(({ date, dayOfWeek, isActive }) => {
                           const dateStr = format(date, 'yyyy-MM-dd');
                           const cellKey = `${dateStr}-${period}`;
 
-                          if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r bg-muted/30 h-full`}></div>;
+                          if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r bg-muted/30 h-full`}></div>;
 
                           const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
                           const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
@@ -481,7 +480,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                          return (
                            <div
                              key={cellKey}
-                             className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`} // Ensure background for sticky content
+                             className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`} // Ensure background for sticky content
                            >
                             {isActive ? (
                                   <>
@@ -627,5 +626,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-
-    
