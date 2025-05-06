@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, startOfWeek, addDays, eachDayOfInterval, isSameDay, getDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card"; // Removed CardHeader
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -401,230 +401,228 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     // Wrap the Card in a div to handle outer overflow/responsiveness
     <div className="w-full overflow-hidden rounded-lg shadow-lg border">
       <Card className="w-full border-0 shadow-none rounded-none"> {/* Remove border/shadow from inner card */}
-        <CardHeader className="p-0 border-b sticky top-0 bg-background z-30"> {/* Make header sticky, remove padding */}
-          {isOffline && (
-            <Alert variant="destructive" className="m-2 sm:m-4"> {/* Add margin back */}
-              <WifiOff className="h-4 w-4" />
-              <AlertTitle>オフライン</AlertTitle>
-              <AlertDescription>
-                現在オフラインです。表示されているデータは古い可能性があります。変更は保存されません。
-              </AlertDescription>
+        {/* Status Indicators - Moved outside CardContent to be non-scrolling */}
+        {isOffline && (
+          <Alert variant="destructive" className="m-2 sm:m-4">
+            <WifiOff className="h-4 w-4" />
+            <AlertTitle>オフライン</AlertTitle>
+            <AlertDescription>
+              現在オフラインです。表示されているデータは古い可能性があります。変更は保存されません。
+            </AlertDescription>
+          </Alert>
+        )}
+        {hasConnectivityError && !isOffline && (
+            <Alert variant="destructive" className="m-2 sm:m-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>接続エラー</AlertTitle>
+                <AlertDescription>
+                    データの読み込みに失敗しました。時間をおいてページを再読み込みしてください。 (エラー詳細: {String(queryError)})
+                </AlertDescription>
             </Alert>
-          )}
-          {hasConnectivityError && !isOffline && (
-              <Alert variant="destructive" className="m-2 sm:m-4"> {/* Add margin back */}
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>接続エラー</AlertTitle>
-                  <AlertDescription>
-                      データの読み込みに失敗しました。時間をおいてページを再読み込みしてください。 (エラー詳細: {String(queryError)})
-                  </AlertDescription>
-              </Alert>
-          )}
-           {/* Header Row - Apply sticky positioning */}
-           <div className="flex sticky top-0 bg-card z-20 border-b">
-              {headers}
-            </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {/* Add overflow-x-auto for horizontal scrolling */}
-          <div className="overflow-x-auto">
-            {/* Timetable Rows */}
-            {isLoading ? (
-                Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
-                   const skeletonCells = [
-                      // Add sticky positioning and z-index for the time column cells
-                      <div key={`skeleton-period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
-                          <Skeleton className="h-6 w-8" />
-                      </div>,
-                      ...displayDays.map(({ date }) => {
-                         const skeletonCellKey = `skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`;
-                         return (
-                            <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card`}>
-                                <Skeleton className="h-4 w-3/4 mb-1" /> {/* Subject name skel */}
-                                <Skeleton className="h-3 w-1/2 mb-2" /> {/* Teacher name skel */}
-                                <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
-                            </div>
-                         );
-                      })
-                   ];
-                   return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">{skeletonCells}</div>;
-                })
-            ) : (
-                Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
-                   const cells = [
-                       // Add sticky positioning and z-index for the time column cells
-                       <div key={`period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
-                         {period}限
-                       </div>,
-                       ...displayDays.map(({ date, dayOfWeek, isActive }) => {
-                          const dateStr = format(date, 'yyyy-MM-dd');
-                          const cellKey = `${dateStr}-${period}`;
+        )}
 
-                          if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r bg-muted/30 h-full`}></div>;
-
-                          const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
-                          const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
-                          const hasEvent = !isActive && getEventsForDay(date).length > 0;
-
-                          const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
-                          const displaySubject = getSubjectById(displaySubjectId);
-                          const announcementDisplay = announcement?.text;
-
-                          // Check if the subject has changed compared to the fixed timetable
-                          const fixedSubjectId = fixedSlot?.subjectId ?? null;
-                           // Show '(変更)' only if subjectIdOverride exists (is not null/undefined) AND is different from fixedSubjectId
-                           const showSubjectChangeIndicator = announcement?.subjectIdOverride !== null &&
-                                                              announcement?.subjectIdOverride !== undefined &&
-                                                              announcement.subjectIdOverride !== fixedSubjectId;
-
-
-                         return (
-                           <div
-                             key={cellKey}
-                             className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`} // Ensure background for sticky content
-                           >
-                            {isActive ? (
-                                  <>
-                                     {/* Subject and Teacher */}
-                                     <div className="mb-1">
-                                         <div
-                                             className="text-sm truncate font-medium"
-                                             title={displaySubject?.name ?? '未設定'}
-                                         >
-                                             {displaySubject?.name ?? '未設定'}
-                                             {showSubjectChangeIndicator && (
-                                                 <span className="text-xs text-destructive ml-1">(変更)</span>
-                                             )}
-                                          </div>
-                                           {displaySubject?.teacherName && (
-                                               <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
-                                                  <User className="w-3 h-3 shrink-0" />
-                                                  {displaySubject.teacherName}
-                                               </div>
-                                           )}
-                                      </div>
-
-                                      {/* Announcement Text */}
-                                      <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                                          {announcementDisplay && (
-                                              <div className="p-1 rounded bg-card border border-dashed border-accent/50">
-                                                  <p className="text-foreground whitespace-pre-wrap">{announcementDisplay}</p>
-                                             </div>
-                                          )}
-                                      </div>
-
-                                      {/* Edit Button */}
-                                      <div className="mt-auto">
-                                         <Button
-                                             variant="ghost"
-                                             size="sm"
-                                             className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
-                                             onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
-                                             aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
-                                             disabled={isOffline}
-                                         >
-                                             <Edit2 className="w-3 h-3" />
-                                         </Button>
-                                     </div>
-                                  </>
-                             ) : hasEvent ? (
-                                 <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
-                             ) : (
-                                  <div className="h-full"></div> // Empty cell for inactive days
-                             )}
-                           </div>
-                         );
-                       })
-                   ];
-                   return <div key={`row-${period}`} className="flex border-b min-h-[90px]">{cells}</div>;
-                 })
-            )}
+        {/* Add overflow-x-auto for horizontal scrolling */}
+        <CardContent className="p-0 overflow-x-auto">
+          {/* Header Row - Apply sticky positioning and place within scrollable area */}
+          <div className="flex sticky top-0 bg-card z-20 border-b">
+            {headers}
           </div>
 
-          {/* Announcement Edit Modal */}
-         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-              <DialogContent>
-                  <DialogHeader>
-                      <DialogTitle>連絡・変更を編集: {selectedSlot?.date} ({selectedSlot?.day ? getDayOfWeekName(selectedSlot.day) : ''}) {selectedSlot?.period}限目</DialogTitle>
-                      {selectedSlot?.fixedSubjectId && getSubjectById(selectedSlot.fixedSubjectId) && (
-                          <p className="text-sm text-muted-foreground pt-1">
-                              元の科目: {getSubjectById(selectedSlot.fixedSubjectId)?.name ?? '未設定'}
-                              {getSubjectById(selectedSlot.fixedSubjectId)?.teacherName && ` (${getSubjectById(selectedSlot.fixedSubjectId)?.teacherName})`}
-                          </p>
-                       )}
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                       {/* Subject Override Selector */}
-                      <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="subject-override" className="text-right col-span-1">
-                              科目変更
-                          </Label>
-                          <SubjectSelector
-                               id="subject-override"
-                               subjects={subjects}
-                               selectedSubjectId={subjectIdOverride}
-                               onValueChange={setSubjectIdOverride}
-                               placeholder="科目を選択 (変更)"
-                               disabled={isSaving || isLoadingSubjects}
-                               className="col-span-3"
-                           />
-                      </div>
+          {/* Timetable Rows */}
+          {isLoading ? (
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                 const skeletonCells = [
+                    // Add sticky positioning and z-index for the time column cells
+                    <div key={`skeleton-period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                        <Skeleton className="h-6 w-8" />
+                    </div>,
+                    ...displayDays.map(({ date }) => {
+                       const skeletonCellKey = `skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`;
+                       return (
+                          <div key={skeletonCellKey} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card`}>
+                              <Skeleton className="h-4 w-3/4 mb-1" /> {/* Subject name skel */}
+                              <Skeleton className="h-3 w-1/2 mb-2" /> {/* Teacher name skel */}
+                              <Skeleton className="h-8 w-full" /> {/* Announcement skel */}
+                          </div>
+                       );
+                    })
+                 ];
+                 return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[80px]">{skeletonCells}</div>;
+              })
+          ) : (
+              Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                 const cells = [
+                     // Add sticky positioning and z-index for the time column cells
+                     <div key={`period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}>
+                       {period}限
+                     </div>,
+                     ...displayDays.map(({ date, dayOfWeek, isActive }) => {
+                        const dateStr = format(date, 'yyyy-MM-dd');
+                        const cellKey = `${dateStr}-${period}`;
 
-                       {/* Announcement Text Area */}
-                       <div className="grid grid-cols-4 items-center gap-4">
-                           <Label htmlFor="announcement-text" className="text-right col-span-1">
-                               連絡内容
-                           </Label>
-                           <Textarea
-                              id="announcement-text"
-                              value={announcementText}
-                              onChange={(e) => setAnnouncementText(e.target.value)}
-                              className="col-span-3 min-h-[100px]"
-                              placeholder="持ち物、テスト範囲、教室変更など"
-                              disabled={isSaving}
-                          />
-                      </div>
-                       <p className="col-span-4 text-xs text-muted-foreground px-2 text-center">
-                           科目変更・連絡内容の両方が空の場合、この時間の連絡・変更は削除されます。
-                       </p>
-                  </div>
-                  <DialogFooter className="flex justify-between sm:justify-between w-full">
-                       {/* Delete Button */}
-                       <div>
-                          {selectedSlot?.announcement && (announcementText || subjectIdOverride != null) && (
-                               <Button
-                                   variant="destructive"
-                                   onClick={handleDeleteConfirmation}
-                                   size="sm"
-                                   disabled={isSaving || isOffline}
-                              >
-                                   <Trash2 className="mr-1 w-4 h-4" />
-                                   {isSaving ? '削除中...' : '削除'}
-                               </Button>
+                        if (!dayOfWeek) return <div key={`${cellKey}-empty`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r bg-muted/30 h-full`}></div>;
+
+                        const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
+                        const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
+                        const hasEvent = !isActive && getEventsForDay(date).length > 0;
+
+                        const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
+                        const displaySubject = getSubjectById(displaySubjectId);
+                        const announcementDisplay = announcement?.text;
+
+                        // Check if the subject has changed compared to the fixed timetable
+                        const fixedSubjectId = fixedSlot?.subjectId ?? null;
+                         // Show '(変更)' only if subjectIdOverride exists AND is different from fixedSubjectId
+                        const showSubjectChangeIndicator =
+                            (announcement?.subjectIdOverride !== undefined && announcement?.subjectIdOverride !== null) && // Override exists
+                            announcement.subjectIdOverride !== (fixedSubjectId ?? null); // And differs from fixed
+
+
+                       return (
+                         <div
+                           key={cellKey}
+                           className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`} // Ensure background for sticky content
+                         >
+                          {isActive ? (
+                                <>
+                                   {/* Subject and Teacher */}
+                                   <div className="mb-1">
+                                       <div
+                                           className="text-sm truncate font-medium"
+                                           title={displaySubject?.name ?? '未設定'}
+                                       >
+                                           {displaySubject?.name ?? '未設定'}
+                                           {showSubjectChangeIndicator && (
+                                               <span className="text-xs text-destructive ml-1">(変更)</span>
+                                           )}
+                                        </div>
+                                         {displaySubject?.teacherName && (
+                                             <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
+                                                <User className="w-3 h-3 shrink-0" />
+                                                {displaySubject.teacherName}
+                                             </div>
+                                         )}
+                                    </div>
+
+                                    {/* Announcement Text */}
+                                    <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
+                                        {announcementDisplay && (
+                                            <div className="p-1 rounded bg-card border border-dashed border-accent/50">
+                                                <p className="text-foreground whitespace-pre-wrap">{announcementDisplay}</p>
+                                           </div>
+                                        )}
+                                    </div>
+
+                                    {/* Edit Button */}
+                                    <div className="mt-auto">
+                                       <Button
+                                           variant="ghost"
+                                           size="sm"
+                                           className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary"
+                                           onClick={() => handleSlotClick(dateStr, period, dayOfWeek)}
+                                           aria-label={`${dateStr} ${period}限目の連絡・変更を編集`}
+                                           disabled={isOffline}
+                                       >
+                                           <Edit2 className="w-3 h-3" />
+                                       </Button>
+                                   </div>
+                                </>
+                           ) : hasEvent ? (
+                               <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
+                           ) : (
+                                <div className="h-full"></div> // Empty cell for inactive days
                            )}
-                       </div>
-                       {/* Save and Cancel Buttons */}
-                       <div className="flex gap-2">
-                           <DialogClose asChild>
-                               <Button type="button" variant="secondary" disabled={isSaving}>
-                                   キャンセル
-                               </Button>
-                           </DialogClose>
-                           <Button
-                               type="button"
-                               onClick={handleSaveAnnouncement}
-                               disabled={isSaving || isOffline || isLoadingSubjects} // Disable if subjects are loading
-                          >
-                              {isSaving ? '保存中...' : '保存'}
-                           </Button>
-                       </div>
-                   </DialogFooter>
-              </DialogContent>
-          </Dialog>
-
+                         </div>
+                       );
+                     })
+                 ];
+                 return <div key={`row-${period}`} className="flex border-b min-h-[90px]">{cells}</div>;
+               })
+          )}
         </CardContent>
       </Card>
+
+      {/* Announcement Edit Modal */}
+     <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>連絡・変更を編集: {selectedSlot?.date} ({selectedSlot?.day ? getDayOfWeekName(selectedSlot.day) : ''}) {selectedSlot?.period}限目</DialogTitle>
+                  {selectedSlot?.fixedSubjectId && getSubjectById(selectedSlot.fixedSubjectId) && (
+                      <p className="text-sm text-muted-foreground pt-1">
+                          元の科目: {getSubjectById(selectedSlot.fixedSubjectId)?.name ?? '未設定'}
+                          {getSubjectById(selectedSlot.fixedSubjectId)?.teacherName && ` (${getSubjectById(selectedSlot.fixedSubjectId)?.teacherName})`}
+                      </p>
+                   )}
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                   {/* Subject Override Selector */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="subject-override" className="text-right col-span-1">
+                          科目変更
+                      </Label>
+                      <SubjectSelector
+                           id="subject-override"
+                           subjects={subjects}
+                           selectedSubjectId={subjectIdOverride}
+                           onValueChange={setSubjectIdOverride}
+                           placeholder="科目を選択 (変更)"
+                           disabled={isSaving || isLoadingSubjects}
+                           className="col-span-3"
+                       />
+                  </div>
+
+                   {/* Announcement Text Area */}
+                   <div className="grid grid-cols-4 items-center gap-4">
+                       <Label htmlFor="announcement-text" className="text-right col-span-1">
+                           連絡内容
+                       </Label>
+                       <Textarea
+                          id="announcement-text"
+                          value={announcementText}
+                          onChange={(e) => setAnnouncementText(e.target.value)}
+                          className="col-span-3 min-h-[100px]"
+                          placeholder="持ち物、テスト範囲、教室変更など"
+                          disabled={isSaving}
+                      />
+                  </div>
+                   <p className="col-span-4 text-xs text-muted-foreground px-2 text-center">
+                       科目変更・連絡内容の両方が空の場合、この時間の連絡・変更は削除されます。
+                   </p>
+              </div>
+              <DialogFooter className="flex justify-between sm:justify-between w-full">
+                   {/* Delete Button */}
+                   <div>
+                      {selectedSlot?.announcement && (announcementText || subjectIdOverride != null) && (
+                           <Button
+                               variant="destructive"
+                               onClick={handleDeleteConfirmation}
+                               size="sm"
+                               disabled={isSaving || isOffline}
+                          >
+                               <Trash2 className="mr-1 w-4 h-4" />
+                               {isSaving ? '削除中...' : '削除'}
+                           </Button>
+                       )}
+                   </div>
+                   {/* Save and Cancel Buttons */}
+                   <div className="flex gap-2">
+                       <DialogClose asChild>
+                           <Button type="button" variant="secondary" disabled={isSaving}>
+                               キャンセル
+                           </Button>
+                       </DialogClose>
+                       <Button
+                           type="button"
+                           onClick={handleSaveAnnouncement}
+                           disabled={isSaving || isOffline || isLoadingSubjects} // Disable if subjects are loading
+                      >
+                          {isSaving ? '保存中...' : '保存'}
+                       </Button>
+                   </div>
+               </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-
