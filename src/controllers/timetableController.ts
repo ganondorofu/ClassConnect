@@ -34,7 +34,7 @@ import { logAction } from '@/services/logService'; // Import logAction
  * In a real app, this would come from user context or routing.
  */
 const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
-const FUTURE_WEEKS_TO_APPLY = 3; // Number of future weeks to auto-apply fixed timetable
+const FUTURE_DAYS_TO_APPLY = 60; // Number of future days to auto-apply fixed timetable (approx. 2 months)
 
 // --- Firestore Collection References ---
 
@@ -58,17 +58,33 @@ const formatTimestampForLog = (timestamp: Date | Timestamp | undefined): string 
 };
 
 // Helper to prepare state for logging (converts timestamps)
+// Also ensures undefined values are replaced with null
 const prepareStateForLog = (state: any): any => {
-  if (!state) return null;
-  const loggableState = { ...state };
-  if (loggableState.updatedAt) {
-    loggableState.updatedAt = formatTimestampForLog(loggableState.updatedAt);
-  }
-   if (loggableState.createdAt) {
-      loggableState.createdAt = formatTimestampForLog(loggableState.createdAt);
-   }
-  // Add other timestamp fields if needed
-  return loggableState;
+  if (state === undefined || state === null) return null;
+  // Deep clone and replace undefined with null
+  return JSON.parse(JSON.stringify(state, (key, value) =>
+    value === undefined ? null : value
+  ), (key, value) => {
+      // Attempt to parse ISO strings back to Date objects if applicable,
+      // but primarily ensure timestamps are handled correctly before stringify.
+      // For logging, ISO string representation is generally safer.
+      if (typeof value === 'string') {
+          // Basic check for ISO date format - adjust regex if needed
+          const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
+          if (isoDateRegex.test(value)) {
+              // Keep as ISO string for logging to avoid Firestore issues with mixed types
+              return value;
+          }
+      }
+       // Convert Date/Timestamp to ISO string before stringify catches them
+       if (value instanceof Timestamp) {
+          return value.toDate().toISOString();
+       }
+       if (value instanceof Date) {
+           return value.toISOString();
+       }
+      return value;
+  });
 };
 
 
@@ -257,6 +273,7 @@ export const onTimetableSettingsUpdate = (
  */
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
    try {
+      // Removed orderby to avoid needing a complex index just for retrieval
       const snapshot = await getDocs(fixedTimetableCollectionRef);
       let slots = snapshot.docs.map(doc => doc.data() as FixedTimeSlot);
 
@@ -265,6 +282,7 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
           subjectId: slot.subjectId === undefined ? null : slot.subjectId
       }));
 
+       // Sort client-side instead of in the query
        slots.sort((a, b) => {
            const dayAIndex = AllDays.indexOf(a.day);
            const dayBIndex = AllDays.indexOf(b.day);
@@ -280,6 +298,7 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
           console.warn("Client is offline. Returning empty fixed timetable.");
           return [];
       }
+        // Re-check specific index error message if it occurs despite removing orderBy
         if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
             console.error("Firestore query requires an index. Please check the Firebase console error for a link to create it: ", (error as FirestoreError).message);
             throw new Error("Firestore クエリに必要なインデックスがありません。Firebaseコンソールのエラーメッセージを確認し、リンクから作成してください。");
@@ -513,7 +532,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
   try {
     const oldDataSnap = await getDoc(docRef);
     if (oldDataSnap.exists()) {
-        beforeState = { ...oldDataSnap.data(), id: oldDataSnap.id } as DailyAnnouncement;
+        beforeState = { ...oldDataSnap.data(), id: oldDataSnap.id, updatedAt: (oldDataSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyAnnouncement;
         beforeState.subjectIdOverride = beforeState.subjectIdOverride === undefined ? null : beforeState.subjectIdOverride;
     }
 
@@ -582,7 +601,7 @@ export const deleteDailyAnnouncement = async (date: string, period: number): Pro
     try {
         const oldDataSnap = await getDoc(docRef);
         if (oldDataSnap.exists()) {
-            beforeState = { ...oldDataSnap.data(), id: docId } as DailyAnnouncement;
+            beforeState = { ...oldDataSnap.data(), id: docId, updatedAt: (oldDataSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyAnnouncement;
              beforeState.subjectIdOverride = beforeState.subjectIdOverride === undefined ? null : beforeState.subjectIdOverride;
 
             await deleteDoc(docRef);
@@ -687,7 +706,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
     try {
         const oldSnap = await getDoc(docRef);
         if (oldSnap.exists()) {
-            beforeState = { id: date, ...oldSnap.data() } as DailyGeneralAnnouncement;
+            beforeState = { id: date, ...oldSnap.data(), updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyGeneralAnnouncement;
         }
 
         if (!trimmedContent) {
@@ -936,7 +955,7 @@ export const onSchoolEventsUpdate = (
 
 /**
  * Applies the fixed timetable subjects to future daily announcements
- * for the next N weeks, but only for slots that don't already have
+ * for the next N days, but only for slots that don't already have
  * a daily announcement (text or subjectIdOverride).
  * Logs the overall operation.
  * @returns {Promise<void>}
@@ -965,16 +984,19 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
         const activeDaysSet = new Set(settings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays);
 
-        for (let i = 0; i < FUTURE_WEEKS_TO_APPLY * 7; i++) {
-            const futureDate = addDays(today, i + 1);
+        // Limit to FUTURE_DAYS_TO_APPLY days instead of weeks
+        for (let i = 0; i < FUTURE_DAYS_TO_APPLY; i++) {
+            const futureDate = addDays(today, i + 1); // Start from tomorrow
             const dateStr = format(futureDate, 'yyyy-MM-dd');
             const dayOfWeekJs = getDay(futureDate);
             const dayOfWeekEnum = dayMapping[dayOfWeekJs];
 
             if (!dayOfWeekEnum || !activeDaysSet.has(dayOfWeekEnum)) {
-                continue;
+                continue; // Skip inactive days
             }
 
+            // Fetch existing announcements for the specific day
+            // This might be less efficient than fetching a range, but simpler for now
             const existingAnnouncements = await getDailyAnnouncements(dateStr);
             const existingAnnouncementsMap = new Map(existingAnnouncements.map(a => [a.period, a]));
 
@@ -983,7 +1005,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 
             for (const fixedSlot of fixedSlotsForDay) {
                 if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) {
-                    continue;
+                    continue; // Skip periods beyond the settings limit
                 }
 
                 const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
@@ -1023,7 +1045,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
             await batch.commit();
             console.log(`Successfully applied/updated fixed timetable for ${operationsCount} future slots across ${datesAffected.length} days.`);
             await logAction('apply_fixed_timetable_future', {
-                meta: { operationsCount, daysAffected: datesAffected.length, weeksApplied: FUTURE_WEEKS_TO_APPLY }
+                meta: { operationsCount, daysAffected: datesAffected.length, daysApplied: FUTURE_DAYS_TO_APPLY } // Changed weeksApplied to daysApplied
              });
         } else {
             console.log("No future slots needed updating based on fixed timetable.");
@@ -1042,7 +1064,7 @@ export const applyFixedTimetableForFuture = async (): Promise<void> => {
 };
 
 /**
- * Overwrites future daily announcements with the fixed timetable data for the next N weeks.
+ * Overwrites future daily announcements with the fixed timetable data for the next N days.
  * Unlike `applyFixedTimetableForFuture`, this function *always* overwrites existing announcements.
  * Logs the operation.
  * @returns {Promise<void>}
@@ -1068,16 +1090,18 @@ export const resetFutureDailyAnnouncements = async (): Promise<void> => {
 
         const activeDaysSet = new Set(settings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays);
 
-        for (let i = 0; i < FUTURE_WEEKS_TO_APPLY * 7; i++) {
-            const futureDate = addDays(today, i + 1);
+        // Limit to FUTURE_DAYS_TO_APPLY days instead of weeks
+        for (let i = 0; i < FUTURE_DAYS_TO_APPLY; i++) {
+            const futureDate = addDays(today, i + 1); // Start from tomorrow
             const dateStr = format(futureDate, 'yyyy-MM-dd');
             const dayOfWeekJs = getDay(futureDate);
             const dayOfWeekEnum = dayMapping[dayOfWeekJs];
 
             if (!dayOfWeekEnum || !activeDaysSet.has(dayOfWeekEnum)) {
-                continue;
+                continue; // Skip inactive days
             }
 
+            // Fetch existing announcements for the specific day
             const existingAnnouncements = await getDailyAnnouncements(dateStr);
             const existingAnnouncementsMap = new Map(existingAnnouncements.map(a => [a.period, a]));
             let dateNeedsUpdate = false;
@@ -1115,7 +1139,7 @@ export const resetFutureDailyAnnouncements = async (): Promise<void> => {
             await batch.commit();
             console.log(`Successfully reset future daily announcements for ${operationsCount} slots across ${datesAffected.length} days.`);
             await logAction('reset_future_daily_announcements', {
-                 meta: { operationsCount, daysAffected: datesAffected.length, weeksApplied: FUTURE_WEEKS_TO_APPLY },
+                 meta: { operationsCount, daysAffected: datesAffected.length, daysApplied: FUTURE_DAYS_TO_APPLY }, // Changed weeksApplied to daysApplied
                  // Optionally log the 'before' states, but this could be large
                  // before: beforeStates // Be mindful of log size limits
              });
@@ -1176,4 +1200,3 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDailyGeneralAnnouncement(date);
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 // getLogs is already exported above for direct use
-
