@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"; // Import AlertDialog
 import { AlertCircle, WifiOff, PlusCircle, Edit, Trash2, Save } from 'lucide-react';
 
 import type { Subject } from '@/models/subject';
@@ -117,16 +118,18 @@ function SubjectsPageContent() {
           // Optionally close any modal if deleting from there
       },
       onError: (error: Error) => {
+          // Use the generic error handler first
           handleMutationError(error, "削除");
-          // Consider providing more specific feedback if deletion fails due to usage
-          if (error.message.includes("使用されています")) {
+          // If the error message indicates usage, show a specific toast
+          // (handleMutationError already shows a generic error toast)
+           if (error.message.includes("使用されています")) {
                toast({
                   title: "削除失敗",
-                  description: "この科目は時間割で使用されているため削除できません。",
+                  description: error.message, // Show the specific message from the controller
                   variant: "destructive",
-                  duration: 5000,
+                  duration: 7000, // Show longer
                });
-          }
+           }
       },
    });
 
@@ -179,10 +182,9 @@ function SubjectsPageContent() {
             toast({ title: "オフライン", description: "科目を削除できません。", variant: "destructive" });
             return;
         }
-        // Basic confirmation, consider using AlertDialog for better UX
-        if (window.confirm(`本当に科目「${name}」を削除しますか？ この操作は元に戻せません。`)) {
-             deleteMutation.mutate(id);
-        }
+        // Use AlertDialog for better confirmation
+        // The trigger is handled below in the table row
+        // deleteMutation.mutate(id); // Moved to AlertDialog action
     };
 
 
@@ -246,10 +248,28 @@ function SubjectsPageContent() {
                             <Edit className="h-4 w-4" />
                             <span className="sr-only">編集</span>
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(subject.id!, subject.name)} className="text-destructive hover:text-destructive h-8 w-8" disabled={isOffline || deleteMutation.isPending}>
-                            <Trash2 className="h-4 w-4" />
-                             <span className="sr-only">削除</span>
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                               <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" disabled={isOffline || deleteMutation.isPending}>
+                                 <Trash2 className="h-4 w-4" />
+                                  <span className="sr-only">削除</span>
+                               </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>本当に科目「{subject.name}」を削除しますか？</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  この操作は元に戻せません。この科目が時間割で使用されている場合、削除できません。
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel disabled={deleteMutation.isPending}>キャンセル</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deleteMutation.mutate(subject.id!)} disabled={deleteMutation.isPending}>
+                                 {deleteMutation.isPending ? '削除中...' : '削除する'}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </TableCell>
                       ];
                       return <TableRow key={subject.id}>{cells}</TableRow>;

@@ -14,6 +14,8 @@ import {
   FirestoreError,
   addDoc, // Use addDoc for auto-generated IDs
   getDoc, // Import getDoc
+  where, // Import where
+  limit, // Import limit
 } from 'firebase/firestore';
 import type { Subject } from '@/models/subject';
 import { logAction } from '@/services/logService'; // Import logAction
@@ -26,6 +28,8 @@ const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
 
 // --- Firestore Collection References ---
 const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
+const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable'); // Reference for usage check
+const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements'); // Reference for usage check
 
 // Helper function to create a plain object suitable for logging
 const prepareSubjectForLog = (subject: Subject | null): object | null => {
@@ -142,47 +146,62 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
 };
 
 /**
- * Deletes a subject.
+ * Deletes a subject after checking if it's used in the fixed timetable or daily announcements.
  * @param {string} id - The ID of the subject to delete.
  * @returns {Promise<void>}
+ * @throws {Error} If the subject is currently in use or deletion fails.
  */
 export const deleteSubject = async (id: string): Promise<void> => {
   if (!id) throw new Error("Subject ID is required for deletion.");
   const docRef = doc(subjectsCollectionRef, id);
   let beforeState: Subject | null = null;
 
-  // --- Optional: Check if subject is in use before deleting ---
-  // This requires querying fixedTimetable and potentially dailyAnnouncements
-  // For simplicity, this check is omitted here, but crucial for production.
-  // const fixedTimetableRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
-  // const q = query(fixedTimetableRef, where('subjectId', '==', id), limit(1));
-  // const usageCheck = await getDocs(q);
-  // if (!usageCheck.empty) {
-  //   throw new Error("削除できません。この科目は時間割で使用されています。");
-  // }
-  // --- End Optional Check ---
-
   try {
+    // --- Check if subject is in use before deleting ---
+    const fixedUsageQuery = query(fixedTimetableCollectionRef, where('subjectId', '==', id), limit(1));
+    const dailyUsageQuery = query(dailyAnnouncementsCollectionRef, where('subjectIdOverride', '==', id), limit(1));
+
+    const [fixedUsageSnapshot, dailyUsageSnapshot] = await Promise.all([
+      getDocs(fixedUsageQuery),
+      getDocs(dailyUsageQuery)
+    ]);
+
+    if (!fixedUsageSnapshot.empty) {
+      throw new Error("削除できません。この科目は固定時間割で使用されています。");
+    }
+    if (!dailyUsageSnapshot.empty) {
+      throw new Error("削除できません。この科目は特定日の時間割変更で使用されています。");
+    }
+    // --- End Usage Check ---
+
      // Fetch old data for logging 'before' state
      const oldSnap = await getDoc(docRef);
      if (oldSnap.exists()) {
          beforeState = { id: oldSnap.id, ...oldSnap.data() } as Subject;
+     } else {
+         console.warn(`Subject with ID ${id} not found for deletion.`);
+         return; // Subject doesn't exist, nothing to delete or log
      }
 
     await deleteDoc(docRef);
 
-    if (beforeState) { // Only log if the document actually existed
-        await logAction('delete_subject', {
-            before: prepareSubjectForLog(beforeState), // Log plain object
-            after: null
-        });
+    // Log only if the document actually existed and was deleted
+    await logAction('delete_subject', {
+        before: prepareSubjectForLog(beforeState), // Log plain object
+        after: null
+    });
+
+  } catch (error: any) {
+    console.error(`Error deleting subject ${id}:`, error);
+    if (error.message.includes("使用されています")) {
+        // Rethrow usage error to be caught by UI
+        throw error;
     }
-  } catch (error) {
-    console.error("Error deleting subject:", error);
-    if ((error as FirestoreError).code === 'unavailable') {
+    if ((error as FirestoreError)?.code === 'unavailable') {
       throw new Error("オフラインのため科目を削除できませんでした。");
     }
-    throw error;
+    // Rethrow any other unexpected errors
+    throw new Error(`科目の削除中にエラーが発生しました: ${error.message}`);
   }
 };
 
@@ -216,4 +235,3 @@ export const onSubjectsUpdate = (
 
 // --- React Query Integration Helpers ---
 export const queryFnGetSubjects = () => getSubjects();
-
