@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -419,8 +420,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   </AlertDescription>
               </Alert>
           )}
-           {/* Header Row - Moved inside CardHeader for proper sticky behavior */}
-           <div className="flex">
+           {/* Header Row - Apply sticky positioning */}
+           <div className="flex sticky top-0 bg-card z-20 border-b">
               {headers}
             </div>
         </CardHeader>
