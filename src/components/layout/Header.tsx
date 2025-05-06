@@ -15,7 +15,7 @@ export function Header() {
           <Link href="/" className="flex items-center space-x-2">
             {/* Replace lucide icon with Image component */}
             <Image
-              src="/logo.png" // Assuming the image is saved as logo.png in the public directory
+              src="/logo.png" // Corrected path: Assumes logo.png is in the public directory
               alt="ClassConnect Logo"
               width={24} // Corresponds to h-6 w-6
               height={24} // Corresponds to h-6 w-6
