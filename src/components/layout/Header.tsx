@@ -1,9 +1,10 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image'; // Import next/image
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { CalendarCheck, Settings, History, BookMarked } from 'lucide-react'; // Added BookMarked icon
+import { Settings, History, BookMarked } from 'lucide-react'; // Removed CalendarCheck
 
 export function Header() {
   return (
@@ -12,7 +13,14 @@ export function Header() {
       <div className="container flex h-14 items-center px-4 md:px-8">
         <div className="mr-4 flex items-center"> {/* Simplified structure */}
           <Link href="/" className="flex items-center space-x-2">
-            <CalendarCheck className="h-6 w-6 text-primary" />
+            {/* Replace lucide icon with Image component */}
+            <Image
+              src="/logo.png" // Assuming the image is saved as logo.png in the public directory
+              alt="ClassConnect Logo"
+              width={24} // Corresponds to h-6 w-6
+              height={24} // Corresponds to h-6 w-6
+              className="text-primary" // Keep class for potential styling, though color might not apply directly
+            />
             <span className="hidden font-bold sm:inline-block">
               ClassConnect
             </span>
