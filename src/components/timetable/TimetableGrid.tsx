@@ -34,10 +34,10 @@ import {
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import { AlertCircle, CalendarDays, Edit2, Trash2, WifiOff, User, Info } from 'lucide-react';
 import type { Timestamp, FirestoreError } from 'firebase/firestore';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useAuth } from '@/contexts/AuthContext';
 
 const DAY_CELL_WIDTH = "min-w-[140px] sm:min-w-[160px] md:min-w-[180px]";
-const TIME_CELL_WIDTH = "w-[60px] sm:w-[70px] flex-shrink-0"; // Increased width for time column
+const TIME_CELL_WIDTH = "w-[60px] sm:w-[70px] flex-shrink-0";
 
 interface TimetableGridProps {
   currentDate: Date;
@@ -59,7 +59,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
-  const { user, isAnonymous, loading: authLoading } = useAuth(); // Get auth state
+  const { user, isAnonymous, loading: authLoading } = useAuth();
 
   const [liveSettings, setLiveSettings] = useState<TimetableSettings | null>(null);
   const [liveFixedTimetable, setLiveFixedTimetable] = useState<FixedTimeSlot[]>([]);
@@ -83,7 +83,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     console.error(`Query Error (${queryKey}):`, error);
     const isOfflineError = (error as FirestoreError)?.code === 'unavailable';
     setIsOffline(isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine));
-    // Toast is now handled by individual query error handlers if needed, or a general one
   };
 
   const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
@@ -92,7 +91,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     onError: handleQueryError('timetableSettings'),
-    enabled: !isOffline && (!!user || isAnonymous), // Fetch only if authenticated or anonymous
+    enabled: !isOffline && (!!user || isAnonymous),
   });
 
   const { data: initialFixedTimetable, isLoading: isLoadingFixed, error: errorFixed } = useQuery({
@@ -208,7 +207,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date: selectedSlot.date,
         period: selectedSlot.period,
         text: announcementText.trim(),
-        subjectIdOverride: canEditTimetableSlot ? (subjectIdOverride ?? null) : selectedSlot.announcement?.subjectIdOverride ?? null, // Only allow admin to change subject
+        subjectIdOverride: canEditTimetableSlot ? (subjectIdOverride ?? null) : selectedSlot.announcement?.subjectIdOverride ?? null,
       };
       await upsertDailyAnnouncement(announcementData, userIdForLog);
       toast({ title: "成功", description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡・変更を保存しました。` });
@@ -233,18 +232,38 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const handleDeleteConfirmation = async () => {
     setAnnouncementText('');
-    if (canEditTimetableSlot) setSubjectIdOverride(null); // Admin can clear subject override
+    if (canEditTimetableSlot) setSubjectIdOverride(null);
     await handleSaveAnnouncement();
   };
 
   const numberOfPeriods = settings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
   const activeDays = settings?.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays;
-  const displayDays = useMemo(() => weekDays.map(date => {
-    const dayOfWeekJs = date.getDay();
-    const dayOfWeekMap: { [key: number]: DayOfWeek } = { 1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY, 4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY, 6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY };
-    const dayOfWeekStr = dayOfWeekMap[dayOfWeekJs];
-    return { date, dayOfWeek: dayOfWeekStr, isActive: activeDays.includes(dayOfWeekStr), isWeekend: dayOfWeekStr === DayOfWeekEnum.SATURDAY || dayOfWeekStr === DayOfWeekEnum.SUNDAY };
-  }), [weekDays, activeDays]);
+  
+  const displayDays = useMemo(() => {
+    const daysToShow = weekDays.filter(date => {
+        const dayOfWeekJs = date.getDay();
+        const dayOfWeekMap: { [key: number]: DayOfWeek } = { 1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY, 4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY, 6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY };
+        const dayOfWeekStr = dayOfWeekMap[dayOfWeekJs];
+        // Show active days or any day with an event
+        return activeDays.includes(dayOfWeekStr) || getEventsForDay(date).length > 0 || (dayOfWeekStr === DayOfWeekEnum.SATURDAY || dayOfWeekStr === DayOfWeekEnum.SUNDAY);
+    });
+    // Ensure we always show Monday to Friday if they are active, regardless of events,
+    // and then add Saturday/Sunday only if they have events or are active.
+    // The current logic of weekDays and then mapping with activeDays & events should cover this.
+    // The issue might be if Sunday has no events and is not active, it shouldn't add a blank column.
+    
+    return weekDays.map(date => {
+      const dayOfWeekJs = date.getDay();
+      const dayOfWeekMap: { [key: number]: DayOfWeek } = { 1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY, 4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY, 6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY };
+      const dayOfWeekStr = dayOfWeekMap[dayOfWeekJs];
+      const isActiveDay = activeDays.includes(dayOfWeekStr);
+      const hasEvents = getEventsForDay(date).length > 0;
+      // Only include the day in display if it's active OR it has events.
+      // This prevents empty columns for non-active, event-less weekend days.
+      return { date, dayOfWeek: dayOfWeekStr, isActive: isActiveDay, isWeekend: dayOfWeekStr === DayOfWeekEnum.SATURDAY || dayOfWeekStr === DayOfWeekEnum.SUNDAY, shouldDisplay: isActiveDay || hasEvents };
+    }).filter(day => day.shouldDisplay); // Filter out days that are neither active nor have events
+  }, [weekDays, activeDays, schoolEvents]);
+
 
   const headers = [
     <div key="header-time" className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20`}>時間</div>,
@@ -264,7 +283,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     })
   ];
 
-  if (!user && !isAnonymous && !authLoading) { // Not logged in, not anonymous, and auth check done
+  if (!user && !isAnonymous && !authLoading) {
     return (
         <Alert variant="default" className="m-4">
             <Info className="h-4 w-4" />
@@ -292,7 +311,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </Alert>
         )}
         <CardContent className="p-0 overflow-x-auto">
-          <div className="flex sticky top-0 bg-card z-20 border-b">{headers}</div>
+          <div className="flex sticky top-0 bg-card z-20 border-b">{headers.map(header => header)}</div>
           {isLoadingCombined ? (
             Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
               const skeletonCells = [
@@ -303,7 +322,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   </div>
                 ))
               ];
-              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[90px]">{skeletonCells}</div>;
+              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[90px]">{skeletonCells.map(cell => cell)}</div>;
             })
           ) : (
             Array.from({ length: numberOfPeriods }, (_, i) => i + 1).map((period) => {
@@ -313,20 +332,29 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const dateStr = format(date, 'yyyy-MM-dd');
                   const fixedSlot = isActive ? getFixedSlot(dayOfWeek, period) : undefined;
                   const announcement = isActive ? getDailyAnnouncement(dateStr, period) : undefined;
-                  const hasEvent = !isActive && getEventsForDay(date).length > 0;
+                  const hasEvent = getEventsForDay(date).length > 0; // Check if the day has events even if not active for classes
+
                   const displaySubjectId = announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null;
                   const displaySubject = getSubjectById(displaySubjectId);
                   const announcementDisplay = announcement?.text;
                   const fixedSubjectIdOrNull = fixedSlot?.subjectId ?? null;
-                  const showSubjectChangeIndicator = (announcement?.subjectIdOverride !== undefined && announcement?.subjectIdOverride !== null) && (announcement.subjectIdOverride !== fixedSubjectIdOrNull);
+                  
+                  const showSubjectChangeIndicator = 
+                    (announcement?.subjectIdOverride !== undefined && announcement?.subjectIdOverride !== null) && 
+                    (announcement.subjectIdOverride !== fixedSubjectIdOrNull);
+
+                  // Cell should render content if it's an active day OR if there's an event
+                  // Otherwise, it's an empty cell for non-active, non-event days (e.g. blank weekend)
+                  const shouldRenderContent = isActive || hasEvent;
+
 
                   return (
                     <div key={`${dateStr}-${period}-cell`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`}>
-                      {isActive ? (
+                      {shouldRenderContent ? (
                         <>
                           <div className="mb-1">
-                            <div className="text-sm truncate font-medium" title={displaySubject?.name ?? '未設定'}>
-                              {displaySubject?.name ?? '未設定'}
+                            <div className="text-sm truncate font-medium" title={displaySubject?.name ?? (isActive ? '未設定' : '')}>
+                              {displaySubject?.name ?? (isActive ? '未設定' : '')}
                               {showSubjectChangeIndicator && <span className="text-xs text-destructive ml-1">(変更)</span>}
                             </div>
                             {displaySubject?.teacherName && (
@@ -342,22 +370,25 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               </div>
                             )}
                           </div>
-                          <div className="mt-auto">
-                            <Button variant="ghost" size="sm" className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary" onClick={() => handleSlotClick(dateStr, period, dayOfWeek)} aria-label={`${dateStr} ${period}限目の連絡・変更を編集`} disabled={isOffline || (!user && !isAnonymous)}>
-                              <Edit2 className="w-3 h-3" />
-                            </Button>
-                          </div>
+                          {isActive && ( // Only show edit button for active class days
+                            <div className="mt-auto">
+                              <Button variant="ghost" size="sm" className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary" onClick={() => handleSlotClick(dateStr, period, dayOfWeek)} aria-label={`${dateStr} ${period}限目の連絡・変更を編集`} disabled={isOffline || (!user && !isAnonymous)}>
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                          {!isActive && hasEvent && ( // If not active class day but has event, show placeholder
+                             <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
+                          )}
                         </>
-                      ) : hasEvent ? (
-                        <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">行事日</div>
                       ) : (
-                        <div className="h-full"></div>
+                        <div className="h-full"></div> // Empty for non-active, non-event days
                       )}
                     </div>
                   );
                 })
               ];
-              return <div key={`row-${period}`} className="flex border-b min-h-[90px]">{cells}</div>;
+              return <div key={`row-${period}`} className="flex border-b min-h-[90px]">{cells.map(cell => cell)}</div>;
             })
           )}
         </CardContent>
@@ -383,7 +414,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 selectedSubjectId={subjectIdOverride}
                 onValueChange={setSubjectIdOverride}
                 placeholder="科目を選択 (変更なし)"
-                disabled={isSaving || isLoadingSubjects || !canEditTimetableSlot} // Disable for anonymous
+                disabled={isSaving || isLoadingSubjects || !canEditTimetableSlot}
                 className="col-span-3"
               />
             </div>
@@ -397,7 +428,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </div>
           <DialogFooter className="flex justify-between sm:justify-between w-full">
             <div>
-              {selectedSlot?.announcement && (announcementText || subjectIdOverride !== null) && (
+              {selectedSlot?.announcement && (selectedSlot.announcement.text || selectedSlot.announcement.subjectIdOverride !== null) && (
                 <Button variant="destructive" onClick={handleDeleteConfirmation} size="sm" disabled={isSaving || isOffline}>
                   <Trash2 className="mr-1 w-4 h-4" />{isSaving ? '削除中...' : '削除'}
                 </Button>
