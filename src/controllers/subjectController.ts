@@ -30,15 +30,6 @@ const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subje
 const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
 const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
 
-// Helper function to create a plain object suitable for logging
-const prepareSubjectForLog = (subject: Subject | null): object | null => {
-  if (!subject) return null;
-  // Return a plain object without the ID if it exists, as ID is often the doc key
-  const { id, ...loggableSubject } = subject;
-  return loggableSubject;
-};
-
-
 // --- Subject Management Functions ---
 
 /**
@@ -81,10 +72,10 @@ export const addSubject = async (name: string, teacherName: string): Promise<str
   };
   try {
     const docRef = await addDoc(subjectsCollectionRef, dataToSet); // Automatically generates ID
-    const newSubjectLogData = { id: docRef.id, ...dataToSet }; // Include ID for context in log if needed
+    const newSubjectWithId = { id: docRef.id, ...dataToSet };
     await logAction('add_subject', {
         before: null,
-        after: prepareSubjectForLog(newSubjectLogData) // Log the plain object
+        after: newSubjectWithId
     });
     return docRef.id;
   } catch (error) {
@@ -128,8 +119,8 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
     await setDoc(docRef, dataToSet, { merge: true }); // Use merge:true or simply setDoc to overwrite
     const afterState = { id, ...dataToSet };
     await logAction('update_subject', {
-        before: prepareSubjectForLog(beforeState), // Log plain objects
-        after: prepareSubjectForLog(afterState)
+        before: beforeState,
+        after: afterState
      });
   } catch (error) {
     console.error("Error updating subject:", error);
@@ -190,7 +181,7 @@ export const deleteSubject = async (id: string): Promise<void> => {
     await batch.commit();
 
     await logAction('delete_subject', {
-      before: prepareSubjectForLog(beforeState),
+      before: beforeState, // Pass the full beforeState which includes the ID
       after: null,
       meta: { referencesUpdatedCount }
     });
@@ -224,7 +215,7 @@ export const onSubjectsUpdate = (
       if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
           console.error("Firestore query for subjects requires an index on 'name' for realtime updates. Please create it.");
           if (onError) {
-              onError(new Error("Firestore 科目クエリに必要なインデックス(name)がありません (realtime)。作成してください。"));
+              onError(new Error("Firestore 科目クエリに必要なインデックス(name) がありません (realtime)。作成してください。"));
           }
       } else if (onError) {
          onError(error);
