@@ -113,23 +113,16 @@ function SubjectsPageContent() {
    const deleteMutation = useMutation({
       mutationFn: (id: string) => deleteSubject(id),
       onSuccess: async (_, id) => {
-          toast({ title: "成功", description: `科目を削除しました。` });
+          toast({ title: "成功", description: `科目を削除しました。関連する時間割のコマは「未設定」になります。` });
            await queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
-          // Optionally close any modal if deleting from there
+           // Invalidate timetable related queries as references might have changed
+           await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
+           await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
       },
       onError: (error: Error) => {
-          // Use the generic error handler first
           handleMutationError(error, "削除");
-          // If the error message indicates usage, show a specific toast
-          // (handleMutationError already shows a generic error toast)
-           if (error.message.includes("使用されています")) {
-               toast({
-                  title: "削除失敗",
-                  description: error.message, // Show the specific message from the controller
-                  variant: "destructive",
-                  duration: 7000, // Show longer
-               });
-           }
+          // Generic error handling is done by handleMutationError
+          // Specific "in use" error from controller is now removed, as it force deletes
       },
    });
 
@@ -182,7 +175,6 @@ function SubjectsPageContent() {
             toast({ title: "オフライン", description: "科目を削除できません。", variant: "destructive" });
             return;
         }
-        // Use AlertDialog for better confirmation
         // The trigger is handled below in the table row
         // deleteMutation.mutate(id); // Moved to AlertDialog action
     };
@@ -259,7 +251,7 @@ function SubjectsPageContent() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>本当に科目「{subject.name}」を削除しますか？</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  この操作は元に戻せません。この科目が時間割で使用されている場合、削除できません。
+                                  この操作は元に戻せません。この科目が時間割で使用されている場合、該当箇所は「未設定」として扱われます。
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
