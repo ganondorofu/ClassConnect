@@ -1,3 +1,4 @@
+
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -11,31 +12,18 @@ import {
   onSnapshot,
   Unsubscribe,
   FirestoreError,
-  addDoc, // Use addDoc for auto-generated IDs
-  getDoc, // Import getDoc
-  where, // Import where
-  limit, // Import limit
+  addDoc, 
+  getDoc, 
+  where, 
 } from 'firebase/firestore';
 import type { Subject } from '@/models/subject';
-import { logAction } from '@/services/logService'; // Import logAction
+import { logAction } from '@/services/logService';
 
-/**
- * Placeholder for the current class ID.
- * In a real app, this would come from user context or routing.
- */
-const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
-
-// --- Firestore Collection References ---
+const CURRENT_CLASS_ID = 'defaultClass'; 
 const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
 const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
 const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
 
-// --- Subject Management Functions ---
-
-/**
- * Fetches all subjects for the current class, ordered by name.
- * @returns {Promise<Subject[]>} Array of subjects.
- */
 export const getSubjects = async (): Promise<Subject[]> => {
   try {
     const q = query(subjectsCollectionRef, orderBy('name'));
@@ -44,10 +32,8 @@ export const getSubjects = async (): Promise<Subject[]> => {
   } catch (error) {
     console.error("Error fetching subjects:", error);
     if ((error as FirestoreError).code === 'unavailable') {
-      console.warn("Client is offline. Returning empty subjects list.");
       return [];
     }
-    // Handle potential index errors if orderBy is used without an index
     if ((error as FirestoreError).code === 'failed-precondition' && (error as FirestoreError).message.includes('index')) {
         console.error("Firestore query for subjects requires an index on 'name'. Please create it.");
         throw new Error("Firestore 科目クエリに必要なインデックス(name)がありません。作成してください。");
@@ -56,13 +42,7 @@ export const getSubjects = async (): Promise<Subject[]> => {
   }
 };
 
-/**
- * Adds a new subject to the current class.
- * @param {string} name - The name of the subject.
- * @param {string} teacherName - The name of the teacher.
- * @returns {Promise<string>} The ID of the newly created subject.
- */
-export const addSubject = async (name: string, teacherName: string): Promise<string> => {
+export const addSubject = async (name: string, teacherName: string, userId: string = 'system_add_subject'): Promise<string> => {
   if (!name || !teacherName) {
     throw new Error("科目名と教員名は必須です。");
   }
@@ -71,12 +51,12 @@ export const addSubject = async (name: string, teacherName: string): Promise<str
     teacherName: teacherName.trim(),
   };
   try {
-    const docRef = await addDoc(subjectsCollectionRef, dataToSet); // Automatically generates ID
+    const docRef = await addDoc(subjectsCollectionRef, dataToSet);
     const newSubjectWithId = { id: docRef.id, ...dataToSet };
     await logAction('add_subject', {
         before: null,
         after: newSubjectWithId
-    });
+    }, userId); // Pass userId to logAction
     return docRef.id;
   } catch (error) {
     console.error("Error adding subject:", error);
@@ -91,14 +71,7 @@ export const addSubject = async (name: string, teacherName: string): Promise<str
   }
 };
 
-/**
- * Updates an existing subject.
- * @param {string} id - The ID of the subject to update.
- * @param {string} name - The updated name of the subject.
- * @param {string} teacherName - The updated name of the teacher.
- * @returns {Promise<void>}
- */
-export const updateSubject = async (id: string, name: string, teacherName: string): Promise<void> => {
+export const updateSubject = async (id: string, name: string, teacherName: string, userId: string = 'system_update_subject'): Promise<void> => {
    if (!id) throw new Error("Subject ID is required for updates.");
    if (!name || !teacherName) throw new Error("科目名と教員名は必須です。");
 
@@ -110,18 +83,17 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
   let beforeState: Subject | null = null;
 
   try {
-    // Fetch old data for logging 'before' state
     const oldSnap = await getDoc(docRef);
     if (oldSnap.exists()) {
         beforeState = { id: oldSnap.id, ...oldSnap.data() } as Subject;
     }
 
-    await setDoc(docRef, dataToSet, { merge: true }); // Use merge:true or simply setDoc to overwrite
+    await setDoc(docRef, dataToSet, { merge: true });
     const afterState = { id, ...dataToSet };
     await logAction('update_subject', {
         before: beforeState,
         after: afterState
-     });
+     }, userId); // Pass userId to logAction
   } catch (error) {
     console.error("Error updating subject:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -135,13 +107,7 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
   }
 };
 
-/**
- * Deletes a subject and updates all references in fixedTimetable and dailyAnnouncements to null.
- * @param {string} id - The ID of the subject to delete.
- * @returns {Promise<void>}
- * @throws {Error} If deletion or reference update fails.
- */
-export const deleteSubject = async (id: string): Promise<void> => {
+export const deleteSubject = async (id: string, userId: string = 'system_delete_subject'): Promise<void> => {
   if (!id) throw new Error("Subject ID is required for deletion.");
   const subjectDocRef = doc(subjectsCollectionRef, id);
   let beforeState: Subject | null = null;
@@ -149,8 +115,6 @@ export const deleteSubject = async (id: string): Promise<void> => {
 
   try {
     const batch = writeBatch(db);
-
-    // Fetch subject data for logging
     const subjectSnap = await getDoc(subjectDocRef);
     if (subjectSnap.exists()) {
       beforeState = { id: subjectSnap.id, ...subjectSnap.data() } as Subject;
@@ -159,7 +123,6 @@ export const deleteSubject = async (id: string): Promise<void> => {
       throw new Error(`科目 (ID: ${id}) が見つかりませんでした。`);
     }
 
-    // Find and update references in fixedTimetable
     const fixedUsageQuery = query(fixedTimetableCollectionRef, where('subjectId', '==', id));
     const fixedUsageSnapshot = await getDocs(fixedUsageQuery);
     fixedUsageSnapshot.forEach((docSnap) => {
@@ -167,7 +130,6 @@ export const deleteSubject = async (id: string): Promise<void> => {
       referencesUpdatedCount++;
     });
 
-    // Find and update references in dailyAnnouncements
     const dailyUsageQuery = query(dailyAnnouncementsCollectionRef, where('subjectIdOverride', '==', id));
     const dailyUsageSnapshot = await getDocs(dailyUsageQuery);
     dailyUsageSnapshot.forEach((docSnap) => {
@@ -175,16 +137,14 @@ export const deleteSubject = async (id: string): Promise<void> => {
       referencesUpdatedCount++;
     });
 
-    // Delete the subject itself
     batch.delete(subjectDocRef);
-
     await batch.commit();
 
     await logAction('delete_subject', {
-      before: beforeState, // Pass the full beforeState which includes the ID
+      before: beforeState,
       after: null,
       meta: { referencesUpdatedCount }
-    });
+    }, userId); // Pass userId to logAction
 
   } catch (error: any) {
     console.error(`Error deleting subject ${id} and updating references:`, error);
@@ -195,13 +155,6 @@ export const deleteSubject = async (id: string): Promise<void> => {
   }
 };
 
-
-/**
- * Subscribes to real-time updates for the subjects list.
- * @param {(subjects: Subject[]) => void} callback - Function to call with the updated subjects list.
- * @param {(error: Error) => void} [onError] - Optional function to call on error.
- * @returns {Unsubscribe} Function to unsubscribe from updates.
- */
 export const onSubjectsUpdate = (
     callback: (subjects: Subject[]) => void,
     onError?: (error: Error) => void
@@ -223,6 +176,4 @@ export const onSubjectsUpdate = (
     });
 };
 
-
-// --- React Query Integration Helpers ---
 export const queryFnGetSubjects = () => getSubjects();

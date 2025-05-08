@@ -8,18 +8,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
-import { format, isValid } from 'date-fns'; // Import isValid
+import { format, isValid } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Edit, Save, X, AlertCircle, Info, CornerDownLeft } from 'lucide-react';
+import { Edit, Save, X, AlertCircle, Info } from 'lucide-react';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
 import { upsertDailyGeneralAnnouncement } from '@/controllers/timetableController';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 interface DailyAnnouncementDisplayProps {
-  date: Date | null; // Allow date to be null initially
-  announcement: DailyGeneralAnnouncement | null | undefined; // Allow undefined for initial loading state
+  date: Date | null;
+  announcement: DailyGeneralAnnouncement | null | undefined;
   isLoading: boolean;
-  error: unknown; // Accept any error type
+  error: unknown;
 }
 
 export function DailyAnnouncementDisplay({ date, announcement, isLoading, error }: DailyAnnouncementDisplayProps) {
@@ -27,23 +28,29 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const [editText, setEditText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
-  const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : ''; // Format only if date is valid
+  const { user, isAnonymous, loading: authLoading } = useAuth(); // Get auth state
+  const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : '';
+
+  const canEdit = !!user || isAnonymous; // Admin or anonymous can edit announcements
 
   const handleEditClick = () => {
+    if (!canEdit) return;
     setEditText(announcement?.content ?? '');
     setIsEditing(true);
   };
 
   const handleCancelClick = () => {
     setIsEditing(false);
-    setEditText(''); // Reset edit text
+    setEditText('');
   };
 
   const handleSaveClick = async () => {
-    if (isSaving || !dateStr) return; // Prevent saving if date is not set
+    if (isSaving || !dateStr || !canEdit) return;
     setIsSaving(true);
     try {
-      await upsertDailyGeneralAnnouncement(dateStr, editText);
+      // Pass user ID if logged in, otherwise null or 'anonymous' for logging
+      const userId = user ? user.uid : (isAnonymous ? 'anonymous_general_edit' : 'unknown_user');
+      await upsertDailyGeneralAnnouncement(dateStr, editText, userId);
       toast({ title: "成功", description: "今日のお知らせを保存しました。" });
       setIsEditing(false);
     } catch (err) {
@@ -59,8 +66,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   };
 
   const renderContent = () => {
-    // Show loading skeleton if date is not yet set or if loading data
-    if (isLoading || !date) {
+    if (isLoading || authLoading || !date) {
       return (
         <div className="space-y-2">
           <Skeleton className="h-4 w-3/4" />
@@ -75,12 +81,23 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>エラー</AlertTitle>
-          <AlertDescription>
-            お知らせの読み込みに失敗しました。
-          </AlertDescription>
+          <AlertDescription>お知らせの読み込みに失敗しました。</AlertDescription>
         </Alert>
       );
     }
+    
+    if (!user && !isAnonymous && !authLoading) { // Not logged in, not anonymous, and auth check done
+        return (
+             <Alert variant="default" className="mt-4">
+                <Info className="h-4 w-4" />
+                <AlertTitle>お知らせの表示</AlertTitle>
+                <AlertDescription>
+                    ログインまたは「ログインなしで利用」を選択すると、お知らせが表示されます。
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
 
     if (isEditing) {
       return (
@@ -90,20 +107,18 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
             onChange={(e) => setEditText(e.target.value)}
             placeholder="Markdown形式で入力 (例: # 見出し, - リスト, **太字**)"
             className="min-h-[150px] font-mono text-sm"
-            disabled={isSaving}
+            disabled={isSaving || !canEdit}
           />
           <div className="flex justify-between items-center">
-             <p className="text-xs text-muted-foreground flex items-center gap-1">
-               <Info className="w-3 h-3" /> Markdown記法が使えます。空欄で保存するとお知らせは削除されます。
-             </p>
-             <div className="flex gap-2">
-              <Button variant="secondary" onClick={handleCancelClick} disabled={isSaving} size="sm">
-                <X className="mr-1 h-4 w-4" />
-                キャンセル
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Info className="w-3 h-3" /> Markdown記法が使えます。空欄で保存するとお知らせは削除されます。
+            </p>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={handleCancelClick} disabled={isSaving || !canEdit} size="sm">
+                <X className="mr-1 h-4 w-4" /> キャンセル
               </Button>
-              <Button onClick={handleSaveClick} disabled={isSaving} size="sm">
-                <Save className="mr-1 h-4 w-4" />
-                {isSaving ? '保存中...' : '保存'}
+              <Button onClick={handleSaveClick} disabled={isSaving || !canEdit} size="sm">
+                <Save className="mr-1 h-4 w-4" /> {isSaving ? '保存中...' : '保存'}
               </Button>
             </div>
           </div>
@@ -115,16 +130,16 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       return (
         <div className="text-center text-muted-foreground py-4">
           <p>今日のお知らせはありません。</p>
-          <Button variant="ghost" size="sm" onClick={handleEditClick} className="mt-2">
-            <Edit className="mr-1 h-4 w-4" />
-            お知らせを作成する
-          </Button>
+          {canEdit && (
+            <Button variant="ghost" size="sm" onClick={handleEditClick} className="mt-2">
+              <Edit className="mr-1 h-4 w-4" /> お知らせを作成する
+            </Button>
+          )}
         </div>
       );
     }
 
     return (
-      // Add Tailwind typography styles for proper Markdown rendering
       <div className="prose dark:prose-invert max-w-none text-sm">
         <ReactMarkdown>{announcement.content}</ReactMarkdown>
       </div>
@@ -133,31 +148,25 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
 
   const renderTitle = () => {
     if (!date || !isValid(date)) {
-       return <Skeleton className="h-6 w-48" />; // Show skeleton if date is invalid/null
+      return <Skeleton className="h-6 w-48" />;
     }
     return `${format(date, 'M月d日', { locale: ja })} (${format(date, 'EEEE', { locale: ja })}) のお知らせ`;
- };
-
+  };
 
   return (
     <Card className="mb-6 shadow-md">
       <CardHeader className="flex flex-row justify-between items-start pb-2">
         <div>
-          <CardTitle className="text-lg">
-            {renderTitle()}
-          </CardTitle>
+          <CardTitle className="text-lg">{renderTitle()}</CardTitle>
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
-        {!isEditing && announcement?.content && date && ( // Only show edit if date exists
+        {!isEditing && announcement?.content && date && canEdit && (
           <Button variant="outline" size="sm" onClick={handleEditClick}>
-            <Edit className="mr-1 h-4 w-4" />
-            編集
+            <Edit className="mr-1 h-4 w-4" /> 編集
           </Button>
         )}
       </CardHeader>
-      <CardContent>
-        {renderContent()}
-      </CardContent>
+      <CardContent>{renderContent()}</CardContent>
     </Card>
   );
 }
