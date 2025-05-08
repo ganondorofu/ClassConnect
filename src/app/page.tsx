@@ -1,3 +1,4 @@
+
 "use client"; // Required for React Query and state hooks
 
 import React, { useState, useEffect } from 'react'; // Import React and useEffect
@@ -6,10 +7,9 @@ import MainLayout from '@/components/layout/MainLayout'; // Corrected: Default i
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay'; // Import the new component
 import { Button } from '@/components/ui/button';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Database, CalendarDays, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'; // Added ArrowLeft, ArrowRight, RotateCcw
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CalendarDays, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'; // Added ArrowLeft, ArrowRight, RotateCcw
 import { format, addDays, subDays, addWeeks, subWeeks, startOfDay } from 'date-fns';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
-import { runSeedData } from '@/lib/seedData'; // Import seed function
 import { useToast } from '@/hooks/use-toast'; // Import useToast
 import { queryFnGetDailyGeneralAnnouncement, onDailyGeneralAnnouncementUpdate } from '@/controllers/timetableController'; // Import functions for general announcements
 import type { DailyGeneralAnnouncement } from '@/models/announcement'; // Import the type
@@ -24,7 +24,6 @@ const queryClient = new QueryClient();
 // Component containing the actual page content and hooks
 function HomePageContent() {
    const [currentDate, setCurrentDate] = useState<Date | null>(null); // Initialize with null to prevent hydration mismatch
-   const [isSeeding, setIsSeeding] = useState(false);
    const { toast } = useToast();
    const queryClientHook = useQueryClient(); // Now called within the provider context
    const [todayStr, setTodayStr] = useState<string>(''); // State for date string
@@ -111,22 +110,6 @@ function HomePageContent() {
         // Close popover after selection (optional) - requires managing Popover open state
    };
 
-   const handleSeedData = async () => {
-     if (isSeeding) return;
-     setIsSeeding(true);
-     toast({ title: "データ投入中...", description: "初期データを登録しています。" });
-     try {
-       await runSeedData();
-       toast({ title: "成功", description: "初期データの投入が完了しました。ページをリロードしてください。" });
-       // Invalidate all relevant queries after seeding
-       await queryClientHook.invalidateQueries();
-     } catch (error) {
-       console.error("Seed data error:", error);
-       toast({ title: "エラー", description: `初期データの投入中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
-     } finally {
-       setIsSeeding(false);
-     }
-   };
 
     // Loading state while currentDate is null (only on initial client load)
     if (!currentDate) {
@@ -135,7 +118,6 @@ function HomePageContent() {
              <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
                  <Skeleton className="h-8 w-48" />
                  <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-                     {process.env.NODE_ENV === 'development' && <Skeleton className="h-9 w-24" />}
                      <Skeleton className="h-9 w-16" />
                      <div className="flex gap-1"> {/* Group daily nav */}
                          <Skeleton className="h-9 w-9" />
@@ -164,13 +146,6 @@ function HomePageContent() {
             </h1>
             {/* Navigation Buttons - Grouped for clarity */}
              <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-                  {/* Seed Button (Dev only) */}
-                  {process.env.NODE_ENV === 'development' && (
-                     <Button variant="outline" size="sm" onClick={handleSeedData} disabled={isSeeding}>
-                       <Database className="mr-1 h-4 w-4" />
-                       {isSeeding ? "..." : "初期データ"}
-                     </Button>
-                   )}
                    {/* Today Button */}
                  <Button variant="outline" size="sm" onClick={handleToday}>
                      <RotateCcw className="mr-1 h-4 w-4" /> {/* Changed icon */}
