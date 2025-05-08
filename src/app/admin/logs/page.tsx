@@ -15,9 +15,9 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { AlertCircle, WifiOff, RotateCcw, Lock } from 'lucide-react'; // Added Lock
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { AlertCircle, WifiOff, RotateCcw, Lock } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 const queryClient = new QueryClient();
 
@@ -26,7 +26,7 @@ function LogsPageContent() {
   const queryClientHook = useQueryClient();
   const { toast } = useToast();
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
-  const { user } = useAuth(); // Get user for logging
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -56,7 +56,7 @@ function LogsPageContent() {
   });
 
   const rollbackMutation = useMutation({
-    mutationFn: (logId: string) => rollbackAction(logId, user?.uid ?? 'admin_user_logs'), // Pass user ID
+    mutationFn: (logId: string) => rollbackAction(logId, user?.uid ?? 'admin_user_logs'),
     onSuccess: (data, logId) => {
       toast({ title: "ロールバック/取り消し 成功", description: `ログID: ${logId} の操作を元に戻しました/取り消しました。` });
       queryClientHook.invalidateQueries({ queryKey: ['actionLogs'] });
@@ -81,6 +81,8 @@ function LogsPageContent() {
   };
 
   const isRollbackPossible = (action: string): boolean => {
+    // 'rollback_rollback_action' means a rollback was undone (original action reapplied).
+    // Such logs should not themselves be reversible.
     const nonReversibleActions = ['apply_fixed_timetable_future', 'reset_future_daily_announcements', 'initialize_settings', 'rollback_action_failed', 'rollback_rollback_action'];
     return !nonReversibleActions.includes(action);
   };
@@ -105,7 +107,7 @@ function LogsPageContent() {
       'apply_fixed_timetable_future_error': '固定時間割の将来適用エラー', 'reset_fixed_timetable': '固定時間割リセット',
       'reset_future_daily_announcements': '将来の連絡リセット', 'upsert_general_announcement': '全体連絡 更新/作成',
       'delete_general_announcement': '全体連絡 削除', 'rollback_action': '操作のロールバック',
-      'rollback_action_failed': 'ロールバック失敗', 'rollback_rollback_action': 'ロールバックの取り消し',
+      'rollback_action_failed': 'ロールバック失敗', 'rollback_rollback_action': 'ロールバックの取り消し(元操作再適用)',
     };
     return descriptions[action] || action;
   };
@@ -166,24 +168,25 @@ function LogsPageContent() {
                     const buttonText = isRollbackLog ? '取り消し' : '元に戻す';
                     const dialogTitle = isRollbackLog ? 'ロールバックを取り消しますか？' : '操作を元に戻しますか？';
                     const dialogDescription = isRollbackLog ? `ログID: ${log.id} のロールバック操作を取り消します。元の操作 (${getActionDescription(log.details?.originalAction ?? '')}) が再適用されます。` : `ログID: ${log.id} (${getActionDescription(log.action)}) の操作を元に戻します。`;
+                    
                     const cells = [
-                      <TableCell key={`${log.id}-timestamp`} className="text-xs sm:text-sm">{formatTimestamp(log.timestamp)}</TableCell>,
-                      <TableCell key={`${log.id}-action`} className="font-medium text-xs sm:text-sm">{getActionDescription(log.action)}</TableCell>,
-                      <TableCell key={`${log.id}-user`} className="text-muted-foreground text-xs sm:text-sm">{log.userId}</TableCell>,
-                      <TableCell key={`${log.id}-details`}>{renderDetails(log.details)}</TableCell>,
-                      <TableCell key={`${log.id}-rollback`} className="text-right">
-                        {canRollback && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={isOffline || !!rollingBackId} className={`h-8 text-xs sm:text-sm ${isCurrentlyRollingBack ? 'animate-pulse' : ''}`}><RotateCcw className={`mr-1 h-3 w-3 ${isCurrentlyRollingBack ? 'animate-spin' : ''}`} /><span className="hidden sm:inline">{isCurrentlyRollingBack ? '処理中' : buttonText}</span><span className="sm:hidden">{isCurrentlyRollingBack ? '...' : buttonText}</span></Button></AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader><AlertDialogTitle>{dialogTitle}</AlertDialogTitle><AlertDialogDescription>{dialogDescription}<br />この操作は{isRollbackLog ? 'ロールバック取り消し' : 'ロールバック'}ログとして記録されます。<strong className="block mt-2 text-destructive">注意: 複雑な操作や依存関係のある変更は、予期せぬ結果を招く可能性があります。</strong></AlertDialogDescription></AlertDialogHeader>
-                              <AlertDialogFooter><AlertDialogCancel disabled={isCurrentlyRollingBack}>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => handleRollback(log.id!)} disabled={isCurrentlyRollingBack}>{buttonText}</AlertDialogAction></AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                      </TableCell>
-                    ];
-                    return <TableRow key={log.id}>{cells}</TableRow>;
+                        <TableCell key={`${log.id}-timestamp`} className="text-xs sm:text-sm">{formatTimestamp(log.timestamp)}</TableCell>,
+                        <TableCell key={`${log.id}-action`} className="font-medium text-xs sm:text-sm">{getActionDescription(log.action)}</TableCell>,
+                        <TableCell key={`${log.id}-user`} className="text-muted-foreground text-xs sm:text-sm">{log.userId}</TableCell>,
+                        <TableCell key={`${log.id}-details`}>{renderDetails(log.details)}</TableCell>,
+                        <TableCell key={`${log.id}-rollback`} className="text-right">
+                          {canRollback && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={isOffline || !!rollingBackId} className={`h-8 text-xs sm:text-sm ${isCurrentlyRollingBack ? 'animate-pulse' : ''}`}><RotateCcw className={`mr-1 h-3 w-3 ${isCurrentlyRollingBack ? 'animate-spin' : ''}`} /><span className="hidden sm:inline">{isCurrentlyRollingBack ? '処理中' : buttonText}</span><span className="sm:hidden">{isCurrentlyRollingBack ? '...' : buttonText}</span></Button></AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>{dialogTitle}</AlertDialogTitle><AlertDialogDescription>{dialogDescription}<br />この操作は{isRollbackLog ? 'ロールバック取り消し' : 'ロールバック'}ログとして記録されます。<strong className="block mt-2 text-destructive">注意: 複雑な操作や依存関係のある変更は、予期せぬ結果を招く可能性があります。</strong></AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter><AlertDialogCancel disabled={isCurrentlyRollingBack}>キャンセル</AlertDialogCancel><AlertDialogAction onClick={() => handleRollback(log.id!)} disabled={isCurrentlyRollingBack}>{buttonText}</AlertDialogAction></AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </TableCell>
+                      ];
+                    return <TableRow key={log.id}>{cells.map((cell, idx) => cell)}</TableRow>;
                   })}
                 </TableBody>
               </Table>
@@ -200,9 +203,9 @@ export default function LogsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!authLoading && !user && !isAnonymous) { // Not loading, no user, not anonymous -> redirect
+    if (!authLoading && !user && !isAnonymous) {
       router.push('/login?redirect=/admin/logs');
-    } else if (!authLoading && isAnonymous) { // Not loading, is anonymous -> redirect to home
+    } else if (!authLoading && isAnonymous) {
         router.push('/');
     }
   }, [user, authLoading, isAnonymous, router]);
@@ -244,7 +247,7 @@ export default function LogsPage() {
     );
   }
   
-  return ( // Fallback
+  return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
            <Alert variant="default" className="w-full max-w-md">
