@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -8,9 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Settings, History, BookMarked, LogIn, LogOut, UserCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton for loading state
+import { useRouter } from 'next/navigation';
 
 export function Header() {
   const { user, loading, logout, isAnonymous } = useAuth();
+  const router = useRouter();
+
+  const handleLoginClick = () => {
+    router.push('/login');
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -64,17 +69,22 @@ export function Header() {
               </Button>
             </>
           ) : isAnonymous ? (
-             <span className="text-sm text-muted-foreground flex items-center">
+            <>
+             <span className="text-sm text-muted-foreground flex items-center mr-2">
                 <UserCircle className="h-4 w-4 mr-1" />
                 ログインなしで利用中
              </span>
-          ) : (
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/login">
+             <Button variant="outline" size="sm" onClick={handleLoginClick}>
                 <LogIn className="h-4 w-4 sm:mr-1" />
                 <span className="hidden sm:inline">管理者ログイン</span>
-                 <span className="sm:hidden">ログイン</span>
-              </Link>
+                <span className="sm:hidden">ログイン</span>
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={handleLoginClick}>
+              <LogIn className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">管理者ログイン</span>
+              <span className="sm:hidden">ログイン</span>
             </Button>
           )}
           <ThemeToggle />
@@ -83,3 +93,4 @@ export function Header() {
     </header>
   );
 }
+

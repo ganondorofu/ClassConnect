@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -8,17 +7,27 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, LogIn } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation"; // Import useSearchParams
 import type { FormEvent} from 'react';
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loading } = useAuth();
+  const { login, loading, user, isAnonymous } = useAuth(); // Add user and isAnonymous
   const router = useRouter();
+  const searchParams = useSearchParams(); // Get search params
   const { toast } = useToast();
+
+  useEffect(() => {
+    // If user is already logged in (not anonymous), redirect them from login page
+    if (user && !isAnonymous) {
+      const redirectUrl = searchParams.get('redirect') || '/';
+      router.push(redirectUrl);
+    }
+  }, [user, isAnonymous, router, searchParams]);
+
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -32,9 +41,19 @@ export default function LoginPage() {
     }
     const userCredential = await login(email, password);
     if (userCredential) {
-      router.push("/"); // Redirect to homepage on successful login
+      const redirectUrl = searchParams.get('redirect') || '/'; // Get redirect URL from query or default to home
+      router.push(redirectUrl); 
     }
   };
+
+  // If user is already logged in (not anonymous) and we are in useEffect redirecting, show minimal loading
+  if (user && !isAnonymous) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <p>リダイレクトしています...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -110,3 +129,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
