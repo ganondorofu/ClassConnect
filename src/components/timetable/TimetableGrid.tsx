@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -34,6 +35,7 @@ import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectContr
 import { AlertCircle, CalendarDays, Edit2, Trash2, WifiOff, User, Info } from 'lucide-react';
 import type { Timestamp, FirestoreError } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
+import { cn } from "@/lib/utils"; // Import cn for conditional classnames
 
 const DAY_CELL_WIDTH = "flex-grow-0 min-w-[140px] sm:min-w-[160px] md:min-w-[180px]";
 const TIME_CELL_WIDTH = "w-[60px] sm:w-[70px] flex-shrink-0";
@@ -126,10 +128,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')],
     queryFn: async () => {
       if (isOffline || (!user && !isAnonymous)) {
-        //setIsOffline(true); // Removed to avoid state update during render
         return queryClient.getQueryData(['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')]) ?? {};
       }
-      // setIsOffline(false); // Removed
       const announcementsPromises = weekDays.map(day => queryFnGetDailyAnnouncements(format(day, 'yyyy-MM-dd'))());
       const announcementsByDay = await Promise.all(announcementsPromises);
       const announcementsMap: Record<string, DailyAnnouncement[]> = {};
@@ -192,7 +192,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   };
   const getSubjectById = (id: string | null): Subject | undefined => id ? subjectsMap.get(id) : undefined;
   
-  const canEditTimetableSlot = !!user && !isAnonymous;
+  const canEditTimetableSlot = !!user || isAnonymous; // Both admin and anonymous can edit slots
 
   const handleSlotClick = (date: string, period: number, day: DayOfWeek) => {
     const fixedSlot = getFixedSlot(day, period);
@@ -216,7 +216,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date: selectedSlot.date,
         period: selectedSlot.period,
         text: announcementText.trim(),
-        subjectIdOverride: canEditTimetableSlot ? (subjectIdOverride ?? null) : selectedSlot.announcement?.subjectIdOverride ?? null,
+        // Allow subject override only if admin, otherwise keep existing or null
+        subjectIdOverride: (user && !isAnonymous) ? (subjectIdOverride ?? null) : (selectedSlot.announcement?.subjectIdOverride ?? null),
       };
       await upsertDailyAnnouncement(announcementData, userIdForLog);
       toast({ title: "成功", description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡・変更を保存しました。` });
@@ -241,7 +242,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const handleDeleteConfirmation = async () => {
     setAnnouncementText('');
-    if (canEditTimetableSlot) setSubjectIdOverride(null);
+    if (user && !isAnonymous) setSubjectIdOverride(null); // Only admin can fully clear subject override
     await handleSaveAnnouncement();
   };
 
@@ -250,17 +251,16 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   
   const displayDays = useMemo(() => {
     return weekDays.map(date => {
-        const dayOfWeekJs = date.getDay(); // 0 for Sunday, 1 for Monday, ..., 6 for Saturday
+        const dayOfWeekJs = date.getDay(); 
         const dayOfWeekMap: { [key: number]: DayOfWeek } = { 1: DayOfWeekEnum.MONDAY, 2: DayOfWeekEnum.TUESDAY, 3: DayOfWeekEnum.WEDNESDAY, 4: DayOfWeekEnum.THURSDAY, 5: DayOfWeekEnum.FRIDAY, 6: DayOfWeekEnum.SATURDAY, 0: DayOfWeekEnum.SUNDAY };
         const dayOfWeekStr = dayOfWeekMap[dayOfWeekJs];
         
         const isActiveDay = activeDaysSetting.includes(dayOfWeekStr);
         const hasEvents = getEventsForDay(date).length > 0;
         const isWeekend = dayOfWeekStr === DayOfWeekEnum.SATURDAY || dayOfWeekStr === DayOfWeekEnum.SUNDAY;
-        const shouldDisplay = isActiveDay || hasEvents || isWeekend;
 
-        return { date, dayOfWeek: dayOfWeekStr, isActive: isActiveDay, isWeekend, shouldDisplay };
-    }).filter(day => day.shouldDisplay);
+        return { date, dayOfWeek: dayOfWeekStr, isActive: isActiveDay, isWeekend };
+    });
   }, [weekDays, activeDaysSetting, schoolEvents]);
 
 
@@ -341,19 +341,19 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const announcementDisplay = announcement?.text;
                   
                   const showSubjectChangeIndicator = 
-                    (announcement?.subjectIdOverride !== undefined && announcement?.subjectIdOverride !== null) &&
-                    (announcement.subjectIdOverride !== (fixedSlot?.subjectId ?? null));
+                    (announcement?.subjectIdOverride !== undefined && announcement?.subjectIdOverride !== (fixedSlot?.subjectId ?? null));
 
                   const isClassDay = isActive || (!isWeekend && !hasEvent);
                   const canEditThisSlot = (user || isAnonymous) && (isClassDay || hasEvent) && !(isWeekend && !hasEvent && !isActive);
+                  const isToday = isSameDay(date, currentDate);
 
 
                   return (
-                    <div key={`${dateStr}-${period}-cell`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent && isWeekend ? 'bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/5' : ''} bg-card`}>
+                    <div key={`${dateStr}-${period}-cell`} className={`flex-shrink-0 ${DAY_CELL_WIDTH} p-1 sm:p-2 border-r relative flex flex-col justify-between ${!isActive && !hasEvent && isWeekend ? 'bg-muted/30' : ''} ${isToday ? 'bg-primary/5' : ''} bg-card`}>
                       {(isActive || hasEvent) ? (
                         <>
                           <div className="mb-1">
-                            <div className="text-sm truncate font-medium" title={displaySubject?.name ?? (isActive ? '未設定' : '')}>
+                            <div className={cn("text-sm truncate font-medium", isToday && "font-bold")} title={displaySubject?.name ?? (isActive ? '未設定' : '')}>
                               {displaySubject?.name ?? (isActive ? '未設定' : '')}
                               {showSubjectChangeIndicator && <span className="text-xs text-destructive ml-1">(変更)</span>}
                             </div>
@@ -414,29 +414,29 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 selectedSubjectId={subjectIdOverride}
                 onValueChange={setSubjectIdOverride}
                 placeholder="科目を選択 (変更なし)"
-                disabled={isSaving || isLoadingSubjects || !canEditTimetableSlot}
+                disabled={isSaving || isLoadingSubjects || !(user && !isAnonymous) } // Only admin can change subject
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="announcement-text" className="text-right col-span-1">連絡内容</Label>
-              <Textarea id="announcement-text" value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} className="col-span-3 min-h-[100px]" placeholder="持ち物、テスト範囲、教室変更など" disabled={isSaving || (!user && !isAnonymous && !canEditTimetableSlot)} />
+              <Textarea id="announcement-text" value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} className="col-span-3 min-h-[100px]" placeholder="持ち物、テスト範囲、教室変更など" disabled={isSaving || !canEditTimetableSlot} />
             </div>
             <p className="col-span-4 text-xs text-muted-foreground px-2 text-center">
-              {canEditTimetableSlot ? "科目変更・連絡内容の両方が空の場合、この時間の連絡・変更は削除されます。" : "連絡内容が空の場合、この時間の連絡は削除されます。"}
+              {(user && !isAnonymous) ? "科目変更・連絡内容の両方が空の場合、この時間の連絡・変更は削除されます。" : "連絡内容が空の場合、この時間の連絡は削除されます。"}
             </p>
           </div>
           <DialogFooter className="flex justify-between sm:justify-between w-full">
             <div>
-              {(selectedSlot?.announcement || (announcementText.trim() !== '') || (subjectIdOverride !== null && subjectIdOverride !== selectedSlot?.fixedSubjectId)) && (
-                <Button variant="destructive" onClick={handleDeleteConfirmation} size="sm" disabled={isSaving || isOffline || (!user && !isAnonymous && !canEditTimetableSlot)}>
+              {((selectedSlot?.announcement && (selectedSlot.announcement.text || selectedSlot.announcement.subjectIdOverride)) || (announcementText.trim() !== '') || (subjectIdOverride !== null && subjectIdOverride !== selectedSlot?.fixedSubjectId)) && (
+                <Button variant="destructive" onClick={handleDeleteConfirmation} size="sm" disabled={isSaving || isOffline || !canEditTimetableSlot}>
                   <Trash2 className="mr-1 w-4 h-4" />{isSaving ? '削除中...' : '削除'}
                 </Button>
               )}
             </div>
             <div className="flex gap-2">
               <DialogClose asChild><Button type="button" variant="secondary" disabled={isSaving}>キャンセル</Button></DialogClose>
-              <Button type="button" onClick={handleSaveAnnouncement} disabled={isSaving || isOffline || isLoadingSubjects || (!user && !isAnonymous && !canEditTimetableSlot)}>
+              <Button type="button" onClick={handleSaveAnnouncement} disabled={isSaving || isOffline || isLoadingSubjects || !canEditTimetableSlot}>
                 {isSaving ? '保存中...' : '保存'}
               </Button>
             </div>
@@ -446,3 +446,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+
