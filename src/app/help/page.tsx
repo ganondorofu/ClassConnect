@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -6,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { cn } from "@/lib/utils"; // Import cn utility function
 
 export default function HelpPage() {
   const [markdown, setMarkdown] = useState<string>('');
@@ -90,3 +92,4 @@ export default function HelpPage() {
     </MainLayout>
   );
 }
+
