@@ -57,8 +57,8 @@ export enum DayOfWeek {
   SUNDAY = "日",
 }
 
-// Helper array for iteration
-export const WeekDays = [
+// Helper array for default active configuration
+export const ConfigurableWeekDays = [
   DayOfWeek.MONDAY,
   DayOfWeek.TUESDAY,
   DayOfWeek.WEDNESDAY,
@@ -66,14 +66,27 @@ export const WeekDays = [
   DayOfWeek.FRIDAY,
 ];
 
+// Order for display purposes (Monday to Sunday)
+export const DisplayedWeekDaysOrder = [
+  DayOfWeek.MONDAY,
+  DayOfWeek.TUESDAY,
+  DayOfWeek.WEDNESDAY,
+  DayOfWeek.THURSDAY,
+  DayOfWeek.FRIDAY,
+  DayOfWeek.SATURDAY,
+  DayOfWeek.SUNDAY,
+];
+
+
+// All possible days, used for mapping getDay() which is 0 for Sunday
 export const AllDays = [
-    DayOfWeek.SUNDAY,
-    DayOfWeek.MONDAY,
-    DayOfWeek.TUESDAY,
-    DayOfWeek.WEDNESDAY,
-    DayOfWeek.THURSDAY,
-    DayOfWeek.FRIDAY,
-    DayOfWeek.SATURDAY,
+    DayOfWeek.SUNDAY, // Index 0
+    DayOfWeek.MONDAY, // Index 1
+    DayOfWeek.TUESDAY, // Index 2
+    DayOfWeek.WEDNESDAY, // Index 3
+    DayOfWeek.THURSDAY, // Index 4
+    DayOfWeek.FRIDAY, // Index 5
+    DayOfWeek.SATURDAY, // Index 6
 ];
 
 // Function to get Japanese day name
@@ -83,6 +96,20 @@ export function getDayOfWeekName(day: DayOfWeek): string {
 
 // Default settings
 export const DEFAULT_TIMETABLE_SETTINGS: TimetableSettings = {
-  numberOfPeriods: 7, // Changed default to 7 based on the image
-  activeDays: WeekDays,
+  numberOfPeriods: 7,
+  activeDays: ConfigurableWeekDays, // Default active days for configuration remain Mon-Fri
+};
+
+// Helper to map date-fns getDay() (0=Sun, 1=Mon, ...) to DayOfWeek enum string
+export const dayCodeToDayOfWeekEnum = (dayCode: number): DayOfWeek => {
+    const mapping: Record<number, DayOfWeek> = {
+        0: DayOfWeek.SUNDAY,
+        1: DayOfWeek.MONDAY,
+        2: DayOfWeek.TUESDAY,
+        3: DayOfWeek.WEDNESDAY,
+        4: DayOfWeek.THURSDAY,
+        5: DayOfWeek.FRIDAY,
+        6: DayOfWeek.SATURDAY,
+    };
+    return mapping[dayCode];
 };

@@ -13,7 +13,7 @@ import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettin
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
-import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName, AllDays } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { AlertCircle, WifiOff, Save, RefreshCw, RotateCcw } from 'lucide-react';
@@ -37,7 +37,14 @@ export default function SettingsContent() {
   const userIdForLog = user?.uid ?? 'admin_user_settings';
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
+    const handleOnline = () => {
+      if (isOffline) {
+        setIsOffline(false);
+        queryClientHook.invalidateQueries({ queryKey: ['timetableSettings'] });
+        queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
+        queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
+      }
+    };
     const handleOffline = () => setIsOffline(true);
     if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
       setIsOffline(!navigator.onLine);
@@ -49,12 +56,14 @@ export default function SettingsContent() {
       };
     }
     return () => {};
-  }, []);
+  }, [isOffline, queryClientHook]);
 
   const handleQueryError = (queryKey: string) => (error: unknown) => {
     console.error(`Settings Query Error (${queryKey}):`, error);
     const isOfflineError = (error as any)?.code === 'unavailable';
-    setIsOffline(isOfflineError || !navigator.onLine);
+    if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        setIsOffline(true);
+    }
   };
 
   const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
@@ -72,6 +81,7 @@ export default function SettingsContent() {
       (settings) => {
         setLiveSettings(settings);
         if (settings?.numberOfPeriods !== undefined) setNumberOfPeriods(settings.numberOfPeriods);
+        if(isOffline) setIsOffline(false);
       }, 
       (error) => { console.error("Realtime settings error:", error); setIsOffline(true); }
     );
@@ -79,6 +89,7 @@ export default function SettingsContent() {
   }, [isOffline]);
 
   const settings = useMemo(() => liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS, [liveSettings, initialSettings]);
+  
   useEffect(() => {
     if (settings?.numberOfPeriods !== undefined && (numberOfPeriods === DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods || numberOfPeriods === '')) {
       setNumberOfPeriods(settings.numberOfPeriods);
@@ -106,7 +117,7 @@ export default function SettingsContent() {
   useEffect(() => {
     if (isOffline) return;
     const unsubscribe = onSubjectsUpdate(
-      (subs) => { setLiveSubjects(subs); }, 
+      (subs) => { setLiveSubjects(subs); if(isOffline) setIsOffline(false); }, 
       (error) => { console.error("Realtime subjects error:", error); setIsOffline(true); }
     );
     return () => unsubscribe();
@@ -117,7 +128,7 @@ export default function SettingsContent() {
   useEffect(() => {
     if (fetchedFixedTimetable && settings) {
       const completeTimetable: FixedTimeSlot[] = [];
-      (settings.activeDays ?? WeekDays).forEach(day => {
+      (settings.activeDays ?? ConfigurableWeekDays).forEach(day => {
         for (let period = 1; period <= settings.numberOfPeriods; period++) {
           const existingSlot = fetchedFixedTimetable.find(slot => slot.day === day && slot.period === period);
           completeTimetable.push(existingSlot ?? { id: `${day}_${period}`, day, period, subjectId: null });
@@ -127,7 +138,7 @@ export default function SettingsContent() {
       setInitialFixedTimetableData(completeTimetable);
     } else if (settings && !fetchedFixedTimetable && !isLoadingFixed) {
       const defaultGrid: FixedTimeSlot[] = [];
-      (settings.activeDays ?? WeekDays).forEach(day => { for (let period = 1; period <= settings.numberOfPeriods; period++) defaultGrid.push({ id: `${day}_${period}`, day, period, subjectId: null }); });
+      (settings.activeDays ?? ConfigurableWeekDays).forEach(day => { for (let period = 1; period <= settings.numberOfPeriods; period++) defaultGrid.push({ id: `${day}_${period}`, day, period, subjectId: null }); });
       setEditedFixedTimetable(defaultGrid);
       setInitialFixedTimetableData(defaultGrid);
     }
@@ -142,7 +153,7 @@ export default function SettingsContent() {
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      setIsOffline(isOfflineError || !navigator.onLine);
+      if (isOfflineError || !navigator.onLine) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "設定の更新に失敗しました。" : `設定の更新に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -156,7 +167,7 @@ export default function SettingsContent() {
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      setIsOffline(isOfflineError || !navigator.onLine);
+      if (isOfflineError || !navigator.onLine) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の更新に失敗しました。" : `固定時間割の更新に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -166,7 +177,7 @@ export default function SettingsContent() {
     onSuccess: () => toast({ title: "適用開始", description: "固定時間割の将来への適用を開始しました。" }),
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      setIsOffline(isOfflineError || !navigator.onLine);
+      if (isOfflineError || !navigator.onLine) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の適用に失敗しました。" : `固定時間割の適用に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -178,13 +189,13 @@ export default function SettingsContent() {
       await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
       await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
       const resetGrid: FixedTimeSlot[] = [];
-      (settings.activeDays ?? WeekDays).forEach(day => { for (let period = 1; period <= settings.numberOfPeriods; period++) resetGrid.push({ id: `${day}_${period}`, day, period, subjectId: null }); });
+      (settings.activeDays ?? ConfigurableWeekDays).forEach(day => { for (let period = 1; period <= settings.numberOfPeriods; period++) resetGrid.push({ id: `${day}_${period}`, day, period, subjectId: null }); });
       setEditedFixedTimetable(resetGrid);
       setInitialFixedTimetableData(resetGrid);
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      setIsOffline(isOfflineError || !navigator.onLine);
+      if (isOfflineError || !navigator.onLine) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の初期化に失敗しました。" : `固定時間割の初期化に失敗しました: ${error.message}`, variant: "destructive" });
     },
     onSettled: () => setIsResetting(false),
@@ -198,7 +209,7 @@ export default function SettingsContent() {
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      setIsOffline(isOfflineError || !navigator.onLine);
+      if (isOfflineError || !navigator.onLine) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "将来の時間割の上書きに失敗しました。" : `将来の時間割の上書きに失敗しました: ${error.message}`, variant: "destructive" });
     },
     onSettled: () => setIsOverwritingFuture(false),
@@ -249,8 +260,10 @@ export default function SettingsContent() {
   const hasFixedTimetableChanged = useMemo(() => JSON.stringify(editedFixedTimetable) !== JSON.stringify(initialFixedTimetableData), [editedFixedTimetable, initialFixedTimetableData]);
   
   const tableHeaderCells = [<TableHead key="period-header" className="w-[50px] sm:w-[60px] text-center">時限</TableHead>];
-  (settings?.activeDays ?? WeekDays).forEach((day) => {
-    tableHeaderCells.push(<TableHead key={`header-${day}`} className="min-w-[150px] sm:min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead>);
+  (settings?.activeDays ?? ConfigurableWeekDays).forEach((day) => {
+    tableHeaderCells.push(<TableHead key={`header-${day}`} className="min-w-[150px] sm:min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead>
+
+);
   });
 
 
@@ -285,7 +298,7 @@ export default function SettingsContent() {
                   <TableBody>
                     {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
                       const cells = [<TableCell key={`period-cell-${period}`} className="font-medium text-center p-1 sm:p-2">{period}</TableCell>];
-                      (settings?.activeDays ?? WeekDays).forEach((day) => {
+                      (settings?.activeDays ?? ConfigurableWeekDays).forEach((day) => {
                         const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
                         cells.push(<TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2"><SubjectSelector subjects={subjects} selectedSubjectId={slot?.subjectId ?? null} onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)} placeholder="科目未設定" disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects} className="w-full text-xs sm:text-sm" /></TableCell>);
                       });
