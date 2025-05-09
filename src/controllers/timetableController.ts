@@ -1,3 +1,4 @@
+
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -28,6 +29,8 @@ import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/annou
 import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable'; // Combined imports
 import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { logAction } from '@/services/logService';
+import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
+
 
 const CURRENT_CLASS_ID = 'defaultClass';
 const FUTURE_DAYS_TO_APPLY = 60; // Approx 2 months
@@ -759,4 +762,5 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDailyGeneralAnnouncement(date);
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
+export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
 
