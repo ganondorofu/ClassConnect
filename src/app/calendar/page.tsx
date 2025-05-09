@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -41,7 +42,9 @@ function CalendarPageContent() {
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
-    if (typeof navigator !== 'undefined') setIsOffline(!navigator.onLine);
+    if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') {
+      setIsOffline(!navigator.onLine);
+    }
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -227,91 +230,97 @@ function CalendarPageContent() {
 
   return (
     <MainLayout>
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2 sm:gap-0">
-        <h1 className="text-xl sm:text-2xl font-semibold">クラスカレンダー</h1>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-base sm:text-lg font-medium w-28 sm:w-32 text-center">
-            {format(currentMonthDate, 'yyyy年 M月', { locale: ja })}
-          </span>
-          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+      {/* This div will be the main flex container for the page content, taking full height */}
+      <div className="flex flex-col h-full">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2 sm:gap-0">
+          <h1 className="text-xl sm:text-2xl font-semibold">クラスカレンダー</h1>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-base sm:text-lg font-medium w-28 sm:w-32 text-center">
+              {format(currentMonthDate, 'yyyy年 M月', { locale: ja })}
+            </span>
+            <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
+
+        {isOffline && (
+          <Alert variant="destructive" className="mb-4">
+            <WifiOff className="h-4 w-4" />
+            <AlertTitle>オフライン</AlertTitle>
+            <AlertDescription>現在オフラインです。カレンダーの表示が不正確な場合があります。</AlertDescription>
+          </Alert>
+        )}
+
+        {/* This Card should grow to fill remaining vertical space */}
+        <Card className="shadow-lg flex-grow flex flex-col overflow-hidden">
+          {/* CardContent should allow Calendar to take full space within it */}
+          <CardContent className="p-0 sm:p-2 md:p-4 flex-1 flex flex-col">
+            {isLoading ? (
+              <div className="p-4 flex-1 flex flex-col">
+                  <Skeleton className="h-8 w-1/3 mb-4" />
+                  <Skeleton className="flex-grow w-full" />
+              </div>
+            ) : errorItems ? (
+              <Alert variant="destructive" className="m-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>エラー</AlertTitle>
+                <AlertDescription>カレンダー情報の読み込みに失敗しました。</AlertDescription>
+              </Alert>
+            ) : (
+              <Calendar
+                mode="single"
+                selected={selectedDayForModal} 
+                onSelect={(day) => day && handleDayClick(day)}
+                month={currentMonthDate}
+                onMonthChange={setCurrentMonthDate}
+                locale={ja}
+                className="w-full p-0 flex-1 [&_table]:h-full [&_tbody]:h-full [&_tr]:flex-1 [&_td]:h-full sm:[&_td]:h-auto md:[&_td]:h-auto lg:[&_td]:h-auto [&_td_button]:h-full"
+                classNames={{
+                  months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
+                  month: "space-y-4 flex-1 flex flex-col", // Ensure month takes space
+                  caption: "flex justify-center pt-1 relative items-center",
+                  caption_label: "text-sm font-medium",
+                  nav: "space-x-1 flex items-center",
+                  nav_button: cn(
+                    buttonVariants({ variant: "outline" }),
+                    "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+                  ),
+                  nav_button_previous: "absolute left-1",
+                  nav_button_next: "absolute right-1",
+                  table: "w-full border-collapse space-y-1 flex-1 flex flex-col", // table flex
+                  head_row: "flex", 
+                  head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
+                  tbody: "flex-1 flex flex-col", // tbody flex
+                  row: "flex w-full mt-1 flex-1", // row flex
+                  cell: cn( 
+                    "flex-1 p-0 relative text-center text-sm", 
+                    "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
+                  ),
+                  day: cn( 
+                    buttonVariants({ variant: "ghost" }),
+                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-center justify-start" // day button flex to align content
+                  ),
+                  day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
+                  day_today: "bg-accent text-accent-foreground font-bold", 
+                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
+                  day_disabled: "text-muted-foreground opacity-50",
+                  day_range_end: "day-range-end",
+                  day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
+                  day_hidden: "invisible",
+                }}
+                components={{
+                  DayContent: ({ date }) => renderDayContent(date),
+                }}
+                disabled={isOffline}
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
-
-      {isOffline && (
-        <Alert variant="destructive" className="mb-4">
-          <WifiOff className="h-4 w-4" />
-          <AlertTitle>オフライン</AlertTitle>
-          <AlertDescription>現在オフラインです。カレンダーの表示が不正確な場合があります。</AlertDescription>
-        </Alert>
-      )}
-
-      <Card className="shadow-lg">
-        <CardContent className="p-0 sm:p-2 md:p-4">
-          {isLoading ? (
-            <div className="p-4">
-                <Skeleton className="h-8 w-1/3 mb-4" />
-                <Skeleton className="h-[400px] w-full" />
-            </div>
-          ) : errorItems ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>エラー</AlertTitle>
-              <AlertDescription>カレンダー情報の読み込みに失敗しました。</AlertDescription>
-            </Alert>
-          ) : (
-            <Calendar
-              mode="single"
-              selected={selectedDayForModal} 
-              onSelect={(day) => day && handleDayClick(day)}
-              month={currentMonthDate}
-              onMonthChange={setCurrentMonthDate}
-              locale={ja}
-              className="w-full p-0 sm:p-2 md:p-4 [&_td]:h-16 sm:[&_td]:h-20 md:[&_td]:h-24 lg:[&_td]:h-28 [&_td]:align-top [&_th]:h-10"
-              classNames={{
-                months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-                month: "space-y-4",
-                caption: "flex justify-center pt-1 relative items-center",
-                caption_label: "text-sm font-medium",
-                nav: "space-x-1 flex items-center",
-                nav_button: cn(
-                  buttonVariants({ variant: "outline" }),
-                  "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
-                ),
-                nav_button_previous: "absolute left-1",
-                nav_button_next: "absolute right-1",
-                table: "w-full border-collapse space-y-1",
-                head_row: "flex", 
-                head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
-                row: "flex w-full mt-2", 
-                cell: cn( 
-                  "flex-1 p-0 relative text-center text-sm h-full", 
-                  "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
-                ),
-                day: cn( 
-                  buttonVariants({ variant: "ghost" }),
-                  "h-full w-full p-0 font-normal aria-selected:opacity-100" 
-                ),
-                day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
-                day_today: "bg-accent text-accent-foreground font-bold", 
-                day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
-                day_disabled: "text-muted-foreground opacity-50",
-                day_range_end: "day-range-end",
-                day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
-                day_hidden: "invisible",
-              }}
-              components={{
-                DayContent: ({ date }) => renderDayContent(date),
-              }}
-              disabled={isOffline}
-            />
-          )}
-        </CardContent>
-      </Card>
 
       <Dialog open={isDayDetailModalOpen} onOpenChange={setIsDayDetailModalOpen}>
         <DialogContent className="sm:max-w-md md:max-w-lg">
@@ -393,3 +402,4 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
