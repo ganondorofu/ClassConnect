@@ -427,7 +427,19 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   try {
     const q = query(eventsCollectionRef, orderBy('startDate'));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: (doc.data().createdAt as Timestamp)?.toDate(), updatedAt: (doc.data().updatedAt as Timestamp)?.toDate() } as SchoolEvent));
+    return snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return { 
+            id: docSnap.id, 
+            title: data.title,
+            startDate: data.startDate,
+            endDate: data.endDate,
+            description: data.description,
+            itemType: 'event', // Ensure itemType is set
+            createdAt: (data.createdAt as Timestamp)?.toDate(), 
+            updatedAt: (data.updatedAt as Timestamp)?.toDate() 
+        } as SchoolEvent;
+    });
   } catch (error) {
     console.error("Error fetching school events:", error);
     if ((error as FirestoreError).code === 'unavailable') return [];
@@ -442,6 +454,7 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'create
     startDate: eventData.startDate, 
     endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
+    itemType: 'event', // Ensure itemType is set on add
     createdAt: Timestamp.now(), 
     updatedAt: Timestamp.now(),
   };
@@ -467,6 +480,7 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
     startDate: eventData.startDate, 
     endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
+    itemType: 'event', // Ensure itemType is set on update
     updatedAt: Timestamp.now() 
   };
 
@@ -477,14 +491,15 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         const oldData = oldDataSnap.data();
         beforeState = { 
             id: eventData.id, 
-            ...oldData, 
+            ...oldData,
+            itemType: 'event', // Ensure itemType from old data
             createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined, 
             updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined 
         } as SchoolEvent;
     }
     
     const cleanDataToUpdate = { ...dataToUpdate };
-    delete (cleanDataToUpdate as any).id;
+    delete (cleanDataToUpdate as any).id; // id should not be part of the data being set/merged
     
     await setDoc(docRef, cleanDataToUpdate, { merge: true });
     
@@ -495,6 +510,7 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         afterState = { 
             id: afterSnap.id, 
             ...newData, 
+            itemType: 'event', // Ensure itemType in new data
             createdAt: (newData.createdAt as Timestamp)?.toDate() ?? undefined,
             updatedAt: (newData.updatedAt as Timestamp)?.toDate() ?? undefined
         } as SchoolEvent;
@@ -521,6 +537,7 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
       beforeState = { 
           id: eventId, 
           ...oldData, 
+          itemType: 'event', // Ensure itemType
           createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined,
           updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined
       } as SchoolEvent;
@@ -536,7 +553,19 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
 
 export const onSchoolEventsUpdate = (callback: (events: SchoolEvent[]) => void, onError?: (error: Error) => void): Unsubscribe => {
   const q = query(eventsCollectionRef, orderBy('startDate'));
-  const unsubscribe = onSnapshot(q, (snapshot) => callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt:(doc.data().createdAt as Timestamp)?.toDate(), updatedAt:(doc.data().updatedAt as Timestamp)?.toDate() } as SchoolEvent))),
+  const unsubscribe = onSnapshot(q, (snapshot) => callback(snapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return { // Explicitly construct the SchoolEvent object
+      id: docSnap.id,
+      title: data.title,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      description: data.description,
+      itemType: 'event', // Ensure itemType is added here
+      createdAt:(data.createdAt as Timestamp)?.toDate(),
+      updatedAt:(data.updatedAt as Timestamp)?.toDate()
+    } as SchoolEvent;
+  })),
     (error) => {
       console.error("Snapshot error on school events:", error);
       if ((error as FirestoreError).code === 'failed-precondition') onError?.(new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません (realtime)。"));
@@ -677,7 +706,7 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
 export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<(SchoolEvent | DailyAnnouncement)[]> => {
   const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
   const monthEndDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
-  const items: (SchoolEvent | DailyAnnouncement)[] = [];
+  const items: (SchoolEvent)[] = []; // Only SchoolEvent type
 
   try {
     // Fetch School Events
@@ -695,51 +724,20 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         startDate: eventData.startDate,
         endDate: eventData.endDate,
         description: eventData.description,
+        itemType: 'event', 
         createdAt: (eventData.createdAt as Timestamp)?.toDate(),
         updatedAt: (eventData.updatedAt as Timestamp)?.toDate(),
-        itemType: 'event' 
       };
       if ((event.endDate ?? event.startDate) >= monthStartDate) {
         items.push(event);
       }
     });
-
-    // Fetch Daily Announcements with showOnCalendar = true
-    const announcementsQuery = query(
-      dailyAnnouncementsCollectionRef,
-      where('date', '>=', monthStartDate),
-      where('date', '<=', monthEndDate),
-      where('showOnCalendar', '==', true)
-      // Note: Firestore does not support orderBy on a different field than the range inequality.
-      // Sorting will be done client-side or after merging.
-    );
-    const announcementsSnapshot = await getDocs(announcementsQuery);
-    announcementsSnapshot.forEach(docSnap => {
-      const annData = docSnap.data();
-      items.push({
-        id: docSnap.id,
-        date: annData.date,
-        period: annData.period,
-        subjectIdOverride: annData.subjectIdOverride === undefined ? null : annData.subjectIdOverride,
-        text: annData.text,
-        showOnCalendar: true, // Already filtered by this
-        updatedAt: (annData.updatedAt as Timestamp)?.toDate() ?? new Date(),
-        itemType: 'announcement',
-      } as DailyAnnouncement);
-    });
     
-    // Sort combined items by date
     items.sort((a, b) => {
-        const dateA = new Date(a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date);
-        const dateB = new Date(b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date);
+        const dateA = new Date(a.startDate);
+        const dateB = new Date(b.startDate);
         if (dateA < dateB) return -1;
         if (dateA > dateB) return 1;
-        // For items on the same date, events might come before announcements, or sort by period for announcements
-        if (a.itemType === 'announcement' && b.itemType === 'announcement') {
-          return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
-        }
-        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; // Events first
-        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  // Announcements after
         return 0;
     });
     return items;
