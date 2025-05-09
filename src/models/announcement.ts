@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 /**
@@ -18,6 +17,8 @@ export interface DailyAnnouncement {
   text: string;
   /** Timestamp of the last update */
   updatedAt: Date | Timestamp; // Allow both for easier handling before/after fetch
+  /** Whether to show this announcement on the main calendar page */
+  showOnCalendar?: boolean;
 }
 
 /**
