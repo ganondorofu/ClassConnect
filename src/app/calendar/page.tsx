@@ -8,13 +8,14 @@ import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek } from 'date-fns';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
 import type { SchoolEvent, TimetableSettings } from '@/models/timetable';
-import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetDailyGeneralAnnouncement, queryFnGetTimetableSettings } from '@/controllers/timetableController';
+import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetDailyGeneralAnnouncement, queryFnGetTimetableSettings, deleteSchoolEvent } from '@/controllers/timetableController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import type { Subject } from '@/models/subject';
@@ -22,7 +23,8 @@ import { queryFnGetSubjects } from '@/controllers/subjectController';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { buttonVariants } from "@/components/ui/button";
-import AddEventDialog from '@/components/calendar/AddEventDialog';
+import EventFormDialog from '@/components/calendar/EventFormDialog'; // Updated import
+import { useToast } from '@/hooks/use-toast';
 
 
 const queryClient = new QueryClient();
@@ -36,10 +38,13 @@ function CalendarPageContent() {
   const router = useRouter();
   const { user, isAnonymous, loading: authLoading } = useAuth();
   const queryClientHook = useQueryClient();
+  const { toast } = useToast();
 
   const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
-  const [selectedDayForModal, setSelectedDayForModal, ] = useState<Date | null>(null);
-  const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
+  const [selectedDayForModal, setSelectedDayForModal] = useState<Date | null>(null);
+  
+  const [isEventFormModalOpen, setIsEventFormModalOpen] = useState(false);
+  const [eventToEdit, setEventToEdit] = useState<SchoolEvent | null>(null);
 
 
   useEffect(() => {
@@ -86,16 +91,16 @@ function CalendarPageContent() {
   const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems } = useQuery< (DailyAnnouncement | SchoolEvent)[], Error>({
     queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 1, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
-    refetchOnMount: true, // Refetch when component mounts or query key changes
+    refetchOnMount: true, 
     refetchOnWindowFocus: true,
   });
   
   const daysToFetchForAnnouncements = useMemo(() => {
     const firstDayOfMonth = startOfMonth(currentMonthDate);
-    const displayStartDate = startOfWeek(firstDayOfMonth, { locale: ja, weekStartsOn: 0 }); // Sunday start for 6 weeks display
+    const displayStartDate = startOfWeek(firstDayOfMonth, { locale: ja, weekStartsOn: 0 }); 
     const displayEndDate = addDays(displayStartDate, (6 * 7) - 1);
 
     const daysArray = [];
@@ -118,7 +123,7 @@ function CalendarPageContent() {
       const results = await Promise.all(promises);
       return results.reduce((acc, curr) => ({ ...acc, ...curr }), {});
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 1,
     enabled: !isOffline && (!!user || isAnonymous) && daysToFetchForAnnouncements.length > 0,
     onError: handleQueryError('generalAnnouncementsForMonth'),
   });
@@ -127,9 +132,9 @@ function CalendarPageContent() {
   const combinedItems = useMemo(() => {
     const items: CalendarItem[] = [];
     calendarItemsData?.forEach(item => {
-      if ('startDate' in item) { // SchoolEvent
+      if ('startDate' in item) { 
         items.push({ ...item, itemType: 'event' });
-      } else if ('period' in item) { // DailyAnnouncement
+      } else if ('period' in item) { 
         items.push({ ...item, itemType: 'announcement' });
       }
     });
@@ -162,7 +167,6 @@ function CalendarPageContent() {
       return item.date === dateStr;
     });
 
-    // Sort items: general first, then announcements, then events
     return filtered.sort((a, b) => {
         const typeOrder = { general: 0, announcement: 1, event: 2 };
         const orderA = typeOrder[a.itemType];
@@ -173,11 +177,36 @@ function CalendarPageContent() {
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
         if (a.itemType === 'event' && b.itemType === 'event') {
-            return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+             const startDateA = a.startDate ? parseISO(a.startDate).getTime() : 0;
+             const startDateB = b.startDate ? parseISO(b.startDate).getTime() : 0;
+             return startDateA - startDateB;
         }
         return 0;
     });
   }, [selectedDayForModal, combinedItems]);
+
+  const deleteEventMutation = useMutation({
+    mutationFn: (eventId: string) => deleteSchoolEvent(eventId, user?.uid ?? 'admin_user_calendar_event_delete'),
+    onSuccess: () => {
+      toast({ title: "成功", description: "行事を削除しました。" });
+      queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
+      setIsDayDetailModalOpen(false); // Close modal after deletion
+    },
+    onError: (error: Error) => {
+      toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const handleOpenAddEventModal = () => {
+    setEventToEdit(null);
+    setIsEventFormModalOpen(true);
+  };
+
+  const handleOpenEditEventModal = (event: SchoolEvent) => {
+    setEventToEdit(event);
+    setIsEventFormModalOpen(true);
+    setIsDayDetailModalOpen(false); // Close day detail modal
+  };
 
 
   const isLoading = isLoadingSettings || isLoadingSubjects || isLoadingItems || isLoadingGeneralAnnouncements || authLoading;
@@ -192,10 +221,11 @@ function CalendarPageContent() {
     });
 
     const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
+    const isToday = isSameDay(day, new Date());
 
     return (
       <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
-        <span className={cn("absolute top-1 right-1 text-xs", isSameDay(day, new Date()) && !isOutsideMonth && "font-bold text-primary")}>
+        <span className={cn("absolute top-1 right-1 text-xs", isToday && !isOutsideMonth && "font-bold text-primary")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
@@ -272,7 +302,7 @@ function CalendarPageContent() {
               <ChevronRight className="h-4 w-4" />
             </Button>
             {user && !isAnonymous && (
-                 <Button onClick={() => setIsAddEventModalOpen(true)} size="sm" className="ml-2 sm:ml-4">
+                 <Button onClick={handleOpenAddEventModal} size="sm" className="ml-2 sm:ml-4">
                     <PlusCircle className="mr-1 h-4 w-4" />
                     <span className="hidden sm:inline">行事追加</span>
                     <span className="sm:hidden">追加</span>
@@ -310,7 +340,7 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                weekStartsOn={0} // Sunday
+                weekStartsOn={0} 
                 fixedWeeks 
                 className="w-full p-0 flex-1 flex flex-col" 
                 classNames={{
@@ -329,7 +359,7 @@ function CalendarPageContent() {
                   head_row: "flex", 
                   head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
                   tbody: "flex-1 flex flex-col", 
-                  row: "flex w-full flex-1 min-h-[6rem]",
+                  row: "flex w-full flex-1 min-h-[6rem]", // Ensure rows have min height
                   cell: cn( 
                     "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
@@ -338,8 +368,8 @@ function CalendarPageContent() {
                     buttonVariants({ variant: "ghost" }),
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
-                  day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
-                  day_today: "bg-primary/20 text-primary font-bold", // Updated today highlight
+                  day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
+                  day_today: "bg-accent/20 text-accent-foreground font-bold",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -377,6 +407,7 @@ function CalendarPageContent() {
               <ul className="space-y-3 p-1">
                 {itemsForSelectedDay.map((item, index) => {
                   let title, content, icon, colorClass, footer;
+                  const isAdmin = user && !isAnonymous;
                   switch (item.itemType) {
                     case 'general':
                       icon = <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
@@ -391,12 +422,13 @@ function CalendarPageContent() {
                       colorClass = 'text-green-600 dark:text-green-400';
                       break;
                     case 'event':
+                      const eventItem = item as SchoolEvent;
                       icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
-                      title = `行事: ${item.title}`;
-                      content = item.description ?? '';
+                      title = `行事: ${eventItem.title}`;
+                      content = eventItem.description ?? '';
                       colorClass = 'text-blue-600 dark:text-blue-400';
-                      if (item.startDate !== (item.endDate ?? item.startDate)) {
-                        footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(new Date(item.startDate), "M/d")} ~ {format(new Date(item.endDate ?? item.startDate), "M/d")}</p>;
+                      if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
+                        footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
                       }
                       break;
                     default:
@@ -405,9 +437,39 @@ function CalendarPageContent() {
                   return (
                     <li key={`${item.itemType}-${item.id || (item as any).period || index}-modal`} 
                         className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
-                      <p className={cn("font-semibold text-sm mb-1", colorClass)}>
-                        {icon}{title}
-                      </p>
+                      <div className="flex justify-between items-start">
+                        <p className={cn("font-semibold text-sm mb-1", colorClass)}>
+                          {icon}{title}
+                        </p>
+                        {isAdmin && item.itemType === 'event' && (
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleOpenEditEventModal(item as SchoolEvent)}>
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive">
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>行事を削除しますか？</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    行事「{(item as SchoolEvent).title}」を削除します。この操作は元に戻せません。
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteEventMutation.mutate((item as SchoolEvent).id!)} disabled={deleteEventMutation.isPending}>
+                                    {deleteEventMutation.isPending ? '削除中...' : '削除'}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
                         {content}
                       </p>
@@ -435,12 +497,16 @@ function CalendarPageContent() {
       </Dialog>
 
       {user && !isAnonymous && (
-        <AddEventDialog
-          isOpen={isAddEventModalOpen}
-          onOpenChange={setIsAddEventModalOpen}
-          onEventAdded={() => {
+        <EventFormDialog
+          isOpen={isEventFormModalOpen}
+          onOpenChange={(open) => {
+            setIsEventFormModalOpen(open);
+            if (!open) setEventToEdit(null); // Clear editing event when dialog is closed
+          }}
+          onEventSaved={() => {
             queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
           }}
+          editingEvent={eventToEdit}
         />
       )}
 
