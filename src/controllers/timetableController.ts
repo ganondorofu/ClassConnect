@@ -44,11 +44,19 @@ const prepareStateForLog = (state: any): any => {
     value === undefined ? null : value
   ), (key, value) => {
     if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined) {
-      return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
+      // Attempt to convert Firestore Timestamp-like objects, checking for typical structure
+      try {
+        return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
+      } catch (e) {
+        // If it's not a valid Timestamp structure, or if it's already a string, leave as is or handle
+        console.warn(`Could not convert object to ISOString, value: ${JSON.stringify(value)}`);
+        return value; 
+      }
     }
     if (value instanceof Timestamp) return value.toDate().toISOString();
     if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
+    // Check if value is already an ISO string
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
       return value;
     }
     return value;
@@ -192,7 +200,9 @@ export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
 export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[], userId: string = 'system_batch_update_tt'): Promise<void> => {
   const batch = writeBatch(db);
   let changesMade = false;
-  const existingSlotsMap: Map<string, FixedTimeSlot> = new Map((await getFixedTimetable()).map(slot => [slot.id, slot.id]));
+  const existingSlotsData = await getFixedTimetable();
+  const existingSlotsMap: Map<string, FixedTimeSlot> = new Map(existingSlotsData.map(slot => [slot.id, slot]));
+
   const beforeStates: Array<{ id: string, subjectId: string | null }> = [];
   const afterStates: Array<{ id: string, subjectId: string | null }> = [];
 
@@ -422,7 +432,7 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   }
 };
 
-export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'createdAt'> & { startDate: string; endDate?: string }, userId: string = 'system_add_event'): Promise<string> => {
+export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'createdAt' | 'updatedAt'> & { startDate: string; endDate?: string }, userId: string = 'system_add_event'): Promise<string> => {
   // Ensure createdAt is a Timestamp
   const dataToSet = {
     title: eventData.title || '',
@@ -457,7 +467,9 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
   };
   // Remove id and createdAt from dataToUpdate as they should not be directly updated this way
   delete (dataToUpdate as any).id;
-  delete (dataToUpdate as any).createdAt;
+  // createdAt should only be set on creation, so we don't include it in updates unless specifically managed
+  // For logging, we fetch the existing createdAt.
+  // delete (dataToUpdate as any).createdAt;
 
 
   let beforeState: SchoolEvent | null = null;
@@ -473,7 +485,12 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         } as SchoolEvent;
     }
     
-    await setDoc(docRef, dataToUpdate, { merge: true });
+    // Ensure dataToUpdate does not include 'id' or 'createdAt'
+    const cleanDataToUpdate = { ...dataToUpdate };
+    delete (cleanDataToUpdate as any).id;
+    // delete (cleanDataToUpdate as any).createdAt; // createdAt should not be part of an update operation's payload
+
+    await setDoc(docRef, cleanDataToUpdate, { merge: true });
     
     const afterSnap = await getDoc(docRef);
     let afterState: SchoolEvent | null = null;
@@ -559,10 +576,12 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
         const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
         const fixedSubjectIdOrNull = fixedSlot.subjectId ?? null;
         
+        // Only set if there's no announcement or if the announcement is just a placeholder for fixed subject without any text or calendar display
         if (!existingAnn || (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null && !existingAnn.showOnCalendar)) {
           const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${fixedSlot.period}`);
           const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
           
+          // Check if the existing announcement (if any) differs from what we'd set
           if (!existingAnn || (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull) {
             batch.set(docRef, newAnnouncementData); 
             operationsCount++;
@@ -617,14 +636,20 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
         const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
         
         const existingDoc = existingAnnouncementsMap.get(period);
-        if (!existingDoc || 
-            (existingDoc.text !== '') || 
-            ((existingDoc.subjectIdOverride ?? null) !== (fixedSlot?.subjectId ?? null)) ||
-            (existingDoc.showOnCalendar !== false)
+        // Only update if there was something to reset (text, different subject, or calendar flag)
+        if (existingDoc && 
+            ( (existingDoc.text !== '') || 
+              ((existingDoc.subjectIdOverride ?? null) !== (fixedSlot?.subjectId ?? null)) ||
+              (existingDoc.showOnCalendar !== false)
+            )
            ) {
             batch.set(docRef, newAnnouncementData);
             operationsCount++;
             dateNeedsUpdate = true;
+        } else if (!existingDoc && fixedSlot?.subjectId !== null) { // Case where fixed subject exists but no announcement yet
+             batch.set(docRef, newAnnouncementData);
+             operationsCount++;
+             dateNeedsUpdate = true;
         }
       }
       if (dateNeedsUpdate && !datesAffected.includes(dateStr)) datesAffected.push(dateStr);
@@ -655,74 +680,42 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
   }
 };
 
-
-export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<(DailyAnnouncement | SchoolEvent)[]> => {
-  const monthStartDate = format(startOfMonth(new Date(year, month -1)), 'yyyy-MM-dd'); 
-  const monthEndDate = format(endOfMonth(new Date(year, month -1)), 'yyyy-MM-dd');
-
-  const items: (DailyAnnouncement | SchoolEvent)[] = [];
+export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<SchoolEvent[]> => {
+  const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
+  const monthEndDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
+  const items: SchoolEvent[] = [];
 
   try {
-    const announcementsQuery = query(
-      dailyAnnouncementsCollectionRef,
-      where('showOnCalendar', '==', true),
-      where('date', '>=', monthStartDate),
-      where('date', '<=', monthEndDate),
-      orderBy('date')
-    );
-    const announcementsSnapshot = await getDocs(announcementsQuery);
-    announcementsSnapshot.forEach(docSnap => {
-      const data = docSnap.data();
-      items.push({
-        id: docSnap.id,
-        ...data,
-        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date()
-      } as DailyAnnouncement);
-    });
-
     const eventsQuery = query(
       eventsCollectionRef,
-      where('startDate', '<=', monthEndDate), 
-      orderBy('startDate') 
+      where('startDate', '<=', monthEndDate), // Events starting on or before month end
+      orderBy('startDate')
     );
 
     const eventsSnapshot = await getDocs(eventsQuery);
     eventsSnapshot.forEach(docSnap => {
-        const event = { id: docSnap.id, ...docSnap.data() } as SchoolEvent;
-        if ((event.endDate ?? event.startDate) >= monthStartDate) { // Event ends on or after month start
-             items.push(event);
-        }
-    });
-
-    const uniqueItemsMap = new Map<string, DailyAnnouncement | SchoolEvent>();
-    for (const item of items) {
-      const itemId = item.id ?? ('date' in item && 'period' in item ? `${item.date}_${item.period}` : `${item.title}-${item.startDate}`);
-      if (itemId && !uniqueItemsMap.has(itemId)) {
-        uniqueItemsMap.set(itemId, item);
-      } else if (itemId && item.itemType === 'event' && uniqueItemsMap.get(itemId)?.itemType !== 'event') {
-         // Prioritize events if ID collides and existing is not an event (less likely with UUID for events)
-         uniqueItemsMap.set(itemId, item);
+      const event = { id: docSnap.id, ...docSnap.data() } as SchoolEvent;
+      // Filter events that are active within the month
+      if ((event.endDate ?? event.startDate) >= monthStartDate) { // Event ends on or after month start
+        items.push(event);
       }
-    }
+    });
     
-    const uniqueItems = Array.from(uniqueItemsMap.values());
-    uniqueItems.sort((a, b) => {
-        const dateA = new Date('date' in a ? a.date : a.startDate);
-        const dateB = new Date('date' in b ? b.date : b.startDate);
+    // Sort items by start date (already handled by query, but good for explicit order if needed later)
+    items.sort((a, b) => {
+        const dateA = new Date(a.startDate);
+        const dateB = new Date(b.startDate);
         if (dateA < dateB) return -1;
         if (dateA > dateB) return 1;
-        if ('period' in a && 'period' in b) {
-            return a.period - b.period;
-        }
         return 0;
     });
-    return uniqueItems;
+    return items;
 
   } catch (error) {
-    console.error(`Error fetching calendar items for ${year}-${month}:`, error);
+    console.error(`Error fetching school events for calendar ${year}-${month}:`, error);
     if ((error as FirestoreError).code === 'unavailable') return [];
     if ((error as FirestoreError).code === 'failed-precondition') {
-      console.error("Firestore query requires an index. Check Firebase console for suggestions based on the query:", (error as FirestoreError).message);
+      console.error("Firestore query requires an index for school events. Check Firebase console for suggestions based on the query:", (error as FirestoreError).message);
       throw new Error(`Firestore クエリに必要なインデックスがありません。Firebaseコンソールを確認してください。該当エラー: ${(error as FirestoreError).message}`);
     }
     throw error;
@@ -736,3 +729,4 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDailyGeneralAnnouncement(date);
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
+
