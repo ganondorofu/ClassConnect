@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -9,13 +10,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, Edit2 as TimetableEditIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, Edit2 as TimetableEditIcon, FileText } from 'lucide-react';
 import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { SchoolEvent, TimetableSettings } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
-import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetTimetableSettings, deleteSchoolEvent } from '@/controllers/timetableController';
+import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetTimetableSettings, deleteSchoolEvent, queryFnGetSubjects } from '@/controllers/timetableController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,11 +24,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { buttonVariants } from "@/components/ui/button";
 import EventFormDialog from '@/components/calendar/EventFormDialog';
 import { useToast } from '@/hooks/use-toast';
+import type { Subject } from '@/models/subject';
 
 
 const queryClient = new QueryClient();
 
-type CalendarItem = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
+type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
 const MAX_PREVIEW_ITEMS_IN_CELL = 3; 
 
 function CalendarPageContent() {
@@ -89,6 +91,14 @@ function CalendarPageContent() {
   const combinedItems = useMemo(() => {
     return calendarItemsData ?? [];
   }, [calendarItemsData]);
+  
+  const { data: subjectsData } = useQuery<Subject[], Error>({
+    queryKey: ['subjects'],
+    queryFn: queryFnGetSubjects,
+    staleTime: 1000 * 60 * 15, // 15 minutes
+    enabled: !isOffline && (!!user || isAnonymous),
+  });
+  const subjectsMap = useMemo(() => new Map(subjectsData?.map(s => [s.id, s.name])), [subjectsData]);
 
 
   const handlePrevMonth = () => setCurrentMonthDate(subMonths(currentMonthDate, 1));
@@ -103,20 +113,17 @@ function CalendarPageContent() {
     if (!selectedDayForModal || !combinedItems) return [];
     const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
     
-    // Filter for items on the selected day AND only include SchoolEvent types for the modal
-    const filteredEvents = combinedItems.filter(item => {
+    const filteredItems = combinedItems.filter(item => {
       if (item.itemType === 'event') {
         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
+      } else if (item.itemType === 'announcement') { // DailyAnnouncements are already filtered by showOnCalendar in controller
+        return item.date === dateStr;
       }
-      // DailyAnnouncements are not shown in this modal
       return false; 
-    }) as SchoolEvent[]; // Cast to SchoolEvent[] because we filtered by itemType
-
-    return filteredEvents.sort((a, b) => {
-        const startDateA = a.startDate ? parseISO(a.startDate).getTime() : 0;
-        const startDateB = b.startDate ? parseISO(b.startDate).getTime() : 0;
-        return startDateA - startDateB;
     });
+
+    // The combinedItems are already sorted by the controller logic which prioritizes events
+    return filteredItems as CalendarItemUnion[];
   }, [selectedDayForModal, combinedItems]);
 
   const deleteEventMutation = useMutation({
@@ -173,13 +180,15 @@ function CalendarPageContent() {
                 displayTitle = item.title;
                 styleClass = 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
               } else { // itemType === 'announcement'
-                displayTitle = item.text || (item.subjectIdOverride ? `科目変更 (${item.period}限)` : `連絡 (${item.period}限)`);
+                const announcement = item as DailyAnnouncement;
+                const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
+                displayTitle = announcement.text || (subjectName ? `${subjectName} (${announcement.period}限)` : `連絡 (${announcement.period}限)`);
                 styleClass = 'bg-green-500/20 text-green-700 dark:text-green-300';
               }
               
               return (
                 <div
-                  key={`${item.itemType}-${item.id || index}-${dateStr}-cell`}
+                  key={`${item.itemType}-${(item as any).id || index}-${dateStr}-cell`}
                   className={cn("text-xs px-1 py-0.5 rounded-sm w-full truncate", styleClass)}
                   title={displayTitle}
                 >
@@ -327,7 +336,7 @@ function CalendarPageContent() {
               {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
             </DialogTitle>
             <DialogDescription>
-              この日の行事一覧です。（時間割の連絡はここには表示されません）
+              この日の行事とカレンダーに表示設定された連絡事項の一覧です。
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
@@ -336,32 +345,41 @@ function CalendarPageContent() {
                 {[...Array(3)].map((_, i) => <Skeleton key={`modal-skel-${i}`} className="h-16 w-full" />)}
               </div>
             ) : itemsForSelectedDay.length === 0 ? (
-              <p className="text-sm text-muted-foreground p-4 text-center">この日の行事はありません。</p>
+              <p className="text-sm text-muted-foreground p-4 text-center">この日の表示項目はありません。</p>
             ) : (
               <ul className="space-y-3 p-1">
                 {itemsForSelectedDay.map((item, index) => {
-                  // item is guaranteed to be SchoolEvent here due to filtering in itemsForSelectedDay
-                  const eventItem = item as SchoolEvent;
-                  const icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
-                  const title = `行事: ${eventItem.title}`;
-                  const content = eventItem.description ?? '';
-                  const colorClass = 'text-blue-600 dark:text-blue-400';
-                  let footer;
-                   if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
-                        footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
-                   }
                   const isAdmin = user && !isAnonymous;
+                  let title, content, icon, footer, colorClass;
+
+                  if (item.itemType === 'event') {
+                    const eventItem = item as SchoolEvent;
+                    icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                    title = `行事: ${eventItem.title}`;
+                    content = eventItem.description ?? '';
+                    colorClass = 'text-blue-600 dark:text-blue-400';
+                    if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
+                      footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
+                    }
+                  } else { // item.itemType === 'announcement'
+                    const announcementItem = item as DailyAnnouncement;
+                    icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                    const subjectName = announcementItem.subjectIdOverride ? subjectsMap.get(announcementItem.subjectIdOverride) : null;
+                    title = subjectName ? `連絡: ${subjectName} (${announcementItem.period}限)` : `連絡: ${announcementItem.period}限`;
+                    content = announcementItem.text;
+                    colorClass = 'text-green-600 dark:text-green-400';
+                  }
 
                   return (
-                    <li key={`${item.itemType}-${item.id || index}-modal`} 
+                    <li key={`${item.itemType}-${(item as any).id || index}-modal`} 
                         className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start">
                         <p className={cn("font-semibold text-sm mb-1", colorClass)}>
                           {icon}{title}
                         </p>
-                        {isAdmin && ( 
+                        {isAdmin && item.itemType === 'event' && ( 
                           <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleOpenEditEventModal(eventItem)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleOpenEditEventModal(item as SchoolEvent)}>
                               <Edit className="h-3 w-3" />
                             </Button>
                             <AlertDialog>
@@ -374,12 +392,12 @@ function CalendarPageContent() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>行事を削除しますか？</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    行事「{eventItem.title}」を削除します。この操作は元に戻せません。
+                                    行事「{(item as SchoolEvent).title}」を削除します。この操作は元に戻せません。
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteEventMutation.mutate(eventItem.id!)} disabled={deleteEventMutation.isPending}>
+                                  <AlertDialogAction onClick={() => deleteEventMutation.mutate((item as SchoolEvent).id!)} disabled={deleteEventMutation.isPending}>
                                     {deleteEventMutation.isPending ? '削除中...' : '削除'}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
