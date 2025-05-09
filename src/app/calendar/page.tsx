@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -5,11 +6,11 @@ import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-quer
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card'; // Removed CardHeader, CardTitle, CardDescription as Calendar is main content
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, parseISO } from 'date-fns';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react'; // Renamed CalendarDays to avoid conflict
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
@@ -19,6 +20,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects } from '@/controllers/subjectController';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 const queryClient = new QueryClient();
 
@@ -29,6 +33,10 @@ function CalendarPageContent() {
   const [isOffline, setIsOffline] = useState(false);
   const router = useRouter();
   const { user, isAnonymous, loading: authLoading } = useAuth();
+
+  const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
+  const [selectedDayForModal, setSelectedDayForModal] = useState<Date | null>(null);
+
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -81,11 +89,11 @@ function CalendarPageContent() {
   const daysInMonth = useMemo(() => {
     const start = startOfMonth(currentMonthDate);
     const end = endOfMonth(currentMonthDate);
-    const days = [];
+    const daysArray = [];
     for (let day = start; day <= end; day = addDays(day, 1)) {
-      days.push(day);
+      daysArray.push(day);
     }
-    return days;
+    return daysArray;
   }, [currentMonthDate]);
 
   const { data: generalAnnouncementsMap, isLoading: isLoadingGeneralAnnouncements } = useQuery<Record<string, DailyGeneralAnnouncement | null>, Error>({
@@ -126,13 +134,29 @@ function CalendarPageContent() {
 
   const handlePrevMonth = () => setCurrentMonthDate(subMonths(currentMonthDate, 1));
   const handleNextMonth = () => setCurrentMonthDate(addMonths(currentMonthDate, 1));
-  const handleDayClick = (day: Date) => router.push(`/?date=${format(day, 'yyyy-MM-dd')}`);
+  
+  const handleDayClick = (day: Date) => {
+    setSelectedDayForModal(day);
+    setIsDayDetailModalOpen(true);
+  };
+
+  const itemsForSelectedDay = useMemo(() => {
+    if (!selectedDayForModal || !combinedItems) return [];
+    const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
+    return combinedItems.filter(item => {
+      if (item.itemType === 'event') {
+        return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
+      }
+      return item.date === dateStr;
+    });
+  }, [selectedDayForModal, combinedItems]);
+
 
   const isLoading = isLoadingSettings || isLoadingSubjects || isLoadingItems || isLoadingGeneralAnnouncements || authLoading;
 
   const renderDayContent = (day: Date): React.ReactNode => {
     const dateStr = format(day, 'yyyy-MM-dd');
-    const itemsForDay = combinedItems.filter(item => {
+    const itemsForDayInCell = combinedItems.filter(item => {
        if (item.itemType === 'event') {
            return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        }
@@ -144,16 +168,16 @@ function CalendarPageContent() {
         <span className={cn("absolute top-1 right-1 text-xs", isSameDay(day, new Date()) && "font-bold text-primary")}>
             {format(day, 'd')}
         </span>
-        {itemsForDay.length > 0 && (
+        {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDay.slice(0, 2).map((item, index) => ( // Show max 2 items initially
+            {itemsForDayInCell.slice(0, 2).map((item, index) => ( 
               <div
-                key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}`}
+                key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-cell`}
                 className={cn(
                   "text-xs px-1 py-0.5 rounded-sm w-full truncate",
                   item.itemType === 'event' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300' :
                   item.itemType === 'announcement' ? 'bg-green-500/20 text-green-700 dark:text-green-300' :
-                  'bg-purple-500/20 text-purple-700 dark:text-purple-300' // general
+                  'bg-purple-500/20 text-purple-700 dark:text-purple-300' 
                 )}
                 title={
                     item.itemType === 'event' ? item.title : 
@@ -164,13 +188,13 @@ function CalendarPageContent() {
               >
                 {item.itemType === 'event' ? item.title : 
                  item.itemType === 'announcement' ? 
-                    (subjectsMap?.get(item.subjectIdOverride || '') || '連絡') + (item.text ? `: ${item.text}`: '') :
+                    (subjectsMap?.get(item.subjectIdOverride || '') || '連絡') + (item.text ? `: ${item.text.substring(0,10)}${item.text.length > 10 ? '...':''}`: '') :
                     (item as DailyGeneralAnnouncement).content.substring(0,20) + "..."
                 }
               </div>
             ))}
-            {itemsForDay.length > 2 && (
-              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDay.length - 2} 件</div>
+            {itemsForDayInCell.length > 2 && (
+              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - 2} 件</div>
             )}
           </div>
         )}
@@ -243,15 +267,15 @@ function CalendarPageContent() {
           ) : (
             <Calendar
               mode="single"
-              selected={new Date()} // Today is "selected" for style, but navigation is on click
+              selected={new Date()} 
               onSelect={(day) => day && handleDayClick(day)}
               month={currentMonthDate}
               onMonthChange={setCurrentMonthDate}
               locale={ja}
               className="w-full p-0 [&_td]:h-20 [&_td]:align-top [&_th]:h-10"
               classNames={{
-                day: "h-full w-full p-0",
-                day_selected: "bg-transparent text-foreground hover:bg-accent/50", // Don't visually select day
+                day: "h-full w-full p-0 cursor-pointer hover:bg-accent/30",
+                day_selected: "bg-transparent text-foreground hover:bg-accent/50", 
                 day_today: "bg-accent text-accent-foreground font-bold",
               }}
               components={{
@@ -262,6 +286,76 @@ function CalendarPageContent() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isDayDetailModalOpen} onOpenChange={setIsDayDetailModalOpen}>
+        <DialogContent className="sm:max-w-md md:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
+            </DialogTitle>
+            <DialogDescription>
+              この日の予定・連絡事項の一覧です。
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[350px] w-full pr-3">
+            {isLoadingItems || isLoadingGeneralAnnouncements ? (
+              <div className="space-y-2 p-2">
+                {[...Array(3)].map((_, i) => <Skeleton key={`modal-skel-${i}`} className="h-16 w-full" />)}
+              </div>
+            ) : itemsForSelectedDay.length === 0 ? (
+              <p className="text-sm text-muted-foreground p-4 text-center">この日の予定や連絡はありません。</p>
+            ) : (
+              <ul className="space-y-3 p-1">
+                {itemsForSelectedDay.map((item, index) => (
+                  <li key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-modal`} 
+                      className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
+                    <p className={cn(
+                      "font-semibold text-sm mb-1",
+                      item.itemType === 'event' ? 'text-blue-600 dark:text-blue-400' :
+                      item.itemType === 'announcement' ? 'text-green-600 dark:text-green-400' :
+                      'text-purple-600 dark:text-purple-400'
+                    )}>
+                      {item.itemType === 'event' ? <><CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />行事: {item.title}</> :
+                       item.itemType === 'announcement' ? 
+                        <>
+                         <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />
+                         {`${item.period}限目の連絡` + (subjectsMap?.get(item.subjectIdOverride || '') ? ` (${subjectsMap.get(item.subjectIdOverride || '')})` : '')}
+                        </>
+                         :
+                         <> <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />全体連絡</>
+                       }
+                    </p>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                      {item.itemType === 'event' ? item.description :
+                       item.itemType === 'announcement' ? item.text :
+                       (item as DailyGeneralAnnouncement).content}
+                    </p>
+                    {item.itemType === 'event' && item.startDate !== (item.endDate ?? item.startDate) && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        期間: {format(new Date(item.startDate), "M/d")} ~ {format(new Date(item.endDate ?? item.startDate), "M/d")}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+          <DialogFooter className="mt-4 sm:justify-between">
+             <Button variant="outline" onClick={() => setIsDayDetailModalOpen(false)} className="w-full sm:w-auto">
+              閉じる
+            </Button>
+            <Button onClick={() => {
+              if (selectedDayForModal) {
+                router.push(`/?date=${format(selectedDayForModal, 'yyyy-MM-dd')}`);
+                setIsDayDetailModalOpen(false);
+              }
+            }} disabled={!selectedDayForModal} className="w-full sm:w-auto">
+              この日の時間割を見る
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </MainLayout>
   );
 }
@@ -273,3 +367,4 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
