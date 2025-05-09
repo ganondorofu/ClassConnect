@@ -172,19 +172,31 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
     if (user || isAnonymous) {
         unsubSettings = onTimetableSettingsUpdate(
-            (newSettings) => { setLiveSettings(newSettings); if (isOffline) setIsOffline(false); }, 
+            (newSettings) => { 
+                setLiveSettings(newSettings); 
+                if (isOffline && navigator.onLine) setIsOffline(false); 
+            }, 
             (error) => { console.error("RT Settings Error:", error); setIsOffline(true); }
         );
         unsubFixed = onFixedTimetableUpdate(
-            (newFixedTimetable) => { setLiveFixedTimetable(newFixedTimetable); if (isOffline) setIsOffline(false); },  
+            (newFixedTimetable) => { 
+                setLiveFixedTimetable(newFixedTimetable); 
+                if (isOffline && navigator.onLine) setIsOffline(false); 
+            },  
             (error) => { console.error("RT Fixed TT Error:", error); setIsOffline(true); }
         );
         unsubEvents = onSchoolEventsUpdate(
-            (newEvents) => { setLiveSchoolEvents(newEvents); if (isOffline) setIsOffline(false); }, 
+            (newEvents) => { 
+                setLiveSchoolEvents(newEvents); 
+                if (isOffline && navigator.onLine) setIsOffline(false); 
+            }, 
             (error) => { console.error("RT Events Error:", error); setIsOffline(true); }
         );
         unsubSubjects = onSubjectsUpdate(
-            (newSubjects) => { setLiveSubjects(newSubjects); if (isOffline) setIsOffline(false); }, 
+            (newSubjects) => { 
+                setLiveSubjects(newSubjects); 
+                if (isOffline && navigator.onLine) setIsOffline(false); 
+            }, 
             (error) => { console.error("RT Subjects Error:", error); setIsOffline(true); }
         );
         unsubAnnouncements = weekDays.map(day => {
@@ -192,7 +204,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           return onDailyAnnouncementsUpdate(dateStr, 
             (announcements) => {
                 setLiveDailyAnnouncements(prev => ({ ...prev, [dateStr]: announcements }));
-                if (isOffline) setIsOffline(false);
+                if (isOffline && navigator.onLine) setIsOffline(false);
             }, 
             (error) => { console.error(`RT Annc Error ${dateStr}:`, error); setIsOffline(true); });
         });
@@ -204,7 +216,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       unsubSubjects?.();
       unsubAnnouncements.forEach(unsub => unsub?.());
     };
-  }, [weekStart, isOffline, user, isAnonymous, weekDays]);
+  }, [isOffline, user, isAnonymous, weekDays, queryClient]);
 
 
   const settings = useMemo(() => liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS, [liveSettings, initialSettings]);
@@ -289,13 +301,16 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const activeDaysSetting = settings?.activeDays ?? ConfigurableWeekDays; 
 
   const displayDays = useMemo(() => {
-    return weekDays.map(date => { // weekDays is already Mon, Tue, ..., Sun
-        const dayOfWeekEnumFromDate = dayCodeToDayOfWeekEnum(getDay(date));
-        const isConfigActive = activeDaysSetting.includes(dayOfWeekEnumFromDate);
-        const hasEvents = getEventsForDay(date).length > 0;
-        const isWeekend = dayOfWeekEnumFromDate === DayOfWeekEnum.SATURDAY || dayOfWeekEnumFromDate === DayOfWeekEnum.SUNDAY;
-        
-        return { date, dayOfWeek: dayOfWeekEnumFromDate, isWeekend, isConfigActive, hasEvents };
+    return DisplayedWeekDaysOrder.map(dayEnum => {
+      const dateForDay = weekDays.find(d => dayCodeToDayOfWeekEnum(getDay(d)) === dayEnum);
+      if (!dateForDay) { // Should not happen if weekDays is correctly Mon-Sun
+        return { date: new Date(), dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false };
+      }
+      const isConfigActive = activeDaysSetting.includes(dayEnum);
+      const hasEvents = getEventsForDay(dateForDay).length > 0;
+      const isWeekend = dayEnum === DayOfWeekEnum.SATURDAY || dayEnum === DayOfWeekEnum.SUNDAY;
+      
+      return { date: dateForDay, dayOfWeek: dayEnum, isWeekend, isConfigActive, hasEvents };
     });
   }, [weekDays, activeDaysSetting, getEventsForDay]);
 
@@ -414,7 +429,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                            {announcement?.showOnCalendar && (
                             <div className="text-xs text-accent flex items-center gap-1 mt-1" title="カレンダーに表示">
                                 <CalendarDays className="w-3 h-3 shrink-0" />
-                                <span className="hidden sm:inline">カレンダー</span>
                             </div>
                            )}
                           {canEditThisSlot && (
@@ -509,3 +523,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+
