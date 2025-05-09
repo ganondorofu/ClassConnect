@@ -16,7 +16,7 @@ import {
   limit,
   FirestoreError,
   runTransaction,
-  addDoc, // Import addDoc
+  addDoc, 
 } from 'firebase/firestore';
 import type {
   FixedTimeSlot,
@@ -26,7 +26,7 @@ import type {
 } from '@/models/timetable';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
 import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable'; // Combined imports
-import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth } from 'date-fns';
+import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { logAction } from '@/services/logService';
 
 const CURRENT_CLASS_ID = 'defaultClass';
@@ -44,18 +44,15 @@ const prepareStateForLog = (state: any): any => {
     value === undefined ? null : value
   ), (key, value) => {
     if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined) {
-      // Attempt to convert Firestore Timestamp-like objects, checking for typical structure
       try {
         return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
       } catch (e) {
-        // If it's not a valid Timestamp structure, or if it's already a string, leave as is or handle
         console.warn(`Could not convert object to ISOString, value: ${JSON.stringify(value)}`);
         return value; 
       }
     }
     if (value instanceof Timestamp) return value.toDate().toISOString();
     if (value instanceof Date) return value.toISOString();
-    // Check if value is already an ISO string
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
       return value;
     }
@@ -156,7 +153,7 @@ export const onTimetableSettingsUpdate = (
   onError?: (error: Error) => void
 ): Unsubscribe => {
   const docRef = doc(settingsCollectionRef, 'timetable');
-  return onSnapshot(
+  const unsubscribe = onSnapshot(
     docRef,
     (docSnap) => {
       if (docSnap.exists()) {
@@ -181,6 +178,7 @@ export const onTimetableSettingsUpdate = (
       else console.error('Snapshot error on settings:', error);
     }
   );
+  return unsubscribe;
 };
 
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
@@ -257,7 +255,7 @@ export const resetFixedTimetable = async (userId: string = 'system_reset_tt'): P
 };
 
 export const onFixedTimetableUpdate = (callback: (timetable: FixedTimeSlot[]) => void, onError?: (error: Error) => void): Unsubscribe => {
-  return onSnapshot(query(fixedTimetableCollectionRef), (snapshot) => {
+  const unsubscribe = onSnapshot(query(fixedTimetableCollectionRef), (snapshot) => {
     let timetable = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: doc.data().subjectId === undefined ? null : doc.data().subjectId } as FixedTimeSlot));
     timetable.sort((a, b) => AllDays.indexOf(a.day) - AllDays.indexOf(b.day) || a.period - b.period);
     callback(timetable);
@@ -266,6 +264,7 @@ export const onFixedTimetableUpdate = (callback: (timetable: FixedTimeSlot[]) =>
     if ((error as FirestoreError).code === 'failed-precondition') onError?.(new Error("Firestore 固定時間割のリアルタイム更新に必要なインデックスがありません。"));
     else onError?.(error);
   });
+  return unsubscribe;
 };
 
 export const getDailyAnnouncements = async (date: string): Promise<DailyAnnouncement[]> => {
@@ -343,7 +342,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
 
 export const onDailyAnnouncementsUpdate = (date: string, callback: (announcements: DailyAnnouncement[]) => void, onError?: (error: Error) => void): Unsubscribe => {
   const q = query(dailyAnnouncementsCollectionRef, where('date', '==', date));
-  return onSnapshot(q, (snapshot) => {
+  const unsubscribe = onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
@@ -359,6 +358,7 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
     if ((error as FirestoreError).code === 'failed-precondition') onError?.(new Error(`Firestore 連絡のリアルタイム更新に必要なインデックス(date)がありません(日付:${date})。`));
     else onError?.(error);
   });
+  return unsubscribe;
 };
 
 export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGeneralAnnouncement | null> => {
@@ -409,7 +409,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
 
 export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announcement: DailyGeneralAnnouncement | null) => void, onError?: (error: Error) => void): Unsubscribe => {
   const docRef = doc(generalAnnouncementsCollectionRef, date);
-  return onSnapshot(docRef, (docSnap) => {
+  const unsubscribe = onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
       callback({ id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyGeneralAnnouncement);
@@ -417,13 +417,14 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
       callback(null);
     }
   }, (error) => { if (onError) onError(error); else console.error(`Snapshot error on general announcement for ${date}:`, error); });
+  return unsubscribe;
 };
 
 export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   try {
     const q = query(eventsCollectionRef, orderBy('startDate'));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolEvent));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: (doc.data().createdAt as Timestamp)?.toDate(), updatedAt: (doc.data().updatedAt as Timestamp)?.toDate() } as SchoolEvent));
   } catch (error) {
     console.error("Error fetching school events:", error);
     if ((error as FirestoreError).code === 'unavailable') return [];
@@ -433,17 +434,17 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
 };
 
 export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'createdAt' | 'updatedAt'> & { startDate: string; endDate?: string }, userId: string = 'system_add_event'): Promise<string> => {
-  // Ensure createdAt is a Timestamp
   const dataToSet = {
     title: eventData.title || '',
-    startDate: eventData.startDate, // Already a string
-    endDate: eventData.endDate || eventData.startDate, // Already a string or defaults
+    startDate: eventData.startDate, 
+    endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
-    createdAt: Timestamp.now(), // Use Firestore Timestamp
+    createdAt: Timestamp.now(), 
+    updatedAt: Timestamp.now(),
   };
   try {
     const newDocRef = await addDoc(eventsCollectionRef, dataToSet);
-    const afterState = { id: newDocRef.id, ...dataToSet, createdAt: dataToSet.createdAt.toDate() }; // Convert Timestamp to Date for logging if needed
+    const afterState = { id: newDocRef.id, ...dataToSet, createdAt: dataToSet.createdAt.toDate(), updatedAt: dataToSet.updatedAt.toDate() }; 
     await logAction('add_event', { before: null, after: prepareStateForLog(afterState) }, userId);
     return newDocRef.id;
   } catch (error) {
@@ -463,14 +464,8 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
     startDate: eventData.startDate, 
     endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
-    updatedAt: Timestamp.now() // Add/update an 'updatedAt' field
+    updatedAt: Timestamp.now() 
   };
-  // Remove id and createdAt from dataToUpdate as they should not be directly updated this way
-  delete (dataToUpdate as any).id;
-  // createdAt should only be set on creation, so we don't include it in updates unless specifically managed
-  // For logging, we fetch the existing createdAt.
-  // delete (dataToUpdate as any).createdAt;
-
 
   let beforeState: SchoolEvent | null = null;
   try {
@@ -480,16 +475,14 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         beforeState = { 
             id: eventData.id, 
             ...oldData, 
-            createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined, // keep as Date or undefined
+            createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined, 
             updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined 
         } as SchoolEvent;
     }
     
-    // Ensure dataToUpdate does not include 'id' or 'createdAt'
     const cleanDataToUpdate = { ...dataToUpdate };
     delete (cleanDataToUpdate as any).id;
-    // delete (cleanDataToUpdate as any).createdAt; // createdAt should not be part of an update operation's payload
-
+    
     await setDoc(docRef, cleanDataToUpdate, { merge: true });
     
     const afterSnap = await getDoc(docRef);
@@ -540,12 +533,13 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
 
 export const onSchoolEventsUpdate = (callback: (events: SchoolEvent[]) => void, onError?: (error: Error) => void): Unsubscribe => {
   const q = query(eventsCollectionRef, orderBy('startDate'));
-  return onSnapshot(q, (snapshot) => callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SchoolEvent))),
+  const unsubscribe = onSnapshot(q, (snapshot) => callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt:(doc.data().createdAt as Timestamp)?.toDate(), updatedAt:(doc.data().updatedAt as Timestamp)?.toDate() } as SchoolEvent))),
     (error) => {
       console.error("Snapshot error on school events:", error);
       if ((error as FirestoreError).code === 'failed-precondition') onError?.(new Error("Firestore 行事クエリに必要なインデックス(startDate)がありません (realtime)。"));
       else onError?.(error);
     });
+    return unsubscribe;
 };
 
 export const applyFixedTimetableForFuture = async (userId: string = 'system_apply_future_tt'): Promise<void> => {
@@ -576,12 +570,10 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
         const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
         const fixedSubjectIdOrNull = fixedSlot.subjectId ?? null;
         
-        // Only set if there's no announcement or if the announcement is just a placeholder for fixed subject without any text or calendar display
         if (!existingAnn || (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null && !existingAnn.showOnCalendar)) {
           const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${fixedSlot.period}`);
           const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
           
-          // Check if the existing announcement (if any) differs from what we'd set
           if (!existingAnn || (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull) {
             batch.set(docRef, newAnnouncementData); 
             operationsCount++;
@@ -636,7 +628,6 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
         const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
         
         const existingDoc = existingAnnouncementsMap.get(period);
-        // Only update if there was something to reset (text, different subject, or calendar flag)
         if (existingDoc && 
             ( (existingDoc.text !== '') || 
               ((existingDoc.subjectIdOverride ?? null) !== (fixedSlot?.subjectId ?? null)) ||
@@ -646,7 +637,7 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
             batch.set(docRef, newAnnouncementData);
             operationsCount++;
             dateNeedsUpdate = true;
-        } else if (!existingDoc && fixedSlot?.subjectId !== null) { // Case where fixed subject exists but no announcement yet
+        } else if (!existingDoc && fixedSlot?.subjectId !== null) { 
              batch.set(docRef, newAnnouncementData);
              operationsCount++;
              dateNeedsUpdate = true;
@@ -680,43 +671,82 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
   }
 };
 
-export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<SchoolEvent[]> => {
+export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<(SchoolEvent | DailyAnnouncement)[]> => {
   const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
   const monthEndDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
-  const items: SchoolEvent[] = [];
+  const items: (SchoolEvent | DailyAnnouncement)[] = [];
 
   try {
+    // Fetch School Events
     const eventsQuery = query(
       eventsCollectionRef,
-      where('startDate', '<=', monthEndDate), // Events starting on or before month end
+      where('startDate', '<=', monthEndDate),
       orderBy('startDate')
     );
-
     const eventsSnapshot = await getDocs(eventsQuery);
     eventsSnapshot.forEach(docSnap => {
-      const event = { id: docSnap.id, ...docSnap.data() } as SchoolEvent;
-      // Filter events that are active within the month
-      if ((event.endDate ?? event.startDate) >= monthStartDate) { // Event ends on or after month start
+      const eventData = docSnap.data();
+      const event: SchoolEvent = { 
+        id: docSnap.id, 
+        title: eventData.title,
+        startDate: eventData.startDate,
+        endDate: eventData.endDate,
+        description: eventData.description,
+        createdAt: (eventData.createdAt as Timestamp)?.toDate(),
+        updatedAt: (eventData.updatedAt as Timestamp)?.toDate(),
+        itemType: 'event' 
+      };
+      if ((event.endDate ?? event.startDate) >= monthStartDate) {
         items.push(event);
       }
     });
+
+    // Fetch Daily Announcements with showOnCalendar = true
+    const announcementsQuery = query(
+      dailyAnnouncementsCollectionRef,
+      where('date', '>=', monthStartDate),
+      where('date', '<=', monthEndDate),
+      where('showOnCalendar', '==', true)
+      // Note: Firestore does not support orderBy on a different field than the range inequality.
+      // Sorting will be done client-side or after merging.
+    );
+    const announcementsSnapshot = await getDocs(announcementsQuery);
+    announcementsSnapshot.forEach(docSnap => {
+      const annData = docSnap.data();
+      items.push({
+        id: docSnap.id,
+        date: annData.date,
+        period: annData.period,
+        subjectIdOverride: annData.subjectIdOverride === undefined ? null : annData.subjectIdOverride,
+        text: annData.text,
+        showOnCalendar: true, // Already filtered by this
+        updatedAt: (annData.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        itemType: 'announcement',
+      } as DailyAnnouncement);
+    });
     
-    // Sort items by start date (already handled by query, but good for explicit order if needed later)
+    // Sort combined items by date
     items.sort((a, b) => {
-        const dateA = new Date(a.startDate);
-        const dateB = new Date(b.startDate);
+        const dateA = new Date(a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date);
+        const dateB = new Date(b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date);
         if (dateA < dateB) return -1;
         if (dateA > dateB) return 1;
+        // For items on the same date, events might come before announcements, or sort by period for announcements
+        if (a.itemType === 'announcement' && b.itemType === 'announcement') {
+          return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        }
+        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; // Events first
+        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  // Announcements after
         return 0;
     });
     return items;
 
   } catch (error) {
-    console.error(`Error fetching school events for calendar ${year}-${month}:`, error);
+    console.error(`Error fetching calendar items for ${year}-${month}:`, error);
     if ((error as FirestoreError).code === 'unavailable') return [];
     if ((error as FirestoreError).code === 'failed-precondition') {
-      console.error("Firestore query requires an index for school events. Check Firebase console for suggestions based on the query:", (error as FirestoreError).message);
-      throw new Error(`Firestore クエリに必要なインデックスがありません。Firebaseコンソールを確認してください。該当エラー: ${(error as FirestoreError).message}`);
+      console.error("Firestore query requires an index. Check Firebase console. Error:", (error as FirestoreError).message);
+      throw new Error(`Firestore クエリに必要なインデックスがありません。Firebaseコンソールを確認してください。`);
     }
     throw error;
   }

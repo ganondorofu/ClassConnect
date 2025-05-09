@@ -9,11 +9,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, Edit2 as TimetableEditIcon } from 'lucide-react';
 import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { SchoolEvent, TimetableSettings } from '@/models/timetable';
+import type { DailyAnnouncement } from '@/models/announcement';
 import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetTimetableSettings, deleteSchoolEvent } from '@/controllers/timetableController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -26,8 +27,8 @@ import { useToast } from '@/hooks/use-toast';
 
 const queryClient = new QueryClient();
 
-type CalendarItem = SchoolEvent & { itemType: 'event' };
-const MAX_PREVIEW_ITEMS_IN_CELL = 3; // Adjusted to show more events if available
+type CalendarItem = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
+const MAX_PREVIEW_ITEMS_IN_CELL = 3; 
 
 function CalendarPageContent() {
   const [currentMonthDate, setCurrentMonthDate] = useState(startOfMonth(new Date()));
@@ -75,19 +76,19 @@ function CalendarPageContent() {
     onError: handleQueryError('timetableSettingsCalendar'),
   });
 
-  const { data: calendarEventsData, isLoading: isLoadingItems, error: errorItems } = useQuery<SchoolEvent[], Error>({
-    queryKey: ['calendarSchoolEvents', year, month],
+  const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems } = useQuery<(SchoolEvent | DailyAnnouncement)[], Error>({
+    queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
     staleTime: 1000 * 60 * 1, 
     enabled: !isOffline && (!!user || isAnonymous),
-    onError: handleQueryError('calendarSchoolEvents'),
+    onError: handleQueryError('calendarItems'),
     refetchOnMount: true, 
     refetchOnWindowFocus: true,
   });
   
   const combinedItems = useMemo(() => {
-    return calendarEventsData?.map(item => ({ ...item, itemType: 'event' as const })) ?? [];
-  }, [calendarEventsData]);
+    return calendarItemsData ?? [];
+  }, [calendarItemsData]);
 
 
   const handlePrevMonth = () => setCurrentMonthDate(subMonths(currentMonthDate, 1));
@@ -101,13 +102,17 @@ function CalendarPageContent() {
   const itemsForSelectedDay = useMemo(() => {
     if (!selectedDayForModal || !combinedItems) return [];
     const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
-    const filtered = combinedItems.filter(item => {
-       // All items are events now
-      return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
-    });
+    
+    // Filter for items on the selected day AND only include SchoolEvent types for the modal
+    const filteredEvents = combinedItems.filter(item => {
+      if (item.itemType === 'event') {
+        return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
+      }
+      // DailyAnnouncements are not shown in this modal
+      return false; 
+    }) as SchoolEvent[]; // Cast to SchoolEvent[] because we filtered by itemType
 
-    return filtered.sort((a, b) => {
-        // All items are events, sort by start date
+    return filteredEvents.sort((a, b) => {
         const startDateA = a.startDate ? parseISO(a.startDate).getTime() : 0;
         const startDateB = b.startDate ? parseISO(b.startDate).getTime() : 0;
         return startDateA - startDateB;
@@ -118,7 +123,7 @@ function CalendarPageContent() {
     mutationFn: (eventId: string) => deleteSchoolEvent(eventId, user?.uid ?? 'admin_user_calendar_event_delete'),
     onSuccess: () => {
       toast({ title: "成功", description: "行事を削除しました。" });
-      queryClientHook.invalidateQueries({ queryKey: ['calendarSchoolEvents', year, month] });
+      queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
       setIsDayDetailModalOpen(false); 
     },
     onError: (error: Error) => {
@@ -142,7 +147,12 @@ function CalendarPageContent() {
   const renderDayContent = (day: Date): React.ReactNode => {
     const dateStr = format(day, 'yyyy-MM-dd');
     const itemsForDayInCell = combinedItems.filter(item => {
-       return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
+       if (item.itemType === 'event') {
+         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
+       } else if (item.itemType === 'announcement') { // DailyAnnouncements are filtered by showOnCalendar in controller
+         return item.date === dateStr;
+       }
+       return false;
     });
 
     const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
@@ -155,18 +165,28 @@ function CalendarPageContent() {
         </span>
         {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => ( 
-              <div
-                key={`${item.itemType}-${item.id || index}-${dateStr}-cell`}
-                className={cn(
-                  "text-xs px-1 py-0.5 rounded-sm w-full truncate",
-                  'bg-blue-500/20 text-blue-700 dark:text-blue-300' // Only event style
-                )}
-                title={item.title}
-              >
-                {item.title}
-              </div>
-            ))}
+            {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => {
+              let displayTitle: string;
+              let styleClass: string;
+
+              if (item.itemType === 'event') {
+                displayTitle = item.title;
+                styleClass = 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
+              } else { // itemType === 'announcement'
+                displayTitle = item.text || (item.subjectIdOverride ? `科目変更 (${item.period}限)` : `連絡 (${item.period}限)`);
+                styleClass = 'bg-green-500/20 text-green-700 dark:text-green-300';
+              }
+              
+              return (
+                <div
+                  key={`${item.itemType}-${item.id || index}-${dateStr}-cell`}
+                  className={cn("text-xs px-1 py-0.5 rounded-sm w-full truncate", styleClass)}
+                  title={displayTitle}
+                >
+                  {displayTitle}
+                </div>
+              );
+            })}
             {itemsForDayInCell.length > MAX_PREVIEW_ITEMS_IN_CELL && (
               <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - MAX_PREVIEW_ITEMS_IN_CELL} 件</div>
             )}
@@ -254,7 +274,7 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                weekStartsOn={0} 
+                weekStartsOn={1} // Monday
                 fixedWeeks 
                 className="w-full p-0 flex-1 flex flex-col" 
                 classNames={{
@@ -273,7 +293,7 @@ function CalendarPageContent() {
                   head_row: "flex", 
                   head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
                   tbody: "flex-1 flex flex-col", 
-                  row: "flex w-full flex-1 min-h-[6rem]", // Ensure rows have min height
+                  row: "flex w-full flex-1 min-h-[6rem]", 
                   cell: cn( 
                     "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
@@ -283,7 +303,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "bg-accent text-accent-foreground", // Keep today's highlight distinct
+                  day_today: "bg-accent/70 text-accent-foreground",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -307,7 +327,7 @@ function CalendarPageContent() {
               {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
             </DialogTitle>
             <DialogDescription>
-              この日の行事一覧です。
+              この日の行事一覧です。（時間割の連絡はここには表示されません）
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
@@ -320,7 +340,7 @@ function CalendarPageContent() {
             ) : (
               <ul className="space-y-3 p-1">
                 {itemsForSelectedDay.map((item, index) => {
-                  // All items are events
+                  // item is guaranteed to be SchoolEvent here due to filtering in itemsForSelectedDay
                   const eventItem = item as SchoolEvent;
                   const icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
                   const title = `行事: ${eventItem.title}`;
@@ -339,7 +359,7 @@ function CalendarPageContent() {
                         <p className={cn("font-semibold text-sm mb-1", colorClass)}>
                           {icon}{title}
                         </p>
-                        {isAdmin && ( // Event editing/deletion only for admin
+                        {isAdmin && ( 
                           <div className="flex gap-1">
                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleOpenEditEventModal(eventItem)}>
                               <Edit className="h-3 w-3" />
@@ -402,7 +422,7 @@ function CalendarPageContent() {
             if (!open) setEventToEdit(null); 
           }}
           onEventSaved={() => {
-            queryClientHook.invalidateQueries({ queryKey: ['calendarSchoolEvents', year, month] });
+            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
           }}
           editingEvent={eventToEdit}
         />
