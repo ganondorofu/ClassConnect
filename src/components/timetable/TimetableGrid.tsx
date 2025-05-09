@@ -426,11 +426,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               </div>
                             )}
                           </div>
-                           {announcement?.showOnCalendar && (
-                            <div className="text-xs text-accent flex items-center gap-1 mt-1" title="カレンダーに表示">
-                                <CalendarDays className="w-3 h-3 shrink-0" />
-                            </div>
-                           )}
+                           {/* Removed the CalendarDays icon display here */}
                           {canEditThisSlot && (
                             <div className="mt-auto">
                               <Button variant="ghost" size="sm" className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary" onClick={() => handleSlotClick(dateStr, period, dayOfWeek)} aria-label={`${dateStr} ${period}限目の連絡・変更を編集`} disabled={isOffline}>
@@ -523,4 +519,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-
