@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -22,6 +21,7 @@ import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects } from '@/controllers/subjectController';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { buttonVariants } from "@/components/ui/button";
 
 
 const queryClient = new QueryClient();
@@ -163,13 +163,13 @@ function CalendarPageContent() {
     });
 
     return (
-      <div className="relative flex flex-col items-start p-1 h-full overflow-hidden">
+      <div className="relative flex flex-col items-start p-1 h-full overflow-hidden w-full">
         <span className={cn("absolute top-1 right-1 text-xs", isSameDay(day, new Date()) && "font-bold text-primary")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDayInCell.slice(0, 2).map((item, index) => ( 
+            {itemsForDayInCell.slice(0, settings?.numberOfPeriods === 5 ? 1 : 2).map((item, index) => ( 
               <div
                 key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-cell`}
                 className={cn(
@@ -192,8 +192,8 @@ function CalendarPageContent() {
                 }
               </div>
             ))}
-            {itemsForDayInCell.length > 2 && (
-              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - 2} 件</div>
+            {itemsForDayInCell.length > (settings?.numberOfPeriods === 5 ? 1 : 2) && (
+              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - (settings?.numberOfPeriods === 5 ? 1 : 2)} 件</div>
             )}
           </div>
         )}
@@ -266,16 +266,43 @@ function CalendarPageContent() {
           ) : (
             <Calendar
               mode="single"
-              selected={new Date()} 
+              selected={selectedDayForModal} 
               onSelect={(day) => day && handleDayClick(day)}
               month={currentMonthDate}
               onMonthChange={setCurrentMonthDate}
               locale={ja}
-              className="w-full p-0 [&_td]:h-16 sm:[&_td]:h-20 [&_td]:align-top [&_th]:h-10"
+              className="w-full p-0 sm:p-2 md:p-4 [&_td]:h-16 sm:[&_td]:h-20 md:[&_td]:h-24 lg:[&_td]:h-28 [&_td]:align-top [&_th]:h-10"
               classNames={{
-                day: "h-full w-full p-0 cursor-pointer hover:bg-accent/30",
-                day_selected: "bg-transparent text-foreground hover:bg-accent/50", 
-                day_today: "bg-accent text-accent-foreground font-bold",
+                months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
+                month: "space-y-4",
+                caption: "flex justify-center pt-1 relative items-center",
+                caption_label: "text-sm font-medium",
+                nav: "space-x-1 flex items-center",
+                nav_button: cn(
+                  buttonVariants({ variant: "outline" }),
+                  "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+                ),
+                nav_button_previous: "absolute left-1",
+                nav_button_next: "absolute right-1",
+                table: "w-full border-collapse space-y-1",
+                head_row: "flex", 
+                head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
+                row: "flex w-full mt-2", 
+                cell: cn( 
+                  "flex-1 p-0 relative text-center text-sm h-full", 
+                  "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
+                ),
+                day: cn( 
+                  buttonVariants({ variant: "ghost" }),
+                  "h-full w-full p-0 font-normal aria-selected:opacity-100" 
+                ),
+                day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
+                day_today: "bg-accent text-accent-foreground font-bold", 
+                day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
+                day_disabled: "text-muted-foreground opacity-50",
+                day_range_end: "day-range-end",
+                day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
+                day_hidden: "invisible",
               }}
               components={{
                 DayContent: ({ date }) => renderDayContent(date),
@@ -366,6 +393,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
-
-    
