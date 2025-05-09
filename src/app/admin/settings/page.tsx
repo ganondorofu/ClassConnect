@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect } from 'react'; // Explicitly import React and useEffect
@@ -10,6 +9,7 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Lock } from 'lucide-react';
+import { Button } from '@/components/ui/button'; // Import Button
 
 const queryClient = new QueryClient();
 
@@ -37,7 +37,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (isAnonymous) { // Should be caught by useEffect, but as a fallback
+  if (isAnonymous) { 
      return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
@@ -54,7 +54,6 @@ export default function SettingsPage() {
     );
   }
   
-  // Only render content if user is authenticated and not anonymous
   if (user && !isAnonymous) {
     return (
       <QueryClientProvider client={queryClient}>
@@ -65,7 +64,6 @@ export default function SettingsPage() {
     );
   }
 
-  // Fallback for any other unhandled state (should ideally not be reached if logic above is correct)
   return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
