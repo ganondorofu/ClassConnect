@@ -8,7 +8,7 @@ import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay';
 import { Button } from '@/components/ui/button';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react';
-import { format, addDays, subDays, addWeeks, subWeeks, startOfDay } from 'date-fns';
+import { format, addDays, subDays, addWeeks, subWeeks, startOfDay, parseISO, isValid } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
 import { queryFnGetDailyGeneralAnnouncement, onDailyGeneralAnnouncementUpdate } from '@/controllers/timetableController';
@@ -18,10 +18,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { InitialChoice } from '@/components/auth/InitialChoice'; // Import InitialChoice
+import { useSearchParams } from 'next/navigation'; // Import useSearchParams
 
 const queryClient = new QueryClient();
 
 function HomePageContent() {
+  const searchParams = useSearchParams();
   const [currentDate, setCurrentDate] = useState<Date | null>(null);
   const [todayStr, setTodayStr] = useState<string>('');
   const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date | undefined>(undefined);
@@ -30,18 +32,37 @@ function HomePageContent() {
   const { user, loading: authLoading, isAnonymous, setAnonymousAccess } = useAuth(); // Get auth state
   const [showInitialChoice, setShowInitialChoice] = useState(false);
 
-
   useEffect(() => {
-    const now = startOfDay(new Date());
-    setCurrentDate(now);
-  }, []);
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      try {
+        const parsedDate = parseISO(dateParam);
+        if (isValid(parsedDate)) {
+          setCurrentDate(startOfDay(parsedDate));
+        } else {
+          console.warn("Invalid date parameter in URL:", dateParam);
+          setCurrentDate(startOfDay(new Date())); // Fallback to today
+        }
+      } catch (e) {
+        console.error("Error parsing date parameter:", e);
+        setCurrentDate(startOfDay(new Date())); // Fallback to today
+      }
+    } else if (!currentDate) { 
+      // Only set to today if no param AND currentDate is not already set (initial load or navigation without date)
+      setCurrentDate(startOfDay(new Date()));
+    }
+  }, [searchParams, currentDate]); // Re-run if searchParams changes or if currentDate was null and needs init
+
 
   useEffect(() => {
     if (currentDate) {
       setTodayStr(format(currentDate, 'yyyy-MM-dd'));
       setSelectedDateForPicker(currentDate);
     } else {
-      setSelectedDateForPicker(undefined);
+      // Fallback or initial state if currentDate is null
+      const today = startOfDay(new Date());
+      setTodayStr(format(today, 'yyyy-MM-dd'));
+      setSelectedDateForPicker(today);
     }
   }, [currentDate]);
 
@@ -86,7 +107,6 @@ function HomePageContent() {
   const handleToday = () => setCurrentDate(startOfDay(new Date()));
   const handleDateSelect = (date: Date | undefined) => {
     if (date) setCurrentDate(startOfDay(date));
-    else setCurrentDate(null);
   };
 
   const handleChoiceMade = () => {
@@ -157,7 +177,7 @@ function HomePageContent() {
                       disabled={!user && !isAnonymous}
                     >
                       <CalendarIcon className="mr-1 h-4 w-4" />
-                      {currentDate ? format(currentDate, "M月d日", { locale: ja }) : <span>日付選択</span>}
+                      {currentDate ? format(currentDate, "M月d日 (E)", { locale: ja }) : <span>日付選択</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
@@ -199,7 +219,8 @@ function HomePageContent() {
 export default function Home() {
   return (
     <QueryClientProvider client={queryClient}>
-      <HomePageContent />
+        <HomePageContent />
     </QueryClientProvider>
   );
 }
+
