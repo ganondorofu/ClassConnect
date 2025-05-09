@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, Edit2 as TimetableEditIcon, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, FileText } from 'lucide-react';
 import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, parseISO, endOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
@@ -30,7 +30,7 @@ import type { Subject } from '@/models/subject';
 const queryClient = new QueryClient();
 
 type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
-const MAX_PREVIEW_ITEMS_IN_CELL = 2; // Adjusted for better mobile view
+const MAX_PREVIEW_ITEMS_IN_CELL = 2; 
 
 function CalendarPageContent() {
   const [currentMonthDate, setCurrentMonthDate] = useState(startOfMonth(new Date()));
@@ -78,7 +78,7 @@ function CalendarPageContent() {
     onError: handleQueryError('timetableSettingsCalendar'),
   });
 
-  const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems } = useQuery<(SchoolEvent | DailyAnnouncement)[], Error>({
+  const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<(SchoolEvent | DailyAnnouncement)[], Error>({
     queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
     staleTime: 1000 * 60 * 1, 
@@ -117,7 +117,7 @@ function CalendarPageContent() {
       if (item.itemType === 'event') {
         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
       } else if (item.itemType === 'announcement') { 
-        return item.date === dateStr && item.showOnCalendar; // Only show announcements marked for calendar
+        return item.date === dateStr && item.showOnCalendar; 
       }
       return false; 
     });
@@ -310,7 +310,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "bg-accent/30 text-accent-foreground", // Adjusted today color
+                  day_today: "bg-accent/30 text-accent-foreground",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -321,9 +321,9 @@ function CalendarPageContent() {
                   DayContent: ({ date }) => renderDayContent(date),
                 }}
                 disabled={isOffline}
-                showOutsideDays={true} // Ensure outside days are rendered to maintain grid structure
-                fromMonth={startOfMonth(subMonths(new Date(), 12))} // Example: allow 12 months back
-                toMonth={endOfMonth(addMonths(new Date(), 12))} // Example: allow 12 months forward
+                showOutsideDays={true} 
+                fromMonth={startOfMonth(subMonths(new Date(), 12))} 
+                toMonth={endOfMonth(addMonths(new Date(), 12))} 
               />
             )}
           </CardContent>
@@ -356,7 +356,7 @@ function CalendarPageContent() {
                   if (item.itemType === 'event') {
                     const eventItem = item as SchoolEvent;
                     icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
-                    title = `${eventItem.title}`; // Removed "行事: " prefix for cleaner look
+                    title = `${eventItem.title}`;
                     content = eventItem.description ?? '';
                     colorClass = 'text-blue-600 dark:text-blue-400';
                     if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
@@ -366,7 +366,7 @@ function CalendarPageContent() {
                     const announcementItem = item as DailyAnnouncement;
                     icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
                     const subjectName = announcementItem.subjectIdOverride ? subjectsMap.get(announcementItem.subjectIdOverride) : null;
-                    title = subjectName ? `${subjectName} (${announcementItem.period}限)` : `連絡 (${announcementItem.period}限)`; // Removed "連絡: " prefix
+                    title = subjectName ? `${subjectName} (${announcementItem.period}限)` : `連絡 (${announcementItem.period}限)`; 
                     content = announcementItem.text;
                     colorClass = 'text-green-600 dark:text-green-400';
                   }
@@ -441,7 +441,7 @@ function CalendarPageContent() {
             if (!open) setEventToEdit(null); 
           }}
           onEventSaved={async () => {
-            await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
+            await refetchCalendarItems();
           }}
           editingEvent={eventToEdit}
         />
