@@ -119,15 +119,15 @@ function CalendarPageContent() {
         return item.date === dateStr && item.showOnCalendar; 
       }
       return false; 
-    }).sort((a, b) => { // Sort items for consistent display in modal
+    }).sort((a, b) => { 
         const isAEvent = a.itemType === 'event';
         const isBEvent = b.itemType === 'event';
-        if (isAEvent && !isBEvent) return -1; // Events first
-        if (!isAEvent && isBEvent) return 1;  // Announcements after
-        if (isAEvent && isBEvent) { // Both are events
+        if (isAEvent && !isBEvent) return -1; 
+        if (!isAEvent && isBEvent) return 1;  
+        if (isAEvent && isBEvent) { 
             return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
         }
-        if (!isAEvent && !isBEvent) { // Both are announcements
+        if (!isAEvent && !isBEvent) { 
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
         return 0;
@@ -139,13 +139,12 @@ function CalendarPageContent() {
     onSuccess: async (data, variables) => {
       toast({ title: "成功", description: "行事を削除しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
-      // Check if selectedDayForModal still has items. If not, close modal.
+      
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
       if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
+        setSelectedDayForModal(null);
       } else {
-        // To refresh the modal content, we can force a re-query or just update local state.
-        // For simplicity, re-querying might be easier here.
         refetchCalendarItems();
       }
     },
@@ -176,11 +175,11 @@ function CalendarPageContent() {
          return item.date === dateStr && item.showOnCalendar;
        }
        return false;
-    }).sort((a,b) => { // Sort items for consistent display in cell
+    }).sort((a,b) => { 
         const isAEvent = a.itemType === 'event';
         const isBEvent = b.itemType === 'event';
-        if (isAEvent && !isBEvent) return -1; // Events first
-        if (!isAEvent && isBEvent) return 1;  // Announcements after
+        if (isAEvent && !isBEvent) return -1; 
+        if (!isAEvent && isBEvent) return 1;  
         if (isAEvent && isBEvent) return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
         if (!isAEvent && !isBEvent) return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         return 0;
@@ -191,7 +190,7 @@ function CalendarPageContent() {
 
     return (
       <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
-        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-primary")}>
+        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-primary border border-primary rounded-full w-5 h-5 flex items-center justify-center")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
@@ -202,13 +201,13 @@ function CalendarPageContent() {
 
               if (item.itemType === 'event') {
                 displayTitle = item.title;
-                styleClass = 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
+                styleClass = 'bg-accent/30 text-accent-foreground/90';
               } else { 
                 const announcement = item as DailyAnnouncement;
                 const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
                 const textPreview = announcement.text.length > 10 ? announcement.text.substring(0, 10) + "..." : announcement.text;
                 displayTitle = `P${announcement.period}: ${subjectName || textPreview || '連絡'}`;
-                styleClass = 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400';
+                styleClass = 'bg-primary/20 text-primary-foreground/80 dark:text-primary/80';
               }
               
               return (
@@ -333,14 +332,12 @@ function CalendarPageContent() {
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
                   day: cn(
-                    // Manually list necessary button styles, excluding hover from buttonVariants({variant: "ghost"})
-                    "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                    buttonVariants({ variant: "ghost" }),
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
-                    // Explicitly set hover to be transparent and text color to current (no visual change on hover)
                     "!hover:bg-transparent !hover:text-current" 
                   ),
-                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", // Removed hover:bg-primary/70
-                  day_today: "bg-primary/10 border border-primary/70 text-primary font-semibold",
+                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground",
+                  day_today: "bg-background text-primary border border-primary/70 font-semibold",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -360,7 +357,12 @@ function CalendarPageContent() {
         </Card>
       </div>
 
-      <Dialog open={isDayDetailModalOpen} onOpenChange={setIsDayDetailModalOpen}>
+      <Dialog open={isDayDetailModalOpen} onOpenChange={(open) => {
+          setIsDayDetailModalOpen(open);
+          if (!open) {
+            setSelectedDayForModal(null); 
+          }
+        }}>
         <DialogContent className="sm:max-w-md md:max-w-lg">
           <DialogHeader>
             <DialogTitle>
@@ -388,7 +390,7 @@ function CalendarPageContent() {
                     icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
                     title = `${eventItem.title}`;
                     content = eventItem.description ?? '';
-                    colorClass = 'text-blue-600 dark:text-blue-400';
+                    colorClass = 'text-accent-foreground/90 dark:text-accent-foreground/80';
                     if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
                       footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
                     }
@@ -398,7 +400,7 @@ function CalendarPageContent() {
                     const subjectName = annItem.subjectIdOverride ? subjectsMap.get(annItem.subjectIdOverride) : null;
                     title = `P${annItem.period}限: ${subjectName || '連絡'}`;
                     content = annItem.text;
-                    colorClass = 'text-yellow-600 dark:text-yellow-400';
+                    colorClass = 'text-primary-foreground/80 dark:text-primary/80';
                   } else {
                     return null;
                   }
@@ -450,13 +452,17 @@ function CalendarPageContent() {
             )}
           </ScrollArea>
           <DialogFooter className="mt-4 sm:justify-between">
-             <Button variant="outline" onClick={() => setIsDayDetailModalOpen(false)} className="w-full sm:w-auto">
+             <Button variant="outline" onClick={() => {
+                setIsDayDetailModalOpen(false);
+                setSelectedDayForModal(null);
+             }} className="w-full sm:w-auto">
               閉じる
             </Button>
             <Button onClick={() => {
               if (selectedDayForModal) {
                 router.push(`/?date=${format(selectedDayForModal, 'yyyy-MM-dd')}`);
                 setIsDayDetailModalOpen(false);
+                setSelectedDayForModal(null);
               }
             }} disabled={!selectedDayForModal} className="w-full sm:w-auto">
               この日の時間割を見る
