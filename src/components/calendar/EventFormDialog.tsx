@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect } from 'react';
@@ -36,7 +37,7 @@ type EventFormData = z.infer<typeof eventSchema>;
 interface EventFormDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onEventSaved: () => void; // Renamed from onEventAdded for clarity
+  onEventSaved: () => Promise<void>; // Changed to Promise<void>
   editingEvent?: SchoolEvent | null;
 }
 
@@ -81,9 +82,9 @@ export default function EventFormDialog({ isOpen, onOpenChange, onEventSaved, ed
   const addMutation = useMutation({
     mutationFn: (newEvent: Omit<SchoolEvent, 'id' | 'createdAt' | 'updatedAt'> & { startDate: string; endDate?: string }) =>
       addSchoolEvent(newEvent, user?.uid ?? 'admin_user_calendar_event_add'),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "成功", description: "新しい行事を追加しました。" });
-      onEventSaved();
+      await onEventSaved();
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -94,9 +95,9 @@ export default function EventFormDialog({ isOpen, onOpenChange, onEventSaved, ed
   const updateMutation = useMutation({
     mutationFn: (eventToUpdate: SchoolEvent) =>
       updateSchoolEvent(eventToUpdate, user?.uid ?? 'admin_user_calendar_event_update'),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "成功", description: "行事を更新しました。" });
-      onEventSaved();
+      await onEventSaved();
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -116,7 +117,6 @@ export default function EventFormDialog({ isOpen, onOpenChange, onEventSaved, ed
       updateMutation.mutate({ 
         ...editingEvent, 
         ...formattedData,
-        // Ensure createdAt is preserved if it exists, or handle it as needed by updateSchoolEvent
         createdAt: editingEvent.createdAt ? (editingEvent.createdAt instanceof Date ? editingEvent.createdAt : new Date(editingEvent.createdAt as any)) : new Date(),
       });
     } else {
@@ -229,3 +229,4 @@ export default function EventFormDialog({ isOpen, onOpenChange, onEventSaved, ed
     </Dialog>
   );
 }
+
