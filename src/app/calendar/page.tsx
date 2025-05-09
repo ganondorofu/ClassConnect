@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths } from 'date-fns';
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
@@ -89,10 +89,14 @@ function CalendarPageContent() {
   });
   
   const daysInMonth = useMemo(() => {
-    const start = startOfMonth(currentMonthDate);
-    const end = endOfMonth(currentMonthDate);
+    const monthStart = startOfMonth(currentMonthDate);
+    // Ensure the calendar grid shows full weeks, even if they span across months
+    const displayStart = startOfWeek(monthStart, { locale: ja });
+    const monthEnd = endOfMonth(currentMonthDate);
+    const displayEnd = endOfWeek(monthEnd, { locale: ja });
+    
     const daysArray = [];
-    for (let day = start; day <= end; day = addDays(day, 1)) {
+    for (let day = displayStart; day <= displayEnd; day = addDays(day, 1)) {
       daysArray.push(day);
     }
     return daysArray;
@@ -165,14 +169,17 @@ function CalendarPageContent() {
        return item.date === dateStr;
     });
 
+    // Determine if the day is outside the current month for styling
+    const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
+
     return (
-      <div className="relative flex flex-col items-start p-1 h-full overflow-hidden w-full">
-        <span className={cn("absolute top-1 right-1 text-xs", isSameDay(day, new Date()) && "font-bold text-primary")}>
+      <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
+        <span className={cn("absolute top-1 right-1 text-xs", isSameDay(day, new Date()) && !isOutsideMonth && "font-bold text-primary")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDayInCell.slice(0, settings?.numberOfPeriods === 5 ? 1 : 2).map((item, index) => ( 
+            {itemsForDayInCell.slice(0, 2).map((item, index) => ( // Show up to 2 items, adjust as needed
               <div
                 key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-cell`}
                 className={cn(
@@ -195,8 +202,8 @@ function CalendarPageContent() {
                 }
               </div>
             ))}
-            {itemsForDayInCell.length > (settings?.numberOfPeriods === 5 ? 1 : 2) && (
-              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - (settings?.numberOfPeriods === 5 ? 1 : 2)} 件</div>
+            {itemsForDayInCell.length > 2 && (
+              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - 2} 件</div>
             )}
           </div>
         )}
@@ -230,7 +237,6 @@ function CalendarPageContent() {
 
   return (
     <MainLayout>
-      {/* This div will be the main flex container for the page content, taking full height */}
       <div className="flex flex-col h-full">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2 sm:gap-0">
           <h1 className="text-xl sm:text-2xl font-semibold">クラスカレンダー</h1>
@@ -255,9 +261,7 @@ function CalendarPageContent() {
           </Alert>
         )}
 
-        {/* This Card should grow to fill remaining vertical space */}
         <Card className="shadow-lg flex-grow flex flex-col overflow-hidden">
-          {/* CardContent should allow Calendar to take full space within it */}
           <CardContent className="p-0 sm:p-2 md:p-4 flex-1 flex flex-col">
             {isLoading ? (
               <div className="p-4 flex-1 flex flex-col">
@@ -278,10 +282,11 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                className="w-full p-0 flex-1 [&_table]:h-full [&_tbody]:h-full [&_tr]:flex-1 [&_td]:h-full sm:[&_td]:h-auto md:[&_td]:h-auto lg:[&_td]:h-auto [&_td_button]:h-full"
+                fixedWeeks // Ensures 6 weeks are always rendered
+                className="w-full p-0 flex-1 flex flex-col" // Calendar root is flex-col and grows
                 classNames={{
                   months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-                  month: "space-y-4 flex-1 flex flex-col", // Ensure month takes space
+                  month: "space-y-4 flex-1 flex flex-col", // Month div takes flex-1 and is flex-col
                   caption: "flex justify-center pt-1 relative items-center",
                   caption_label: "text-sm font-medium",
                   nav: "space-x-1 flex items-center",
@@ -291,22 +296,22 @@ function CalendarPageContent() {
                   ),
                   nav_button_previous: "absolute left-1",
                   nav_button_next: "absolute right-1",
-                  table: "w-full border-collapse space-y-1 flex-1 flex flex-col", // table flex
+                  table: "w-full border-collapse flex-1 flex flex-col", // Table takes flex-1 and is flex-col
                   head_row: "flex", 
-                  head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
-                  tbody: "flex-1 flex flex-col", // tbody flex
-                  row: "flex w-full mt-1 flex-1", // row flex
-                  cell: cn( 
-                    "flex-1 p-0 relative text-center text-sm", 
+                  head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", // Head cells share width
+                  tbody: "flex-1 flex flex-col", // Tbody takes flex-1 and is flex-col (for rows)
+                  row: "flex w-full flex-1", // Each row takes flex-1 height within tbody
+                  cell: cn( // Cell takes flex-1 width within row and h-full
+                    "flex-1 p-0 relative text-center text-sm h-full", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
-                  day: cn( 
+                  day: cn( // Day button fills the cell
                     buttonVariants({ variant: "ghost" }),
-                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-center justify-start" // day button flex to align content
+                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start" // Align content top-left
                   ),
                   day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
                   day_today: "bg-accent text-accent-foreground font-bold", 
-                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
+                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", // Style for days outside current month
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
                   day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
