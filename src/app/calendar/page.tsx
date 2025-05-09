@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -10,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek, subDays } from 'date-fns';
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
@@ -21,13 +20,14 @@ import { cn } from '@/lib/utils';
 import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects } from '@/controllers/subjectController';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { buttonVariants } from "@/components/ui/button";
 
 
 const queryClient = new QueryClient();
 
 type CalendarItem = (DailyAnnouncement | SchoolEvent | DailyGeneralAnnouncement) & { itemType: 'announcement' | 'event' | 'general' };
+const MAX_PREVIEW_ITEMS_IN_CELL = 2;
 
 function CalendarPageContent() {
   const [currentMonthDate, setCurrentMonthDate] = useState(startOfMonth(new Date()));
@@ -36,7 +36,7 @@ function CalendarPageContent() {
   const { user, isAnonymous, loading: authLoading } = useAuth();
 
   const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
-  const [selectedDayForModal, setSelectedDayForModal] = useState<Date | null>(null);
+  const [selectedDayForModal, setSelectedDayForModal, ] = useState<Date | null>(null);
 
 
   useEffect(() => {
@@ -89,15 +89,9 @@ function CalendarPageContent() {
   });
   
   const daysToFetchForAnnouncements = useMemo(() => {
-    // Calculate the range of days that might be displayed by react-day-picker with fixedWeeks
     const firstDayOfMonth = startOfMonth(currentMonthDate);
-    const lastDayOfMonth = endOfMonth(currentMonthDate);
-    // fixedWeeks typically shows 6 weeks. Start from a bit before the first day of the week of the month start,
-    // and end a bit after the last day of the week of the month end.
-    const displayStartDate = startOfWeek(firstDayOfMonth, { locale: ja, weekStartsOn: 1 });
-    // 6 weeks from displayStartDate
+    const displayStartDate = startOfWeek(firstDayOfMonth, { locale: ja, weekStartsOn: 0 }); // Sunday start for 6 weeks display
     const displayEndDate = addDays(displayStartDate, (6 * 7) - 1);
-
 
     const daysArray = [];
     let currentDay = displayStartDate;
@@ -185,7 +179,7 @@ function CalendarPageContent() {
         </span>
         {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDayInCell.slice(0, 2).map((item, index) => ( 
+            {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => ( 
               <div
                 key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-${dateStr}-cell`}
                 className={cn(
@@ -208,8 +202,8 @@ function CalendarPageContent() {
                 }
               </div>
             ))}
-            {itemsForDayInCell.length > 2 && (
-              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - 2} 件</div>
+            {itemsForDayInCell.length > MAX_PREVIEW_ITEMS_IN_CELL && (
+              <div className="text-xs text-muted-foreground mt-0.5">他 {itemsForDayInCell.length - MAX_PREVIEW_ITEMS_IN_CELL} 件</div>
             )}
           </div>
         )}
@@ -288,7 +282,7 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                weekStartsOn={1} 
+                weekStartsOn={0} // Sunday
                 fixedWeeks 
                 className="w-full p-0 flex-1 flex flex-col" 
                 classNames={{
@@ -307,7 +301,7 @@ function CalendarPageContent() {
                   head_row: "flex", 
                   head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
                   tbody: "flex-1 flex flex-col", 
-                  row: "flex w-full flex-1 min-h-[6rem]", // Added min-h-[6rem] to ensure row visibility
+                  row: "flex w-full flex-1 min-h-[6rem]",
                   cell: cn( 
                     "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
@@ -414,3 +408,4 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
