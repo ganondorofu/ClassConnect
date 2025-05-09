@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -16,9 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { InitialChoice } from '@/components/auth/InitialChoice'; // Import InitialChoice
-import { useSearchParams } from 'next/navigation'; // Import useSearchParams
+import { useAuth } from '@/contexts/AuthContext';
+import { InitialChoice } from '@/components/auth/InitialChoice';
+import { useSearchParams } from 'next/navigation';
 
 const queryClient = new QueryClient();
 
@@ -28,52 +27,59 @@ function HomePageContent() {
   const [todayStr, setTodayStr] = useState<string>('');
   const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date | undefined>(undefined);
   const [liveGeneralAnnouncement, setLiveGeneralAnnouncement] = useState<DailyGeneralAnnouncement | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
   
-  const { user, loading: authLoading, isAnonymous, setAnonymousAccess } = useAuth(); // Get auth state
+  const { user, loading: authLoading, isAnonymous, setAnonymousAccess } = useAuth();
   const [showInitialChoice, setShowInitialChoice] = useState(false);
 
   useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
+      setIsOffline(!navigator.onLine);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+    return () => {};
+  }, []);
+
+
+  useEffect(() => {
     const dateParam = searchParams.get('date');
+    let initialDate = startOfDay(new Date()); 
     if (dateParam) {
       try {
         const parsedDate = parseISO(dateParam);
         if (isValid(parsedDate)) {
-          setCurrentDate(startOfDay(parsedDate));
+          initialDate = startOfDay(parsedDate);
         } else {
-          console.warn("Invalid date parameter in URL:", dateParam);
-          setCurrentDate(startOfDay(new Date())); // Fallback to today
+          console.warn("Invalid date parameter in URL, defaulting to today:", dateParam);
         }
       } catch (e) {
-        console.error("Error parsing date parameter:", e);
-        setCurrentDate(startOfDay(new Date())); // Fallback to today
+        console.error("Error parsing date parameter, defaulting to today:", e);
       }
-    } else if (!currentDate) { 
-      // Only set to today if no param AND currentDate is not already set (initial load or navigation without date)
-      setCurrentDate(startOfDay(new Date()));
     }
-  }, [searchParams, currentDate]); // Re-run if searchParams changes or if currentDate was null and needs init
-
+    setCurrentDate(initialDate);
+  }, [searchParams]);
 
   useEffect(() => {
     if (currentDate) {
-      setTodayStr(format(currentDate, 'yyyy-MM-dd'));
-      setSelectedDateForPicker(currentDate);
-    } else {
-      // Fallback or initial state if currentDate is null
-      const today = startOfDay(new Date());
-      setTodayStr(format(today, 'yyyy-MM-dd'));
-      setSelectedDateForPicker(today);
+        setTodayStr(format(currentDate, 'yyyy-MM-dd'));
+        setSelectedDateForPicker(currentDate);
     }
   }, [currentDate]);
 
-  // Determine if initial choice should be shown
+
   useEffect(() => {
-    if (!authLoading) { // Only proceed if auth state is resolved
-      const anonymousAccessChosen = localStorage.getItem('classconnect_anonymous_access') === 'true';
+    if (!authLoading) { 
+      const anonymousAccessChosen = typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true';
       if (!user && !anonymousAccessChosen) {
         setShowInitialChoice(true);
       } else if (anonymousAccessChosen && !isAnonymous) {
-        // Sync context if localStorage indicates anonymous but context doesn't (e.g. after refresh)
         setAnonymousAccess(true); 
       }
     }
@@ -85,79 +91,80 @@ function HomePageContent() {
     queryFn: queryFnGetDailyGeneralAnnouncement(todayStr),
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
-    enabled: !!todayStr && (!!user || isAnonymous), // Fetch only if authenticated or anonymous
+    enabled: !!todayStr && (!!user || isAnonymous) && !isOffline,
   });
 
   useEffect(() => {
-    if (!todayStr || (!user && !isAnonymous)) return; // Don't subscribe if no date or not authenticated/anonymous
-    const unsubscribe = onDailyGeneralAnnouncementUpdate(todayStr, (announcement) => {
-      setLiveGeneralAnnouncement(announcement);
-    }, (error) => {
-      console.error("Realtime general announcement error:", error);
-    });
+    if (!todayStr || (!user && !isAnonymous) || isOffline) {
+        setLiveGeneralAnnouncement(null); 
+        return;
+    }
+    const unsubscribe = onDailyGeneralAnnouncementUpdate(todayStr, 
+      (announcement) => {
+        setLiveGeneralAnnouncement(announcement);
+      }, 
+      (error) => {
+        console.error("Realtime general announcement error:", error);
+        setIsOffline(true); 
+      }
+    );
     return () => unsubscribe();
-  }, [todayStr, user, isAnonymous]);
+  }, [todayStr, user, isAnonymous, isOffline]);
 
   const dailyGeneralAnnouncement = liveGeneralAnnouncement ?? initialGeneralAnnouncement;
 
-  const handlePreviousWeek = () => setCurrentDate(prevDate => prevDate ? subWeeks(prevDate, 1) : null);
-  const handleNextWeek = () => setCurrentDate(prevDate => prevDate ? addWeeks(prevDate, 1) : null);
-  const handlePreviousDay = () => setCurrentDate(prevDate => prevDate ? subDays(prevDate, 1) : null);
-  const handleNextDay = () => setCurrentDate(prevDate => prevDate ? addDays(prevDate, 1) : null);
-  const handleToday = () => setCurrentDate(startOfDay(new Date()));
+  const updateCurrentDate = (newDate: Date | null) => {
+    if (newDate) {
+      const newDateStartOfDay = startOfDay(newDate);
+      setCurrentDate(newDateStartOfDay);
+    }
+  };
+
+  const handlePreviousWeek = () => updateCurrentDate(currentDate ? subWeeks(currentDate, 1) : null);
+  const handleNextWeek = () => updateCurrentDate(currentDate ? addWeeks(currentDate, 1) : null);
+  const handlePreviousDay = () => updateCurrentDate(currentDate ? subDays(currentDate, 1) : null);
+  const handleNextDay = () => updateCurrentDate(currentDate ? addDays(currentDate, 1) : null);
+  const handleToday = () => updateCurrentDate(new Date());
   const handleDateSelect = (date: Date | undefined) => {
-    if (date) setCurrentDate(startOfDay(date));
+    if (date) updateCurrentDate(date);
   };
 
   const handleChoiceMade = () => {
     setShowInitialChoice(false);
   };
   
-  // Show loading skeleton or initial choice modal
-  if (authLoading || (!user && !isAnonymous && showInitialChoice && !localStorage.getItem('classconnect_anonymous_access'))) {
+  if (authLoading || (!currentDate && !showInitialChoice)) {
     return (
       <MainLayout>
         {showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
-        {!showInitialChoice && ( // Show skeleton if auth is loading but choice modal isn't up
+        {!showInitialChoice && ( 
            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
-               <Skeleton className="h-8 w-48" />
+               <Skeleton className="h-8 w-32 sm:w-48" />
                <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
                    <Skeleton className="h-9 w-16" />
                    <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-                   <Skeleton className="h-9 w-28" />
+                   <Skeleton className="h-9 w-24 sm:w-28" />
                     <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
                </div>
            </div>
         )}
-        {!showInitialChoice && <Skeleton className="h-32 w-full mb-6" />}
-        {!showInitialChoice && <Skeleton className="h-96 w-full" />}
+        {!showInitialChoice && <Skeleton className="h-24 sm:h-32 w-full mb-6" />}
+        {!showInitialChoice && <Skeleton className="h-80 sm:h-96 w-full" />}
       </MainLayout>
     );
   }
   
-  if (!currentDate) { // If date isn't set yet (after auth is resolved)
+  if (showInitialChoice && !user && !(typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true')) {
       return (
-         <MainLayout>
-           <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
-               <Skeleton className="h-8 w-48" />
-               <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-                   <Skeleton className="h-9 w-16" />
-                   <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-                   <Skeleton className="h-9 w-28" />
-                    <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-               </div>
-           </div>
-           <Skeleton className="h-32 w-full mb-6" />
-           <Skeleton className="h-96 w-full" />
-        </MainLayout>
+          <MainLayout>
+              <InitialChoice onChoiceMade={handleChoiceMade} />
+          </MainLayout>
       );
   }
 
 
   return (
     <MainLayout>
-       {showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
-       {!showInitialChoice && (
         <>
           <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
             <h1 className="text-xl md:text-2xl font-semibold">クラス時間割・連絡</h1>
@@ -173,10 +180,10 @@ function HomePageContent() {
                   <PopoverTrigger asChild>
                     <Button
                       variant={"ghost"}
-                      className={cn("w-[120px] md:w-[150px] justify-center text-center font-normal h-8 px-2", !currentDate && "text-muted-foreground")}
+                      className={cn("w-[100px] md:w-[130px] justify-center text-center font-normal h-8 px-1 text-xs sm:text-sm", !currentDate && "text-muted-foreground")}
                       disabled={!user && !isAnonymous}
                     >
-                      <CalendarIcon className="mr-1 h-4 w-4" />
+                      <CalendarIcon className="mr-1 h-3 w-3 sm:h-4 sm:w-4" />
                       {currentDate ? format(currentDate, "M月d日 (E)", { locale: ja }) : <span>日付選択</span>}
                     </Button>
                   </PopoverTrigger>
@@ -208,10 +215,9 @@ function HomePageContent() {
           />
 
           <div className="mt-6">
-            <TimetableGrid currentDate={currentDate} />
+            {currentDate && <TimetableGrid currentDate={currentDate} />}
           </div>
         </>
-      )}
     </MainLayout>
   );
 }
@@ -223,4 +229,3 @@ export default function Home() {
     </QueryClientProvider>
   );
 }
-

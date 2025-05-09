@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -14,18 +13,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { AlertCircle, WifiOff, PlusCircle, Edit, Trash2, Save, Lock } from 'lucide-react'; // Added Lock
+import { AlertCircle, WifiOff, PlusCircle, Edit, Trash2, Save, Lock } from 'lucide-react';
 import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects, addSubject, updateSubject, deleteSubject, onSubjectsUpdate } from '@/controllers/subjectController';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 const queryClient = new QueryClient();
 
 function SubjectsPageContent() {
   const { toast } = useToast();
   const queryClientHook = useQueryClient();
-  const { user } = useAuth(); // Get user for logging
+  const { user } = useAuth();
 
   const [isOffline, setIsOffline] = useState(false);
   const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
@@ -38,13 +37,16 @@ function SubjectsPageContent() {
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
-    if (typeof navigator !== 'undefined') setIsOffline(!navigator.onLine);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
+      setIsOffline(!navigator.onLine);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+    return () => {};
   }, []);
 
   const handleQueryError = (error: unknown) => {
@@ -64,13 +66,15 @@ function SubjectsPageContent() {
 
   useEffect(() => {
     if (isOffline) return;
-    const unsubscribe = onSubjectsUpdate((subjects) => {
-      setLiveSubjects(subjects);
-      setIsOffline(false);
-    }, (error) => {
-      console.error("Realtime subjects error:", error);
-      setIsOffline(true);
-    });
+    const unsubscribe = onSubjectsUpdate(
+      (subjects) => {
+        setLiveSubjects(subjects);
+      }, 
+      (error) => {
+        console.error("Realtime subjects error:", error);
+        setIsOffline(true);
+      }
+    );
     return () => unsubscribe();
   }, [isOffline]);
 
@@ -87,7 +91,7 @@ function SubjectsPageContent() {
     });
   };
   
-  const userIdForLog = user?.uid ?? 'admin_user_subjects'; // Fallback, ideally should always be user.uid
+  const userIdForLog = user?.uid ?? 'admin_user_subjects';
 
   const addMutation = useMutation({
     mutationFn: ({ name, teacher }: { name: string; teacher: string }) => addSubject(name, teacher, userIdForLog),
@@ -185,7 +189,7 @@ function SubjectsPageContent() {
                         </AlertDialog>
                       </TableCell>
                     ];
-                    return <TableRow key={subject.id}>{cells}</TableRow>;
+                    return <TableRow key={subject.id}>{cells.map(cell => cell)}</TableRow>;
                   })}
                 </TableBody>
               </Table>
@@ -259,7 +263,7 @@ export default function SubjectsPage() {
     );
   }
   
-  return ( // Fallback
+  return ( 
       <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
            <Alert variant="default" className="w-full max-w-md">
