@@ -120,6 +120,18 @@ function CalendarPageContent() {
         return item.date === dateStr && item.showOnCalendar; 
       }
       return false; 
+    }).sort((a, b) => { // Sort items for consistent display in modal
+        const isAEvent = a.itemType === 'event';
+        const isBEvent = b.itemType === 'event';
+        if (isAEvent && !isBEvent) return -1; // Events first
+        if (!isAEvent && isBEvent) return 1;  // Announcements after
+        if (isAEvent && isBEvent) { // Both are events
+            return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
+        }
+        if (!isAEvent && !isBEvent) { // Both are announcements
+            return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        }
+        return 0;
     });
   }, [selectedDayForModal, combinedItems]);
 
@@ -128,7 +140,15 @@ function CalendarPageContent() {
     onSuccess: async () => {
       toast({ title: "成功", description: "行事を削除しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
-      setIsDayDetailModalOpen(false); 
+      // Check if selectedDayForModal still has items. If not, close modal.
+      const updatedItems = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== deleteEventMutation.variables);
+      if(updatedItems.length === 0) {
+        setIsDayDetailModalOpen(false); 
+      } else {
+        // To refresh the modal content, we can force a re-query or just update local state.
+        // For simplicity, re-querying might be easier here.
+        refetchCalendarItems();
+      }
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
@@ -157,6 +177,14 @@ function CalendarPageContent() {
          return item.date === dateStr && item.showOnCalendar;
        }
        return false;
+    }).sort((a,b) => { // Sort items for consistent display in cell
+        const isAEvent = a.itemType === 'event';
+        const isBEvent = b.itemType === 'event';
+        if (isAEvent && !isBEvent) return -1; // Events first
+        if (!isAEvent && isBEvent) return 1;  // Announcements after
+        if (isAEvent && isBEvent) return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
+        if (!isAEvent && !isBEvent) return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        return 0;
     });
 
     const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
@@ -164,7 +192,7 @@ function CalendarPageContent() {
 
     return (
       <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
-        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-accent")}>
+        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-primary")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
@@ -310,7 +338,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "bg-accent/30 text-accent-foreground",
+                  day_today: "bg-primary/10 border border-primary/70 text-primary font-semibold",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
