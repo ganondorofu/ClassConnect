@@ -90,14 +90,15 @@ function CalendarPageContent() {
   
   const daysInMonth = useMemo(() => {
     const monthStart = startOfMonth(currentMonthDate);
-    // Ensure the calendar grid shows full weeks, even if they span across months
-    const displayStart = startOfWeek(monthStart, { locale: ja });
+    const displayStart = startOfWeek(monthStart, { locale: ja, weekStartsOn: 1 }); // Monday start
     const monthEnd = endOfMonth(currentMonthDate);
-    const displayEnd = endOfWeek(monthEnd, { locale: ja });
+    const displayEnd = endOfWeek(monthEnd, { locale: ja, weekStartsOn: 1 }); // Monday start
     
     const daysArray = [];
-    for (let day = displayStart; day <= displayEnd; day = addDays(day, 1)) {
-      daysArray.push(day);
+    let currentDay = displayStart;
+    while (currentDay <= displayEnd) {
+      daysArray.push(currentDay);
+      currentDay = addDays(currentDay, 1);
     }
     return daysArray;
   }, [currentMonthDate]);
@@ -282,6 +283,7 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
+                weekStartsOn={1} // Start week on Monday
                 fixedWeeks // Ensures 6 weeks are always rendered
                 className="w-full p-0 flex-1 flex flex-col" // Calendar root is flex-col and grows
                 classNames={{
@@ -408,3 +410,5 @@ export default function CalendarPage() {
   );
 }
 
+
+    
