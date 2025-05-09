@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek } from 'date-fns';
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek, subDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
@@ -88,33 +88,39 @@ function CalendarPageContent() {
     onError: handleQueryError('calendarItems'),
   });
   
-  const daysInMonth = useMemo(() => {
-    const monthStart = startOfMonth(currentMonthDate);
-    const displayStart = startOfWeek(monthStart, { locale: ja, weekStartsOn: 1 }); // Monday start
-    const monthEnd = endOfMonth(currentMonthDate);
-    const displayEnd = endOfWeek(monthEnd, { locale: ja, weekStartsOn: 1 }); // Monday start
-    
+  const daysToFetchForAnnouncements = useMemo(() => {
+    // Calculate the range of days that might be displayed by react-day-picker with fixedWeeks
+    const firstDayOfMonth = startOfMonth(currentMonthDate);
+    const lastDayOfMonth = endOfMonth(currentMonthDate);
+    // fixedWeeks typically shows 6 weeks. Start from a bit before the first day of the week of the month start,
+    // and end a bit after the last day of the week of the month end.
+    const displayStartDate = startOfWeek(firstDayOfMonth, { locale: ja, weekStartsOn: 1 });
+    // 6 weeks from displayStartDate
+    const displayEndDate = addDays(displayStartDate, (6 * 7) - 1);
+
+
     const daysArray = [];
-    let currentDay = displayStart;
-    while (currentDay <= displayEnd) {
+    let currentDay = displayStartDate;
+    while (currentDay <= displayEndDate) {
       daysArray.push(currentDay);
       currentDay = addDays(currentDay, 1);
     }
     return daysArray;
   }, [currentMonthDate]);
 
+
   const { data: generalAnnouncementsMap, isLoading: isLoadingGeneralAnnouncements } = useQuery<Record<string, DailyGeneralAnnouncement | null>, Error>({
-    queryKey: ['generalAnnouncementsForMonth', year, month],
+    queryKey: ['generalAnnouncementsForMonth', format(currentMonthDate, 'yyyy-MM')],
     queryFn: async () => {
       if (isOffline || (!user && !isAnonymous)) return {};
-      const promises = daysInMonth.map(day => 
+      const promises = daysToFetchForAnnouncements.map(day => 
         queryFnGetDailyGeneralAnnouncement(format(day, 'yyyy-MM-dd'))().then(ann => ({ [format(day, 'yyyy-MM-dd')]: ann }))
       );
       const results = await Promise.all(promises);
       return results.reduce((acc, curr) => ({ ...acc, ...curr }), {});
     },
     staleTime: 1000 * 60 * 5,
-    enabled: !isOffline && (!!user || isAnonymous) && daysInMonth.length > 0,
+    enabled: !isOffline && (!!user || isAnonymous) && daysToFetchForAnnouncements.length > 0,
     onError: handleQueryError('generalAnnouncementsForMonth'),
   });
 
@@ -170,7 +176,6 @@ function CalendarPageContent() {
        return item.date === dateStr;
     });
 
-    // Determine if the day is outside the current month for styling
     const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
 
     return (
@@ -180,9 +185,9 @@ function CalendarPageContent() {
         </span>
         {itemsForDayInCell.length > 0 && (
           <div className="mt-4 space-y-0.5 w-full">
-            {itemsForDayInCell.slice(0, 2).map((item, index) => ( // Show up to 2 items, adjust as needed
+            {itemsForDayInCell.slice(0, 2).map((item, index) => ( 
               <div
-                key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-cell`}
+                key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-${dateStr}-cell`}
                 className={cn(
                   "text-xs px-1 py-0.5 rounded-sm w-full truncate",
                   item.itemType === 'event' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300' :
@@ -193,13 +198,13 @@ function CalendarPageContent() {
                     item.itemType === 'event' ? item.title : 
                     item.itemType === 'announcement' ? 
                         `${subjectsMap?.get(item.subjectIdOverride || '') || '連絡'}: ${item.text}` :
-                        (item as DailyGeneralAnnouncement).content.substring(0,50) + '...'
+                        (item as DailyGeneralAnnouncement).content.substring(0,50) + ((item as DailyGeneralAnnouncement).content.length > 50 ? '...' : '')
                 }
               >
                 {item.itemType === 'event' ? item.title : 
                  item.itemType === 'announcement' ? 
                     (subjectsMap?.get(item.subjectIdOverride || '') || '連絡') + (item.text ? `: ${item.text.substring(0,10)}${item.text.length > 10 ? '...':''}`: '') :
-                    (item as DailyGeneralAnnouncement).content.substring(0,20) + "..."
+                    (item as DailyGeneralAnnouncement).content.substring(0,20) + ((item as DailyGeneralAnnouncement).content.length > 20 ? "..." : "")
                 }
               </div>
             ))}
@@ -283,12 +288,12 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                weekStartsOn={1} // Start week on Monday
-                fixedWeeks // Ensures 6 weeks are always rendered
-                className="w-full p-0 flex-1 flex flex-col" // Calendar root is flex-col and grows
+                weekStartsOn={1} 
+                fixedWeeks 
+                className="w-full p-0 flex-1 flex flex-col" 
                 classNames={{
                   months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-                  month: "space-y-4 flex-1 flex flex-col", // Month div takes flex-1 and is flex-col
+                  month: "space-y-4 flex-1 flex flex-col", 
                   caption: "flex justify-center pt-1 relative items-center",
                   caption_label: "text-sm font-medium",
                   nav: "space-x-1 flex items-center",
@@ -298,22 +303,22 @@ function CalendarPageContent() {
                   ),
                   nav_button_previous: "absolute left-1",
                   nav_button_next: "absolute right-1",
-                  table: "w-full border-collapse flex-1 flex flex-col", // Table takes flex-1 and is flex-col
+                  table: "w-full border-collapse flex-1 flex flex-col", 
                   head_row: "flex", 
-                  head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", // Head cells share width
-                  tbody: "flex-1 flex flex-col", // Tbody takes flex-1 and is flex-col (for rows)
-                  row: "flex w-full flex-1", // Each row takes flex-1 height within tbody
-                  cell: cn( // Cell takes flex-1 width within row and h-full
-                    "flex-1 p-0 relative text-center text-sm h-full", 
+                  head_cell: "text-muted-foreground rounded-md flex-1 font-normal text-[0.8rem] text-center py-2", 
+                  tbody: "flex-1 flex flex-col", 
+                  row: "flex w-full flex-1 min-h-[6rem]", // Added min-h-[6rem] to ensure row visibility
+                  cell: cn( 
+                    "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
-                  day: cn( // Day button fills the cell
+                  day: cn( 
                     buttonVariants({ variant: "ghost" }),
-                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start" // Align content top-left
+                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
                   day_today: "bg-accent text-accent-foreground font-bold", 
-                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", // Style for days outside current month
+                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
                   day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
@@ -409,6 +414,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
-
-    
