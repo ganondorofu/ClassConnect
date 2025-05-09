@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -137,12 +136,12 @@ function CalendarPageContent() {
 
   const deleteEventMutation = useMutation({
     mutationFn: (eventId: string) => deleteSchoolEvent(eventId, user?.uid ?? 'admin_user_calendar_event_delete'),
-    onSuccess: async () => {
+    onSuccess: async (data, variables) => {
       toast({ title: "成功", description: "行事を削除しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
       // Check if selectedDayForModal still has items. If not, close modal.
-      const updatedItems = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== deleteEventMutation.variables);
-      if(updatedItems.length === 0) {
+      const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
+      if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
       } else {
         // To refresh the modal content, we can force a re-query or just update local state.
@@ -168,7 +167,7 @@ function CalendarPageContent() {
 
   const isLoading = isLoadingSettings || isLoadingItems || authLoading;
 
-  const renderDayContent = (day: Date): React.ReactNode => {
+  const renderDayContent = (day: Date, displayMonth: Date): React.ReactNode => {
     const dateStr = format(day, 'yyyy-MM-dd');
     const itemsForDayInCell = combinedItems.filter(item => {
        if (item.itemType === 'event') {
@@ -187,7 +186,7 @@ function CalendarPageContent() {
         return 0;
     });
 
-    const isOutsideMonth = day.getMonth() !== currentMonthDate.getMonth();
+    const isOutsideMonth = displayMonth.getMonth() !== day.getMonth();
     const isToday = isSameDay(day, new Date());
 
     return (
@@ -331,13 +330,16 @@ function CalendarPageContent() {
                   row: "flex w-full flex-1", 
                   cell: cn( 
                     "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
-                    "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
+                    "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
-                  day: cn( 
-                    buttonVariants({ variant: "ghost" }),
-                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
+                  day: cn(
+                    // Manually list necessary button styles, excluding hover from buttonVariants({variant: "ghost"})
+                    "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
+                    // Explicitly set hover to be transparent and text color to current (no visual change on hover)
+                    "!hover:bg-transparent !hover:text-current" 
                   ),
-                  day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
+                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", // Removed hover:bg-primary/70
                   day_today: "bg-primary/10 border border-primary/70 text-primary font-semibold",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
@@ -346,7 +348,7 @@ function CalendarPageContent() {
                   day_hidden: "invisible",
                 }}
                 components={{
-                  DayContent: ({ date }) => renderDayContent(date),
+                  DayContent: ({ date, displayMonth }) => renderDayContent(date, displayMonth),
                 }}
                 disabled={isOffline}
                 showOutsideDays={true} 
