@@ -20,7 +20,7 @@ export interface DailyAnnouncement {
   /** Whether to show this announcement on the main calendar page */
   showOnCalendar?: boolean;
   /** Property to help differentiate in combined lists */
-  itemType?: 'announcement';
+  itemType: 'announcement';
 }
 
 /**
@@ -37,5 +37,6 @@ export interface DailyGeneralAnnouncement {
     /** Timestamp of the last update */
     updatedAt: Date | Timestamp;
     /** Property to help differentiate in combined lists */
-    itemType?: 'general';
+    itemType: 'general';
 }
+

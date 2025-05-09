@@ -281,7 +281,8 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
         ...data,
         subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
         showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
-        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date()
+        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        itemType: 'announcement',
       } as DailyAnnouncement;
     });
   } catch (error) {
@@ -310,7 +311,8 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
         ...oldData,
         subjectIdOverride: oldData.subjectIdOverride === undefined ? null : oldData.subjectIdOverride,
         showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
-        updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? new Date()
+        updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        itemType: 'announcement',
       } as DailyAnnouncement;
     }
 
@@ -322,7 +324,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
       return;
     }
 
-    const dataToSet: Omit<DailyAnnouncement, 'id'> = { date, period, subjectIdOverride, text, showOnCalendar, updatedAt: Timestamp.now() };
+    const dataToSet: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date, period, subjectIdOverride, text, showOnCalendar, itemType: 'announcement' };
     const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: new Date() }; 
 
     const hasChanged = !beforeState ||
@@ -331,7 +333,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
                        (beforeState.showOnCalendar ?? false) !== (showOnCalendar ?? false);
 
     if (hasChanged) {
-      await setDoc(docRef, dataToSet);
+      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()}); // Save with Firestore Timestamp
       await logAction('upsert_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
     }
   } catch (error) {
@@ -353,7 +355,8 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
             ...data,
             subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
             showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
-            updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date()
+            updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+            itemType: 'announcement',
         } as DailyAnnouncement;
     }));
   }, (error) => {
@@ -370,7 +373,7 @@ export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGe
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return { id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyGeneralAnnouncement;
+      return { id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement;
     }
     return null;
   } catch (error) {
@@ -387,7 +390,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
 
   try {
     const oldSnap = await getDoc(docRef);
-    if (oldSnap.exists()) beforeState = { id: date, ...oldSnap.data(), updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyGeneralAnnouncement;
+    if (oldSnap.exists()) beforeState = { id: date, ...oldSnap.data(), updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement;
 
     if (!trimmedContent) {
       if (beforeState) {
@@ -396,10 +399,10 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
       }
       return;
     }
-    const dataToSet: Omit<DailyGeneralAnnouncement, 'id'> = { date, content: trimmedContent, updatedAt: Timestamp.now() };
-    const afterState = { id: date, ...dataToSet, updatedAt: new Date() };
+    const dataToSet: Omit<DailyGeneralAnnouncement, 'id'|'updatedAt'> = { date, content: trimmedContent, itemType: 'general' };
+    const afterState = { ...dataToSet, id: date, updatedAt: new Date() };
     if (beforeState?.content !== trimmedContent) {
-      await setDoc(docRef, dataToSet);
+      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()});
       await logAction('upsert_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
     }
   } catch (error) {
@@ -415,7 +418,7 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
   const unsubscribe = onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
-      callback({ id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date() } as DailyGeneralAnnouncement);
+      callback({ id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement);
     } else {
       callback(null);
     }
@@ -435,7 +438,7 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
             startDate: data.startDate,
             endDate: data.endDate,
             description: data.description,
-            itemType: 'event', // Ensure itemType is set
+            itemType: 'event', 
             createdAt: (data.createdAt as Timestamp)?.toDate(), 
             updatedAt: (data.updatedAt as Timestamp)?.toDate() 
         } as SchoolEvent;
@@ -454,7 +457,7 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'create
     startDate: eventData.startDate, 
     endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
-    itemType: 'event', // Ensure itemType is set on add
+    itemType: 'event' as const, 
     createdAt: Timestamp.now(), 
     updatedAt: Timestamp.now(),
   };
@@ -480,7 +483,7 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
     startDate: eventData.startDate, 
     endDate: eventData.endDate || eventData.startDate, 
     description: eventData.description || '',
-    itemType: 'event', // Ensure itemType is set on update
+    itemType: 'event' as const, 
     updatedAt: Timestamp.now() 
   };
 
@@ -492,14 +495,14 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         beforeState = { 
             id: eventData.id, 
             ...oldData,
-            itemType: 'event', // Ensure itemType from old data
+            itemType: 'event' as const, 
             createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined, 
             updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined 
         } as SchoolEvent;
     }
     
     const cleanDataToUpdate = { ...dataToUpdate };
-    delete (cleanDataToUpdate as any).id; // id should not be part of the data being set/merged
+    delete (cleanDataToUpdate as any).id; 
     
     await setDoc(docRef, cleanDataToUpdate, { merge: true });
     
@@ -510,7 +513,7 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
         afterState = { 
             id: afterSnap.id, 
             ...newData, 
-            itemType: 'event', // Ensure itemType in new data
+            itemType: 'event' as const,
             createdAt: (newData.createdAt as Timestamp)?.toDate() ?? undefined,
             updatedAt: (newData.updatedAt as Timestamp)?.toDate() ?? undefined
         } as SchoolEvent;
@@ -537,7 +540,7 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
       beforeState = { 
           id: eventId, 
           ...oldData, 
-          itemType: 'event', // Ensure itemType
+          itemType: 'event' as const,
           createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined,
           updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined
       } as SchoolEvent;
@@ -555,13 +558,13 @@ export const onSchoolEventsUpdate = (callback: (events: SchoolEvent[]) => void, 
   const q = query(eventsCollectionRef, orderBy('startDate'));
   const unsubscribe = onSnapshot(q, (snapshot) => callback(snapshot.docs.map(docSnap => {
     const data = docSnap.data();
-    return { // Explicitly construct the SchoolEvent object
+    return { 
       id: docSnap.id,
       title: data.title,
       startDate: data.startDate,
       endDate: data.endDate,
       description: data.description,
-      itemType: 'event', // Ensure itemType is added here
+      itemType: 'event' as const, 
       createdAt:(data.createdAt as Timestamp)?.toDate(),
       updatedAt:(data.updatedAt as Timestamp)?.toDate()
     } as SchoolEvent;
@@ -604,10 +607,10 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
         
         if (!existingAnn || (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null && !existingAnn.showOnCalendar)) {
           const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${fixedSlot.period}`);
-          const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
+          const newAnnouncementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, itemType: 'announcement' };
           
           if (!existingAnn || (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull) {
-            batch.set(docRef, newAnnouncementData); 
+            batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()}); 
             operationsCount++;
             dateNeedsUpdate = true;
           }
@@ -657,7 +660,7 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
         const existingAnnForLog = existingAnnouncementsMap.get(period);
         if (existingAnnForLog) beforeStates[dateStr].push(prepareStateForLog(existingAnnForLog)); else beforeStates[dateStr].push(null);
         
-        const newAnnouncementData: Omit<DailyAnnouncement, 'id'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, updatedAt: Timestamp.now() };
+        const newAnnouncementData: Omit<DailyAnnouncement, 'id'|'updatedAt'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, itemType: 'announcement' };
         
         const existingDoc = existingAnnouncementsMap.get(period);
         if (existingDoc && 
@@ -666,11 +669,11 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
               (existingDoc.showOnCalendar !== false)
             )
            ) {
-            batch.set(docRef, newAnnouncementData);
+            batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()});
             operationsCount++;
             dateNeedsUpdate = true;
         } else if (!existingDoc && fixedSlot?.subjectId !== null) { 
-             batch.set(docRef, newAnnouncementData);
+             batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()});
              operationsCount++;
              dateNeedsUpdate = true;
         }
@@ -703,10 +706,12 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
   }
 };
 
-export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<(SchoolEvent | DailyAnnouncement)[]> => {
+type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
+
+export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<CalendarItemUnion[]> => {
   const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
   const monthEndDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
-  const items: (SchoolEvent)[] = []; // Only SchoolEvent type
+  const items: CalendarItemUnion[] = [];
 
   try {
     // Fetch School Events
@@ -732,12 +737,48 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         items.push(event);
       }
     });
+
+    // Fetch Daily Announcements marked for calendar
+    const announcementsQuery = query(
+      dailyAnnouncementsCollectionRef,
+      where('date', '>=', monthStartDate),
+      where('date', '<=', monthEndDate),
+      where('showOnCalendar', '==', true),
+      orderBy('date'),
+      // orderBy('period') // Consider client-side sort for period if composite index becomes an issue
+    );
+    const announcementsSnapshot = await getDocs(announcementsQuery);
+    announcementsSnapshot.forEach(docSnap => {
+      const annData = docSnap.data();
+      const announcementItem: DailyAnnouncement = {
+        id: docSnap.id,
+        date: annData.date,
+        period: annData.period,
+        subjectIdOverride: annData.subjectIdOverride ?? null,
+        text: annData.text ?? '',
+        showOnCalendar: annData.showOnCalendar ?? false, // Should be true due to query
+        updatedAt: (annData.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        itemType: 'announcement',
+      };
+      items.push(announcementItem);
+    });
     
     items.sort((a, b) => {
-        const dateA = new Date(a.startDate);
-        const dateB = new Date(b.startDate);
-        if (dateA < dateB) return -1;
-        if (dateA > dateB) return 1;
+        const dateA = new Date(a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date);
+        const dateB = new Date(b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date);
+        
+        const timeA = dateA.getTime();
+        const timeB = dateB.getTime();
+
+        if (timeA !== timeB) {
+            return timeA - timeB;
+        }
+        // If on the same day, sort by period for announcements, events could be considered "all day" or come first
+        if (a.itemType === 'announcement' && b.itemType === 'announcement') {
+            return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        }
+        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; // Events first
+        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  // Announcements after
         return 0;
     });
     return items;

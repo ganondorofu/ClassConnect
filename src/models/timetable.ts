@@ -50,7 +50,7 @@ export interface SchoolEvent {
   /** Timestamp of the last update to the event */
   updatedAt?: Timestamp | Date;
   /** Property to help differentiate in combined lists */
-  itemType?: 'event'; 
+  itemType: 'event'; 
 }
 
 
@@ -123,3 +123,4 @@ export const dayCodeToDayOfWeekEnum = (dayCode: number): DayOfWeek => {
     };
     return mapping[dayCode];
 };
+

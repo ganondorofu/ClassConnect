@@ -78,7 +78,7 @@ function CalendarPageContent() {
     onError: handleQueryError('timetableSettingsCalendar'),
   });
 
-  const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<(SchoolEvent | DailyAnnouncement)[], Error>({
+  const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<CalendarItemUnion[], Error>({
     queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
     staleTime: 1000 * 60 * 1, 
@@ -113,7 +113,7 @@ function CalendarPageContent() {
     if (!selectedDayForModal || !combinedItems) return [];
     const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
     
-    const filteredItems = combinedItems.filter(item => {
+    return combinedItems.filter(item => {
       if (item.itemType === 'event') {
         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
       } else if (item.itemType === 'announcement') { 
@@ -121,7 +121,6 @@ function CalendarPageContent() {
       }
       return false; 
     });
-    return filteredItems as CalendarItemUnion[];
   }, [selectedDayForModal, combinedItems]);
 
   const deleteEventMutation = useMutation({
@@ -155,8 +154,7 @@ function CalendarPageContent() {
        if (item.itemType === 'event') {
          return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        } else if (item.itemType === 'announcement') {
-         // Announcements are no longer shown on calendar cells
-         return false;
+         return item.date === dateStr && item.showOnCalendar;
        }
        return false;
     });
@@ -166,7 +164,7 @@ function CalendarPageContent() {
 
     return (
       <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
-        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-primary")}>
+        <span className={cn("absolute top-1 right-1 text-xs sm:text-sm", isToday && !isOutsideMonth && "font-bold text-accent")}>
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
@@ -179,11 +177,11 @@ function CalendarPageContent() {
                 displayTitle = item.title;
                 styleClass = 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
               } else { 
-                // This part should ideally not be reached if announcements are not shown in cells
                 const announcement = item as DailyAnnouncement;
                 const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
-                displayTitle = announcement.text || (subjectName ? `${subjectName} (${announcement.period}限)` : `連絡 (${announcement.period}限)`);
-                styleClass = 'bg-green-500/20 text-green-700 dark:text-green-300';
+                const textPreview = announcement.text.length > 10 ? announcement.text.substring(0, 10) + "..." : announcement.text;
+                displayTitle = `P${announcement.period}: ${subjectName || textPreview || '連絡'}`;
+                styleClass = 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400';
               }
               
               return (
@@ -312,7 +310,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "bg-accent/30 text-accent-foreground", // Adjusted today's cell background
+                  day_today: "bg-accent/30 text-accent-foreground",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -339,7 +337,7 @@ function CalendarPageContent() {
               {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
             </DialogTitle>
             <DialogDescription>
-              この日の行事の一覧です。
+              この日の行事や連絡事項の一覧です。
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
@@ -364,8 +362,14 @@ function CalendarPageContent() {
                     if (eventItem.startDate !== (eventItem.endDate ?? eventItem.startDate)) {
                       footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
                     }
-                  } else { 
-                    // Announcements are no longer shown on the calendar detail modal
+                  } else if (item.itemType === 'announcement') {
+                    const annItem = item as DailyAnnouncement;
+                    icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                    const subjectName = annItem.subjectIdOverride ? subjectsMap.get(annItem.subjectIdOverride) : null;
+                    title = `P${annItem.period}限: ${subjectName || '連絡'}`;
+                    content = annItem.text;
+                    colorClass = 'text-yellow-600 dark:text-yellow-400';
+                  } else {
                     return null;
                   }
 
@@ -440,7 +444,7 @@ function CalendarPageContent() {
           }}
           onEventSaved={async () => {
             await refetchCalendarItems();
-            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] }); // Ensure invalidation happens
+            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
           }}
           editingEvent={eventToEdit}
         />
