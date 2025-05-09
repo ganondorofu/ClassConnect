@@ -155,7 +155,8 @@ function CalendarPageContent() {
        if (item.itemType === 'event') {
          return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        } else if (item.itemType === 'announcement') {
-         return item.date === dateStr && item.showOnCalendar;
+         // Announcements are no longer shown on calendar cells
+         return false;
        }
        return false;
     });
@@ -178,6 +179,7 @@ function CalendarPageContent() {
                 displayTitle = item.title;
                 styleClass = 'bg-blue-500/20 text-blue-700 dark:text-blue-300';
               } else { 
+                // This part should ideally not be reached if announcements are not shown in cells
                 const announcement = item as DailyAnnouncement;
                 const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
                 displayTitle = announcement.text || (subjectName ? `${subjectName} (${announcement.period}限)` : `連絡 (${announcement.period}限)`);
@@ -310,7 +312,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "bg-accent/30 text-accent-foreground",
+                  day_today: "bg-accent/30 text-accent-foreground", // Adjusted today's cell background
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -337,7 +339,7 @@ function CalendarPageContent() {
               {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
             </DialogTitle>
             <DialogDescription>
-              この日の行事とカレンダーに表示設定された連絡事項の一覧です。
+              この日の行事の一覧です。
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
@@ -363,12 +365,8 @@ function CalendarPageContent() {
                       footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate ?? eventItem.startDate), "M/d", {locale:ja})}</p>;
                     }
                   } else { 
-                    const announcementItem = item as DailyAnnouncement;
-                    icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
-                    const subjectName = announcementItem.subjectIdOverride ? subjectsMap.get(announcementItem.subjectIdOverride) : null;
-                    title = subjectName ? `${subjectName} (${announcementItem.period}限)` : `連絡 (${announcementItem.period}限)`; 
-                    content = announcementItem.text;
-                    colorClass = 'text-green-600 dark:text-green-400';
+                    // Announcements are no longer shown on the calendar detail modal
+                    return null;
                   }
 
                   return (
@@ -442,6 +440,7 @@ function CalendarPageContent() {
           }}
           onEventSaved={async () => {
             await refetchCalendarItems();
+            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] }); // Ensure invalidation happens
           }}
           editingEvent={eventToEdit}
         />
