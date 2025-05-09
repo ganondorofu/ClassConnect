@@ -1,3 +1,4 @@
+
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -98,8 +99,8 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     await runTransaction(db, async (transaction) => {
       const settingsDoc = await transaction.get(docRef);
       const currentSettingsInTx = settingsDoc.exists() ? (settingsDoc.data() as TimetableSettings) : DEFAULT_TIMETABLE_SETTINGS;
-      const currentActiveDays = currentSettingsInTx.activeDays && Array.isArray(currentSettingsInTx.activeDays) && currentActiveDays.length > 0 ? currentSettingsInTx.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
-      const newActiveDays = newSettingsData.activeDays && Array.isArray(newSettingsData.activeDays) && newActiveDays.length > 0 ? newActiveDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      const currentActiveDaysInTx = currentSettingsInTx.activeDays && Array.isArray(currentSettingsInTx.activeDays) && currentSettingsInTx.activeDays.length > 0 ? currentSettingsInTx.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      const newActiveDays = newSettingsData.activeDays && Array.isArray(newSettingsData.activeDays) && newSettingsData.activeDays.length > 0 ? newSettingsData.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
       transaction.set(docRef, newSettingsData);
 
       const currentPeriods = currentSettingsInTx.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
@@ -120,10 +121,10 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
           const snapshot = await getDocs(q);
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
-      } else if (settingsUpdates.activeDays && JSON.stringify(newActiveDays.sort()) !== JSON.stringify(currentActiveDays.sort())) {
+      } else if (settingsUpdates.activeDays && JSON.stringify(newActiveDays.sort()) !== JSON.stringify(currentActiveDaysInTx.sort())) {
         fixedTimetableNeedsUpdate = true;
-        const addedDays = newActiveDays.filter(d => !currentActiveDays.includes(d));
-        const removedDays = currentActiveDays.filter(d => !newActiveDays.includes(d));
+        const addedDays = newActiveDays.filter(d => !currentActiveDaysInTx.includes(d));
+        const removedDays = currentActiveDaysInTx.filter(d => !newActiveDays.includes(d));
         const periodsToManage = newSettingsData.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
         for (const day of addedDays) for (let period = 1; period <= periodsToManage; period++) transaction.set(doc(fixedTimetableCollectionRef, `${day}_${period}`), { id: `${day}_${period}`, day, period, subjectId: null });
         if (removedDays.length > 0) {
@@ -143,17 +144,39 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
   }
 };
 
-export const onTimetableSettingsUpdate = (callback: (settings: TimetableSettings) => void, onError?: (error: Error) => void): Unsubscribe => {
+export const onTimetableSettingsUpdate = (
+  callback: (settings: TimetableSettings) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
   const docRef = doc(settingsCollectionRef, 'timetable');
-  return onSnapshot(docRef, (docSnap) => {
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const activeDays = data.activeDays && Array.isArray(data.activeDays) && data.activeDays.length > 0 ? data.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
-      callback({ numberOfPeriods: data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods, activeDays });
-    } else {
-      getTimetableSettings().then(callback).catch(err => onError ? onError(err) : console.error("Error re-fetching settings:", err));
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const activeDays =
+          data.activeDays &&
+          Array.isArray(data.activeDays) &&
+          data.activeDays.length > 0
+            ? data.activeDays
+            : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+        callback({
+          numberOfPeriods:
+            data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
+          activeDays,
+        });
+      } else {
+        // If the document doesn't exist, callback with default settings.
+        // This prevents a loop if getTimetableSettings() was previously called here,
+        // which might write to the DB and re-trigger this onSnapshot listener.
+        callback(DEFAULT_TIMETABLE_SETTINGS);
+      }
+    },
+    (error) => {
+      if (onError) onError(error);
+      else console.error('Snapshot error on settings:', error);
     }
-  }, (error) => { if (onError) onError(error); else console.error("Snapshot error on settings:", error); });
+  );
 };
 
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
@@ -684,3 +707,4 @@ export const queryFnGetDailyAnnouncements = (date: string) => () => getDailyAnno
 export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDailyGeneralAnnouncement(date);
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
+
