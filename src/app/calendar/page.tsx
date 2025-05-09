@@ -1,15 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react';
-import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, endOfWeek } from 'date-fns';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle } from 'lucide-react';
+import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
@@ -22,6 +22,7 @@ import { queryFnGetSubjects } from '@/controllers/subjectController';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { buttonVariants } from "@/components/ui/button";
+import AddEventDialog from '@/components/calendar/AddEventDialog';
 
 
 const queryClient = new QueryClient();
@@ -34,9 +35,11 @@ function CalendarPageContent() {
   const [isOffline, setIsOffline] = useState(false);
   const router = useRouter();
   const { user, isAnonymous, loading: authLoading } = useAuth();
+  const queryClientHook = useQueryClient();
 
   const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
   const [selectedDayForModal, setSelectedDayForModal, ] = useState<Date | null>(null);
+  const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
 
 
   useEffect(() => {
@@ -86,6 +89,8 @@ function CalendarPageContent() {
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
+    refetchOnMount: true, // Refetch when component mounts or query key changes
+    refetchOnWindowFocus: true,
   });
   
   const daysToFetchForAnnouncements = useMemo(() => {
@@ -150,11 +155,27 @@ function CalendarPageContent() {
   const itemsForSelectedDay = useMemo(() => {
     if (!selectedDayForModal || !combinedItems) return [];
     const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
-    return combinedItems.filter(item => {
+    const filtered = combinedItems.filter(item => {
       if (item.itemType === 'event') {
         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
       }
       return item.date === dateStr;
+    });
+
+    // Sort items: general first, then announcements, then events
+    return filtered.sort((a, b) => {
+        const typeOrder = { general: 0, announcement: 1, event: 2 };
+        const orderA = typeOrder[a.itemType];
+        const orderB = typeOrder[b.itemType];
+        if (orderA !== orderB) return orderA - orderB;
+        
+        if (a.itemType === 'announcement' && b.itemType === 'announcement') {
+            return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        }
+        if (a.itemType === 'event' && b.itemType === 'event') {
+            return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+        }
+        return 0;
     });
   }, [selectedDayForModal, combinedItems]);
 
@@ -181,7 +202,7 @@ function CalendarPageContent() {
           <div className="mt-4 space-y-0.5 w-full">
             {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => ( 
               <div
-                key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-${dateStr}-cell`}
+                key={`${item.itemType}-${item.id || (item as any).period || index}-${dateStr}-cell`}
                 className={cn(
                   "text-xs px-1 py-0.5 rounded-sm w-full truncate",
                   item.itemType === 'event' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300' :
@@ -250,6 +271,13 @@ function CalendarPageContent() {
             <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
               <ChevronRight className="h-4 w-4" />
             </Button>
+            {user && !isAnonymous && (
+                 <Button onClick={() => setIsAddEventModalOpen(true)} size="sm" className="ml-2 sm:ml-4">
+                    <PlusCircle className="mr-1 h-4 w-4" />
+                    <span className="hidden sm:inline">行事追加</span>
+                    <span className="sm:hidden">追加</span>
+                </Button>
+            )}
           </div>
         </div>
 
@@ -311,7 +339,7 @@ function CalendarPageContent() {
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none" 
                   ),
                   day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground", 
-                  day_today: "bg-accent text-accent-foreground font-bold", 
+                  day_today: "bg-primary/20 text-primary font-bold", // Updated today highlight
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -347,37 +375,46 @@ function CalendarPageContent() {
               <p className="text-sm text-muted-foreground p-4 text-center">この日の予定や連絡はありません。</p>
             ) : (
               <ul className="space-y-3 p-1">
-                {itemsForSelectedDay.map((item, index) => (
-                  <li key={`${item.itemType}-${item.id || (item as DailyAnnouncement).period || index}-modal`} 
-                      className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
-                    <p className={cn(
-                      "font-semibold text-sm mb-1",
-                      item.itemType === 'event' ? 'text-blue-600 dark:text-blue-400' :
-                      item.itemType === 'announcement' ? 'text-green-600 dark:text-green-400' :
-                      'text-purple-600 dark:text-purple-400'
-                    )}>
-                      {item.itemType === 'event' ? <><CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />行事: {item.title}</> :
-                       item.itemType === 'announcement' ? 
-                        <>
-                         <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />
-                         {`${item.period}限目の連絡` + (subjectsMap?.get(item.subjectIdOverride || '') ? ` (${subjectsMap.get(item.subjectIdOverride || '')})` : '')}
-                        </>
-                         :
-                         <> <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />全体連絡</>
-                       }
-                    </p>
-                    <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                      {item.itemType === 'event' ? item.description :
-                       item.itemType === 'announcement' ? item.text :
-                       (item as DailyGeneralAnnouncement).content}
-                    </p>
-                    {item.itemType === 'event' && item.startDate !== (item.endDate ?? item.startDate) && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        期間: {format(new Date(item.startDate), "M/d")} ~ {format(new Date(item.endDate ?? item.startDate), "M/d")}
+                {itemsForSelectedDay.map((item, index) => {
+                  let title, content, icon, colorClass, footer;
+                  switch (item.itemType) {
+                    case 'general':
+                      icon = <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                      title = "全体連絡";
+                      content = (item as DailyGeneralAnnouncement).content;
+                      colorClass = 'text-purple-600 dark:text-purple-400';
+                      break;
+                    case 'announcement':
+                      icon = <Info className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                      title = `${item.period}限目の連絡` + (subjectsMap?.get(item.subjectIdOverride || '') ? ` (${subjectsMap.get(item.subjectIdOverride || '')})` : '');
+                      content = item.text;
+                      colorClass = 'text-green-600 dark:text-green-400';
+                      break;
+                    case 'event':
+                      icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                      title = `行事: ${item.title}`;
+                      content = item.description ?? '';
+                      colorClass = 'text-blue-600 dark:text-blue-400';
+                      if (item.startDate !== (item.endDate ?? item.startDate)) {
+                        footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(new Date(item.startDate), "M/d")} ~ {format(new Date(item.endDate ?? item.startDate), "M/d")}</p>;
+                      }
+                      break;
+                    default:
+                      return null;
+                  }
+                  return (
+                    <li key={`${item.itemType}-${item.id || (item as any).period || index}-modal`} 
+                        className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
+                      <p className={cn("font-semibold text-sm mb-1", colorClass)}>
+                        {icon}{title}
                       </p>
-                    )}
-                  </li>
-                ))}
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                        {content}
+                      </p>
+                      {footer}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </ScrollArea>
@@ -397,6 +434,16 @@ function CalendarPageContent() {
         </DialogContent>
       </Dialog>
 
+      {user && !isAnonymous && (
+        <AddEventDialog
+          isOpen={isAddEventModalOpen}
+          onOpenChange={setIsAddEventModalOpen}
+          onEventAdded={() => {
+            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
+          }}
+        />
+      )}
+
     </MainLayout>
   );
 }
@@ -408,4 +455,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-

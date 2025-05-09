@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 /**
  * Represents a single subject slot in the fixed timetable.
  * Stored in Firestore under /classes/{classId}/fixedTimetable/{day}_{period}
@@ -13,6 +15,8 @@ export interface FixedTimeSlot {
   subjectId: string | null; // Use null if no subject is assigned
   /** Optional room number or location */
   room?: string;
+  /** Timestamp of the last update for this specific fixed slot */
+  updatedAt?: Timestamp | Date;
 }
 
 /**
@@ -41,6 +45,12 @@ export interface SchoolEvent {
   endDate?: string;
   /** Optional description or details */
   description?: string;
+  /** Timestamp of when the event was created */
+  createdAt?: Timestamp | Date;
+  /** Timestamp of the last update to the event */
+  updatedAt?: Timestamp | Date;
+  /** Property to help differentiate in combined lists */
+  itemType?: 'event'; 
 }
 
 
@@ -97,7 +107,7 @@ export function getDayOfWeekName(day: DayOfWeek): string {
 // Default settings
 export const DEFAULT_TIMETABLE_SETTINGS: TimetableSettings = {
   numberOfPeriods: 7,
-  activeDays: ConfigurableWeekDays, // Default active days for configuration remain Mon-Fri
+  activeDays: [...ConfigurableWeekDays, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY], // Include Sat/Sun by default
 };
 
 // Helper to map date-fns getDay() (0=Sun, 1=Mon, ...) to DayOfWeek enum string
