@@ -6,10 +6,10 @@ import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-quer
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Card, CardContent } from '@/components/ui/card'; // Removed CardHeader, CardTitle, CardDescription as Calendar is main content
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react'; // Renamed CalendarDays to avoid conflict
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon } from 'lucide-react';
 import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
@@ -85,7 +85,6 @@ function CalendarPageContent() {
     onError: handleQueryError('calendarItems'),
   });
   
-  // Fetch general announcements for all days in the month
   const daysInMonth = useMemo(() => {
     const start = startOfMonth(currentMonthDate);
     const end = endOfMonth(currentMonthDate);
@@ -228,16 +227,16 @@ function CalendarPageContent() {
 
   return (
     <MainLayout>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold">クラスカレンダー</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isLoading}>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2 sm:gap-0">
+        <h1 className="text-xl sm:text-2xl font-semibold">クラスカレンダー</h1>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-lg font-medium w-32 text-center">
+          <span className="text-base sm:text-lg font-medium w-28 sm:w-32 text-center">
             {format(currentMonthDate, 'yyyy年 M月', { locale: ja })}
           </span>
-          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isLoading}>
+          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isLoading} className="h-8 w-8 sm:h-9 sm:w-9">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -272,7 +271,7 @@ function CalendarPageContent() {
               month={currentMonthDate}
               onMonthChange={setCurrentMonthDate}
               locale={ja}
-              className="w-full p-0 [&_td]:h-20 [&_td]:align-top [&_th]:h-10"
+              className="w-full p-0 [&_td]:h-16 sm:[&_td]:h-20 [&_td]:align-top [&_th]:h-10"
               classNames={{
                 day: "h-full w-full p-0 cursor-pointer hover:bg-accent/30",
                 day_selected: "bg-transparent text-foreground hover:bg-accent/50", 
@@ -297,7 +296,7 @@ function CalendarPageContent() {
               この日の予定・連絡事項の一覧です。
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="h-[350px] w-full pr-3">
+          <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
             {isLoadingItems || isLoadingGeneralAnnouncements ? (
               <div className="space-y-2 p-2">
                 {[...Array(3)].map((_, i) => <Skeleton key={`modal-skel-${i}`} className="h-16 w-full" />)}
@@ -368,3 +367,5 @@ export default function CalendarPage() {
   );
 }
 
+
+    
