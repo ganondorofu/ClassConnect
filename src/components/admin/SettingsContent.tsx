@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -14,17 +13,17 @@ import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettin
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
-import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, WeekDays, getDayOfWeekName, AllDays } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { AlertCircle, WifiOff, Save, RefreshCw, RotateCcw } from 'lucide-react';
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function SettingsContent() {
   const { toast } = useToast();
   const queryClientHook = useQueryClient();
-  const { user } = useAuth(); // Get user for logging
+  const { user } = useAuth();
 
   const [numberOfPeriods, setNumberOfPeriods] = useState<number | string>(DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods);
   const [isOffline, setIsOffline] = useState(false);
@@ -35,18 +34,21 @@ export default function SettingsContent() {
   const [isOverwritingFuture, setIsOverwritingFuture] = useState(false);
   const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
   
-  const userIdForLog = user?.uid ?? 'admin_user_settings'; // Fallback, ideally should always be user.uid
+  const userIdForLog = user?.uid ?? 'admin_user_settings';
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
-    if (typeof navigator !== 'undefined') setIsOffline(!navigator.onLine);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
+      setIsOffline(!navigator.onLine);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+    return () => {};
   }, []);
 
   const handleQueryError = (queryKey: string) => (error: unknown) => {
@@ -66,11 +68,13 @@ export default function SettingsContent() {
 
   useEffect(() => {
     if (isOffline) return;
-    const unsubscribe = onTimetableSettingsUpdate((settings) => {
-      setLiveSettings(settings);
-      setIsOffline(false);
-      if (settings?.numberOfPeriods !== undefined) setNumberOfPeriods(settings.numberOfPeriods);
-    }, (error) => { console.error("Realtime settings error:", error); setIsOffline(true); });
+    const unsubscribe = onTimetableSettingsUpdate(
+      (settings) => {
+        setLiveSettings(settings);
+        if (settings?.numberOfPeriods !== undefined) setNumberOfPeriods(settings.numberOfPeriods);
+      }, 
+      (error) => { console.error("Realtime settings error:", error); setIsOffline(true); }
+    );
     return () => unsubscribe();
   }, [isOffline]);
 
@@ -101,7 +105,10 @@ export default function SettingsContent() {
 
   useEffect(() => {
     if (isOffline) return;
-    const unsubscribe = onSubjectsUpdate((subs) => { setLiveSubjects(subs); setIsOffline(false); }, (error) => { console.error("Realtime subjects error:", error); setIsOffline(true); });
+    const unsubscribe = onSubjectsUpdate(
+      (subs) => { setLiveSubjects(subs); }, 
+      (error) => { console.error("Realtime subjects error:", error); setIsOffline(true); }
+    );
     return () => unsubscribe();
   }, [isOffline]);
 
@@ -220,8 +227,6 @@ export default function SettingsContent() {
     fixedTimetableMutation.mutate(editedFixedTimetable.filter(slot => slot?.id && slot?.day && slot?.period !== undefined));
   };
   
-  // handleApplyFixedTimetable is now implicitly called via other mutations, or can be exposed if manual trigger is needed.
-
   const handleResetTimetable = () => {
     if (isOffline || isResetting) { toast({ title: isOffline ? "オフライン" : "処理中", description: "固定時間割を初期化できません。", variant: "destructive" }); return; }
     setIsResetting(true);
@@ -242,12 +247,24 @@ export default function SettingsContent() {
   const showErrorSubjects = errorSubjects && !isOffline;
 
   const hasFixedTimetableChanged = useMemo(() => JSON.stringify(editedFixedTimetable) !== JSON.stringify(initialFixedTimetableData), [editedFixedTimetable, initialFixedTimetableData]);
-  const tableHeaderCells = [<TableHead key="period-header" className="w-[50px] sm:w-[60px]">時限</TableHead>, ...(settings?.activeDays ?? WeekDays).map((day) => <TableHead key={`header-${day}`} className="min-w-[150px] sm:min-w-[180px]">{getDayOfWeekName(day)}</TableHead>)];
+  
+  const tableHeaderCells = [<TableHead key="period-header" className="w-[50px] sm:w-[60px] text-center">時限</TableHead>];
+  (settings?.activeDays ?? WeekDays).forEach((day) => {
+    tableHeaderCells.push(<TableHead key={`header-${day}`} className="min-w-[150px] sm:min-w-[180px] text-center">{getDayOfWeekName(day)}</TableHead>);
+  });
+
 
   return (
     <div>
       <h1 className="text-2xl font-semibold mb-6">設定</h1>
-      <Card className="mb-6">
+       {isOffline && (
+        <Alert variant="destructive" className="mb-6">
+          <WifiOff className="h-4 w-4" />
+          <AlertTitle>オフライン</AlertTitle>
+          <AlertDescription>現在オフラインです。設定の表示や変更はできません。</AlertDescription>
+        </Alert>
+      )}
+      <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
         <CardHeader><CardTitle>基本設定</CardTitle><CardDescription>クラスの1日の時間数を設定します。</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           {showLoadingSettings ? (<div className="space-y-2"><Skeleton className="h-6 w-1/4" /><Skeleton className="h-10 w-1/2" /></div>)
@@ -256,28 +273,32 @@ export default function SettingsContent() {
         </CardContent>
         <CardFooter><Button onClick={handleSaveSettings} disabled={settingsMutation.isPending || showLoadingSettings || isOffline}><Save className="mr-2 h-4 w-4" />{settingsMutation.isPending ? '保存中...' : '基本設定を保存'}</Button></CardFooter>
       </Card>
-      <Card>
+      <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
         <CardHeader><CardTitle>固定時間割の設定</CardTitle><CardDescription>基本的な曜日ごとの時間割を設定します。保存後、自動的に将来の予定に適用されます。</CardDescription></CardHeader>
         <CardContent>
-          {showLoadingSettings || showLoadingFixed || showLoadingSubjects ? (<div className="space-y-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>)
+          {showLoadingSettings || showLoadingFixed || showLoadingSubjects ? (<div className="space-y-4">{[...Array(settings.numberOfPeriods || 5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>)
             : showErrorSettings || showErrorFixed || showErrorSubjects ? (<Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>エラー</AlertTitle><AlertDescription>固定時間割または科目の読み込みに失敗しました。{showErrorSubjects ? ' 科目データを確認してください。' : ''}</AlertDescription></Alert>)
-            : editedFixedTimetable.length > 0 ? (
+            : editedFixedTimetable.length > 0 && subjects.length > 0 ? (
               <div className="overflow-x-auto">
-                <Table><TableHeader><TableRow>{tableHeaderCells}</TableRow></TableHeader>
+                <Table>
+                  <TableHeader><TableRow>{tableHeaderCells.map(cell => cell)}</TableRow></TableHeader>
                   <TableBody>
                     {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
-                      const cells = [<TableCell key={`period-cell-${period}`} className="font-medium text-center p-2 sm:p-4">{period}</TableCell>, ...(settings?.activeDays ?? WeekDays).map((day) => {
+                      const cells = [<TableCell key={`period-cell-${period}`} className="font-medium text-center p-1 sm:p-2">{period}</TableCell>];
+                      (settings?.activeDays ?? WeekDays).forEach((day) => {
                         const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
-                        return (<TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2"><SubjectSelector subjects={subjects} selectedSubjectId={slot?.subjectId ?? null} onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)} placeholder="科目未設定" disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects} className="w-full text-xs sm:text-sm" /></TableCell>);
-                      })];
-                      return <TableRow key={period}>{cells}</TableRow>;
+                        cells.push(<TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2"><SubjectSelector subjects={subjects} selectedSubjectId={slot?.subjectId ?? null} onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)} placeholder="科目未設定" disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects} className="w-full text-xs sm:text-sm" /></TableCell>);
+                      });
+                      return <TableRow key={period}>{cells.map(cell => cell)}</TableRow>;
                     })}
                   </TableBody>
                 </Table>
               </div>
+            ) : subjects.length === 0 && !isLoadingSubjects ? (
+                 <Alert variant="default"><AlertCircle className="h-4 w-4" /><AlertTitle>科目未登録</AlertTitle><AlertDescription>固定時間割を設定する前に、科目管理ページで科目を登録してください。</AlertDescription></Alert>
             ) : (<p className="text-muted-foreground text-center py-4">時間割データがありません。</p>)}
         </CardContent>
-        <CardFooter className="flex justify-between items-center flex-wrap gap-2">
+        <CardFooter className="flex flex-col sm:flex-row justify-between items-center flex-wrap gap-2">
           <div className="flex gap-2 items-center">
             <Button onClick={handleSaveFixedTimetable} disabled={!hasFixedTimetableChanged || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline} size="sm"><Save className="mr-2 h-4 w-4" />{fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}</Button>
             {!hasFixedTimetableChanged && !fixedTimetableMutation.isPending && !showLoadingFixed && (<p className="text-sm text-muted-foreground self-center">変更はありません。</p>)}
