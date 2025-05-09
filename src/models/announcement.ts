@@ -19,6 +19,8 @@ export interface DailyAnnouncement {
   updatedAt: Date | Timestamp; // Allow both for easier handling before/after fetch
   /** Whether to show this announcement on the main calendar page */
   showOnCalendar?: boolean;
+  /** Property to help differentiate in combined lists */
+  itemType?: 'announcement';
 }
 
 /**
@@ -34,4 +36,6 @@ export interface DailyGeneralAnnouncement {
     content: string;
     /** Timestamp of the last update */
     updatedAt: Date | Timestamp;
+    /** Property to help differentiate in combined lists */
+    itemType?: 'general';
 }
