@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import ReactMarkdown from 'react-markdown';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,19 +38,23 @@ export default function HelpPage() {
 
   const filterAdminContent = (markdown: string, isAdminUser: boolean): string => {
     if (isAdminUser) {
-      return markdown;
+      // For admin users, remove only the markers, keeping the content.
+      let adminContent = markdown;
+      adminContent = adminContent.replace(/<!-- ADMIN_SECTION_START -->/g, '');
+      adminContent = adminContent.replace(/<!-- ADMIN_SECTION_END -->/g, '');
+      return adminContent;
+    } else {
+      // For non-admin users, remove the entire admin section (markers + content).
+      const adminSectionRegex = /<!-- ADMIN_SECTION_START -->[\s\S]*?<!-- ADMIN_SECTION_END -->/g;
+      return markdown.replace(adminSectionRegex, '');
     }
-    // This regex removes the content between the markers, including the markers themselves.
-    // It uses a non-greedy match ([\s\S]*?) to handle multi-line content.
-    const adminSectionRegex = /<!-- ADMIN_SECTION_START -->[\s\S]*?<!-- ADMIN_SECTION_END -->/g;
-    return markdown.replace(adminSectionRegex, '');
   };
 
   const isAdmin = !authLoading && user && !isAnonymous;
   const isLoading = isLoadingMarkdown || authLoading;
   
   // Memoize displayedMarkdown to avoid re-filtering on every render unless dependencies change
-  const displayedMarkdown = React.useMemo(() => {
+  const displayedMarkdown = useMemo(() => {
     if (isLoading || !rawMarkdown) return '';
     return filterAdminContent(rawMarkdown, isAdmin);
   }, [isLoading, rawMarkdown, isAdmin]);
