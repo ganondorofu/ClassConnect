@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -144,12 +143,11 @@ function CalendarPageContent() {
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
       if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
-        setSelectedDayForModal(null); // Clear selected day when modal becomes empty
+        setSelectedDayForModal(null); 
       } else {
-         // Re-filter items for the currently selected day after deletion
         const newItemsForDay = combinedItems.filter(item => {
           if (item.itemType === 'event') {
-             if ((item as SchoolEvent).id === variables) return false; // Exclude deleted
+             if ((item as SchoolEvent).id === variables) return false; 
              return selectedDayForModal && format(selectedDayForModal, 'yyyy-MM-dd') >= item.startDate && format(selectedDayForModal, 'yyyy-MM-dd') <= (item.endDate ?? item.startDate);
            } else if (item.itemType === 'announcement') {
              return selectedDayForModal && item.date === format(selectedDayForModal, 'yyyy-MM-dd') && item.showOnCalendar;
@@ -158,10 +156,10 @@ function CalendarPageContent() {
         });
         if (newItemsForDay.length === 0) {
             setIsDayDetailModalOpen(false);
-            setSelectedDayForModal(null); // Clear selected day when modal becomes empty
+            setSelectedDayForModal(null); 
         }
       }
-      refetchCalendarItems(); // Refetch to ensure calendar grid is updated
+      refetchCalendarItems(); 
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
@@ -318,7 +316,27 @@ function CalendarPageContent() {
               <Calendar
                 mode="single"
                 selected={selectedDayForModal ?? undefined} 
-                onSelect={(day) => day && handleDayClick(day)}
+                onSelect={(day) => {
+                    if (day) {
+                        const currentOpen = isDayDetailModalOpen;
+                        const sameDayClicked = selectedDayForModal && isSameDay(day, selectedDayForModal);
+                        
+                        if (currentOpen && sameDayClicked) {
+                             // If modal is open and same day is clicked again, do nothing or close it
+                             // To close:
+                             // setIsDayDetailModalOpen(false);
+                             // setSelectedDayForModal(null);
+                        } else {
+                            handleDayClick(day);
+                        }
+                    } else {
+                       // Day deselected from picker, close modal if open
+                       if (isDayDetailModalOpen) {
+                           setIsDayDetailModalOpen(false);
+                           setSelectedDayForModal(null);
+                       }
+                    }
+                }}
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
@@ -347,11 +365,14 @@ function CalendarPageContent() {
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
                   day: cn(
-                    buttonVariants({ variant: "ghost" }),
+                    // Base interactive styles (focus, disabled states) from buttonVariants
+                    "inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                    // Specific calendar day cell layout styles
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none"
+                    // No hover:bg-accent here to remove the green highlight from ghost variant
                   ),
-                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground",
-                  day_today: "bg-primary/10 text-primary border border-primary/50 font-semibold",
+                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", // Kept specific selected style
+                  day_today: "bg-primary/10 text-accent-foreground border border-primary/30", // Adjusted for better visibility
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -374,7 +395,7 @@ function CalendarPageContent() {
       <Dialog open={isDayDetailModalOpen} onOpenChange={(open) => {
           setIsDayDetailModalOpen(open);
           if (!open) {
-            setSelectedDayForModal(null); // Clear selected day when explicitly closing
+            setSelectedDayForModal(null); 
           }
         }}>
         <DialogContent className="sm:max-w-md md:max-w-lg">
@@ -468,7 +489,7 @@ function CalendarPageContent() {
           <DialogFooter className="mt-4 sm:justify-between">
              <Button variant="outline" onClick={() => {
                 setIsDayDetailModalOpen(false);
-                setSelectedDayForModal(null); // Clear selected day when explicitly closing
+                setSelectedDayForModal(null); 
              }} className="w-full sm:w-auto">
               閉じる
             </Button>
@@ -476,7 +497,7 @@ function CalendarPageContent() {
               if (selectedDayForModal) {
                 router.push(`/?date=${format(selectedDayForModal, 'yyyy-MM-dd')}`);
                 setIsDayDetailModalOpen(false);
-                setSelectedDayForModal(null); // Clear selected day after navigating
+                setSelectedDayForModal(null); 
               }
             }} disabled={!selectedDayForModal} className="w-full sm:w-auto">
               この日の時間割を見る
@@ -523,5 +544,4 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
 
