@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A Genkit flow for summarizing announcement text.
@@ -17,7 +16,7 @@ const SummarizeAnnouncementInputSchema = z.object({
 export type SummarizeAnnouncementInput = z.infer<typeof SummarizeAnnouncementInputSchema>;
 
 const SummarizeAnnouncementOutputSchema = z.object({
-  summary: z.string().describe('A concise summary of the announcement, preferably in bullet points.'),
+  summary: z.string().describe('A concise summary of the announcement, formatted as Markdown bullet points.'),
 });
 export type SummarizeAnnouncementOutput = z.infer<typeof SummarizeAnnouncementOutputSchema>;
 
@@ -29,12 +28,12 @@ const summarizePrompt = ai.definePrompt({
   name: 'summarizeAnnouncementPrompt',
   input: { schema: SummarizeAnnouncementInputSchema },
   output: { schema: SummarizeAnnouncementOutputSchema },
-  prompt: `以下の連絡事項を簡潔な箇条書きで要約してください。
+  prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
 
 連絡事項:
 {{{announcementText}}}
 
-要約:
+要約 (Markdown形式の箇条書き):
 `,
 });
 
@@ -52,3 +51,4 @@ const summarizeAnnouncementFlow = ai.defineFlow(
     return output;
   }
 );
+
