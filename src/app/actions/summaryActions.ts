@@ -1,6 +1,9 @@
 'use server';
 
-import { generateAndStoreAnnouncementSummary as generateSummaryInController } from '@/controllers/timetableController';
+import { 
+    generateAndStoreAnnouncementSummary as generateSummaryInController,
+    deleteAiSummary as deleteSummaryInController 
+} from '@/controllers/timetableController';
 import type { FirebaseError } from 'firebase/app';
 
 export async function requestSummaryGeneration(date: string, userId: string): Promise<string | null> {
@@ -13,11 +16,26 @@ export async function requestSummaryGeneration(date: string, userId: string): Pr
     return summary;
   } catch (error) {
     console.error(`Error requesting summary generation for date ${date}:`, error);
-    // Optionally, re-throw a more client-friendly error or return a specific error indicator
-    // For now, returning null and logging the error.
-     if ((error as FirebaseError).code === 'unavailable') {
+    if ((error as FirebaseError).code === 'unavailable') {
         throw new Error("オフラインのため要約を生成できませんでした。");
-     }
-    throw error; // Re-throw to be handled by client toast
+    }
+    throw error; 
+  }
+}
+
+export async function requestSummaryDeletion(date: string, userId: string): Promise<void> {
+  if (!date) {
+    console.error("requestSummaryDeletion called with no date.");
+    // Optionally throw an error or return a specific failure indicator
+    return;
+  }
+  try {
+    await deleteSummaryInController(date, userId);
+  } catch (error) {
+    console.error(`Error requesting summary deletion for date ${date}:`, error);
+    if ((error as FirebaseError).code === 'unavailable') {
+       throw new Error("オフラインのため要約を削除できませんでした。");
+    }
+    throw error;
   }
 }
