@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -143,7 +144,7 @@ function CalendarPageContent() {
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
       if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
-        // setSelectedDayForModal(null); // Keep selectedDayForModal to avoid jumpiness if modal closes immediately
+        setSelectedDayForModal(null); // Clear selected day when modal becomes empty
       } else {
          // Re-filter items for the currently selected day after deletion
         const newItemsForDay = combinedItems.filter(item => {
@@ -157,6 +158,7 @@ function CalendarPageContent() {
         });
         if (newItemsForDay.length === 0) {
             setIsDayDetailModalOpen(false);
+            setSelectedDayForModal(null); // Clear selected day when modal becomes empty
         }
       }
       refetchCalendarItems(); // Refetch to ensure calendar grid is updated
@@ -346,8 +348,7 @@ function CalendarPageContent() {
                   ),
                   day: cn(
                     buttonVariants({ variant: "ghost" }),
-                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
-                    "!hover:bg-transparent !hover:text-inherit" 
+                    "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none"
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground",
                   day_today: "bg-primary/10 text-primary border border-primary/50 font-semibold",
@@ -373,7 +374,7 @@ function CalendarPageContent() {
       <Dialog open={isDayDetailModalOpen} onOpenChange={(open) => {
           setIsDayDetailModalOpen(open);
           if (!open) {
-            // Do not clear selectedDayForModal here to allow re-opening if mutation occurs
+            setSelectedDayForModal(null); // Clear selected day when explicitly closing
           }
         }}>
         <DialogContent className="sm:max-w-md md:max-w-lg">
@@ -492,10 +493,8 @@ function CalendarPageContent() {
             if (!open) setEventToEdit(null); 
           }}
           onEventSaved={async () => {
-            // No need to invalidate here, refetchCalendarItems will be called
-            await refetchCalendarItems(); // Refetch to update items displayed in grid and modal
-            // If the day detail modal was open and items changed, we might need to update its view or close it if empty
-             if(selectedDayForModal){
+            await refetchCalendarItems(); 
+             if(selectedDayForModal && isDayDetailModalOpen){
                 const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
                 const refreshedItems = await queryFnGetCalendarDisplayableItemsForMonth(year,month)();
                 const updatedItemsForDay = refreshedItems.filter(item => {
@@ -503,9 +502,9 @@ function CalendarPageContent() {
                      else if (item.itemType === 'announcement') { return item.date === dateStr && item.showOnCalendar; }
                      return false;
                 });
-                if(isDayDetailModalOpen && updatedItemsForDay.length === 0){
+                if(updatedItemsForDay.length === 0){
                     setIsDayDetailModalOpen(false);
-                    // setSelectedDayForModal(null); // Already handled by modal's onOpenChange
+                    setSelectedDayForModal(null); 
                 }
             }
           }}
@@ -524,4 +523,5 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
 
