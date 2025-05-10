@@ -1,10 +1,10 @@
 
-import {genkit} from 'genkit';
-import {googleAI, type GoogleAIPlugin} from '@genkit-ai/googleai';
+import {genkit, Plugin} from 'genkit';
+import {googleAI} from '@genkit-ai/googleai';
 
 const googleApiKey = process.env.GOOGLE_GENAI_API_KEY;
 
-let activePlugins: GoogleAIPlugin[] = [];
+let activePlugins: Plugin[] = [];
 
 if (!googleApiKey) {
   console.warn(
@@ -28,3 +28,4 @@ export const ai = genkit({
 export const isAiConfigured = (): boolean => {
   return !!googleApiKey;
 };
+
