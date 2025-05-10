@@ -143,10 +143,23 @@ function CalendarPageContent() {
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
       if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
-        setSelectedDayForModal(null);
+        // setSelectedDayForModal(null); // Keep selectedDayForModal to avoid jumpiness if modal closes immediately
       } else {
-        refetchCalendarItems();
+         // Re-filter items for the currently selected day after deletion
+        const newItemsForDay = combinedItems.filter(item => {
+          if (item.itemType === 'event') {
+             if ((item as SchoolEvent).id === variables) return false; // Exclude deleted
+             return selectedDayForModal && format(selectedDayForModal, 'yyyy-MM-dd') >= item.startDate && format(selectedDayForModal, 'yyyy-MM-dd') <= (item.endDate ?? item.startDate);
+           } else if (item.itemType === 'announcement') {
+             return selectedDayForModal && item.date === format(selectedDayForModal, 'yyyy-MM-dd') && item.showOnCalendar;
+           }
+           return false;
+        });
+        if (newItemsForDay.length === 0) {
+            setIsDayDetailModalOpen(false);
+        }
       }
+      refetchCalendarItems(); // Refetch to ensure calendar grid is updated
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
@@ -201,13 +214,13 @@ function CalendarPageContent() {
 
               if (item.itemType === 'event') {
                 displayTitle = item.title;
-                styleClass = 'bg-accent/30 text-accent-foreground/90';
+                styleClass = 'bg-accent/30 text-accent-foreground/90 dark:bg-accent/50 dark:text-accent-foreground';
               } else { 
                 const announcement = item as DailyAnnouncement;
                 const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
                 const textPreview = announcement.text.length > 10 ? announcement.text.substring(0, 10) + "..." : announcement.text;
                 displayTitle = `P${announcement.period}: ${subjectName || textPreview || '連絡'}`;
-                styleClass = 'bg-primary/20 text-primary-foreground/80 dark:text-primary/80';
+                styleClass = 'bg-primary/20 text-primary-foreground/80 dark:bg-primary/30 dark:text-primary/90';
               }
               
               return (
@@ -302,7 +315,7 @@ function CalendarPageContent() {
             ) : (
               <Calendar
                 mode="single"
-                selected={selectedDayForModal} 
+                selected={selectedDayForModal ?? undefined} 
                 onSelect={(day) => day && handleDayClick(day)}
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
@@ -334,10 +347,10 @@ function CalendarPageContent() {
                   day: cn(
                     buttonVariants({ variant: "ghost" }),
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
-                    "!hover:bg-transparent !hover:text-current" 
+                    "!hover:bg-transparent !hover:text-inherit" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground",
-                  day_today: "bg-background text-primary border border-primary/70 font-semibold",
+                  day_today: "bg-primary/10 text-primary border border-primary/50 font-semibold",
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -360,7 +373,7 @@ function CalendarPageContent() {
       <Dialog open={isDayDetailModalOpen} onOpenChange={(open) => {
           setIsDayDetailModalOpen(open);
           if (!open) {
-            setSelectedDayForModal(null); 
+            // Do not clear selectedDayForModal here to allow re-opening if mutation occurs
           }
         }}>
         <DialogContent className="sm:max-w-md md:max-w-lg">
@@ -454,7 +467,7 @@ function CalendarPageContent() {
           <DialogFooter className="mt-4 sm:justify-between">
              <Button variant="outline" onClick={() => {
                 setIsDayDetailModalOpen(false);
-                setSelectedDayForModal(null);
+                setSelectedDayForModal(null); // Clear selected day when explicitly closing
              }} className="w-full sm:w-auto">
               閉じる
             </Button>
@@ -462,7 +475,7 @@ function CalendarPageContent() {
               if (selectedDayForModal) {
                 router.push(`/?date=${format(selectedDayForModal, 'yyyy-MM-dd')}`);
                 setIsDayDetailModalOpen(false);
-                setSelectedDayForModal(null);
+                setSelectedDayForModal(null); // Clear selected day after navigating
               }
             }} disabled={!selectedDayForModal} className="w-full sm:w-auto">
               この日の時間割を見る
@@ -479,8 +492,22 @@ function CalendarPageContent() {
             if (!open) setEventToEdit(null); 
           }}
           onEventSaved={async () => {
-            await refetchCalendarItems();
-            queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
+            // No need to invalidate here, refetchCalendarItems will be called
+            await refetchCalendarItems(); // Refetch to update items displayed in grid and modal
+            // If the day detail modal was open and items changed, we might need to update its view or close it if empty
+             if(selectedDayForModal){
+                const dateStr = format(selectedDayForModal, 'yyyy-MM-dd');
+                const refreshedItems = await queryFnGetCalendarDisplayableItemsForMonth(year,month)();
+                const updatedItemsForDay = refreshedItems.filter(item => {
+                     if (item.itemType === 'event') { return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate); }
+                     else if (item.itemType === 'announcement') { return item.date === dateStr && item.showOnCalendar; }
+                     return false;
+                });
+                if(isDayDetailModalOpen && updatedItemsForDay.length === 0){
+                    setIsDayDetailModalOpen(false);
+                    // setSelectedDayForModal(null); // Already handled by modal's onOpenChange
+                }
+            }
           }}
           editingEvent={eventToEdit}
         />
