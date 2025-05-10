@@ -42,18 +42,23 @@ export default function HelpPage() {
       let adminContent = markdown;
       adminContent = adminContent.replace(/<!-- ADMIN_SECTION_START -->/g, '');
       adminContent = adminContent.replace(/<!-- ADMIN_SECTION_END -->/g, '');
+      // Also remove sections specifically tagged for replacement in non-admin views
+      adminContent = adminContent.replace(/<!-- ADMIN_SECTION_START_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->[\s\S]*?<!-- ADMIN_SECTION_END_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->/g, '');
       return adminContent;
     } else {
       // For non-admin users, remove the entire admin section (markers + content).
       const adminSectionRegex = /<!-- ADMIN_SECTION_START -->[\s\S]*?<!-- ADMIN_SECTION_END -->/g;
-      return markdown.replace(adminSectionRegex, '');
+      let nonAdminContent = markdown.replace(adminSectionRegex, '');
+      // Replace sections specifically tagged for non-admin view with empty string
+      const nonAdminReplaceRegex = /<!-- ADMIN_SECTION_START_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->([\s\S]*?)<!-- ADMIN_SECTION_END_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->/g;
+      nonAdminContent = nonAdminContent.replace(nonAdminReplaceRegex, '');
+      return nonAdminContent;
     }
   };
-
+  
   const isAdmin = !authLoading && user && !isAnonymous;
   const isLoading = isLoadingMarkdown || authLoading;
   
-  // Memoize displayedMarkdown to avoid re-filtering on every render unless dependencies change
   const displayedMarkdown = useMemo(() => {
     if (isLoading || !rawMarkdown) return '';
     return filterAdminContent(rawMarkdown, isAdmin);
@@ -114,8 +119,6 @@ export default function HelpPage() {
           </article>
         )}
          {!isLoading && !errorMarkdown && !displayedMarkdown && rawMarkdown && (
-          // This case means markdown was fetched but filtering resulted in empty (e.g. non-admin seeing only admin content)
-          // Or, the markdown file itself is empty after filtering (unlikely with current setup but good to handle)
            <Alert variant="default">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>情報</AlertTitle>
@@ -128,3 +131,4 @@ export default function HelpPage() {
     </MainLayout>
   );
 }
+
