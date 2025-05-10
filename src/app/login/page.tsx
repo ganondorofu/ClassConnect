@@ -1,27 +1,28 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, LogIn } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation"; // Import useSearchParams
+import { useRouter, useSearchParams } from "next/navigation"; 
 import type { FormEvent} from 'react';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loading, user, isAnonymous } = useAuth(); // Add user and isAnonymous
+  const { login, loading, user, isAnonymous } = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams(); // Get search params
+  const searchParams = useSearchParams(); 
   const { toast } = useToast();
 
   useEffect(() => {
-    // If user is already logged in (not anonymous), redirect them from login page
     if (user && !isAnonymous) {
       const redirectUrl = searchParams.get('redirect') || '/';
       router.push(redirectUrl);
@@ -41,12 +42,11 @@ export default function LoginPage() {
     }
     const userCredential = await login(email, password);
     if (userCredential) {
-      const redirectUrl = searchParams.get('redirect') || '/'; // Get redirect URL from query or default to home
+      const redirectUrl = searchParams.get('redirect') || '/'; 
       router.push(redirectUrl); 
     }
   };
 
-  // If user is already logged in (not anonymous) and we are in useEffect redirecting, show minimal loading
   if (user && !isAnonymous) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -130,3 +130,37 @@ export default function LoginPage() {
   );
 }
 
+function LoginPageSkeleton() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md shadow-xl">
+        <CardHeader className="space-y-1 text-center">
+          <Skeleton className="h-8 w-3/4 mx-auto" />
+          <Skeleton className="h-4 w-full mx-auto mt-2" />
+        </CardHeader>
+        <CardContent className="space-y-6 pt-6">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+        <CardFooter className="text-center text-sm pt-6">
+          <Skeleton className="h-4 w-3/4 mx-auto" />
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageSkeleton />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
