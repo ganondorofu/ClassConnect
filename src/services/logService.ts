@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -28,66 +27,58 @@ export interface LogEntry {
   };
 }
 
-// Helper function to convert Timestamp/Date to ISO string for logging
-const formatTimestampForLog = (timestamp: Date | Timestamp | undefined): string | null => {
-  if (!timestamp) return null;
-  if (timestamp instanceof Timestamp) {
-    return timestamp.toDate().toISOString();
-  }
-  if (timestamp instanceof Date) {
-    return timestamp.toISOString();
-  }
-  return null; // Or handle other cases if necessary
-};
-
-// Helper to prepare state for logging (converts timestamps)
+// Helper to prepare state for logging (converts timestamps to ISO strings)
 // Also ensures undefined values are replaced with null
 const prepareStateForLog = (state: any): any => {
   if (state === undefined || state === null) return null;
-  // Deep clone and replace undefined with null
   return JSON.parse(JSON.stringify(state, (key, value) =>
     value === undefined ? null : value
   ), (key, value) => {
-      if (typeof value === 'string') {
-          const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
-          if (isoDateRegex.test(value)) {
-              return value;
-          }
+    if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined && !(value instanceof Timestamp)) {
+      try {
+        return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
+      } catch (e) {
+        console.warn(`Could not convert object to ISOString for logging, value: ${JSON.stringify(value)}`);
+        return value;
       }
-       if (value instanceof Timestamp) {
-          return value.toDate().toISOString();
-       }
-       if (value instanceof Date) {
-           return value.toISOString();
-       }
+    }
+    if (value instanceof Timestamp) return value.toDate().toISOString();
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
       return value;
+    }
+    return value;
   });
 };
 
 
 /**
  * Logs an action performed by a user (or system).
- * Stores 'before' and 'after' states if provided.
- * Replaces undefined values in details with null for Firestore compatibility.
- * Converts Date/Timestamp objects to ISO strings within details for consistent logging.
- *
- * @param actionType - The type of action being logged (e.g., 'update_subject').
- * @param details - An object containing action details, potentially including 'before' and 'after' states.
- * @param userId - The ID of the user performing the action (defaults to 'anonymous').
- * @returns The ID of the newly created log entry, or null if logging failed.
  */
 export const logAction = async (
   actionType: string,
   details: object,
   userId: string = 'anonymous'
 ): Promise<string | null> => {
-  const cleanDetails = prepareStateForLog(details);
+  let cleanDetailsForFirestore: any;
+  try {
+    const stringifiedDetails = JSON.stringify(prepareStateForLog(details));
+    const parsedDetails = JSON.parse(stringifiedDetails);
+
+    cleanDetailsForFirestore = JSON.parse(JSON.stringify(parsedDetails, (key, value) => {
+        return value === undefined ? null : value;
+    }));
+
+  } catch (e) {
+    console.error("Error preparing log details for Firestore:", e, details);
+    cleanDetailsForFirestore = { error_in_detail_serialization: true, original_action_type: actionType };
+  }
 
   const logEntry: Omit<LogEntry, 'id'> = {
       action: actionType,
       timestamp: Timestamp.now(),
       userId: userId,
-      details: cleanDetails ?? {},
+      details: cleanDetailsForFirestore ?? {},
   };
 
   try {
@@ -99,8 +90,8 @@ export const logAction = async (
     console.error(`Failed to log action '${actionType}' (might be offline):`, error);
     if ((error as FirestoreError).code === 'invalid-argument' && (error as FirestoreError).message.includes('undefined')) {
        console.error("Firestore Logging Error: Attempted to save 'undefined' in log details.", logEntry);
-   }
-   return null;
+    }
+    return null;
   }
 };
 
@@ -160,27 +151,48 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
 
         console.log(`Attempting rollback for action: ${action}`, logEntry);
 
-         const prepareDataForFirestore = (data: any): any => {
+        const prepareDataForFirestore = (data: any): any => {
             if (!data) return null;
             const firestoreData = { ...data };
-             Object.keys(firestoreData).forEach(key => {
-                 if (typeof firestoreData[key] === 'string') {
-                     const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
-                     if (isoDateRegex.test(firestoreData[key])) {
-                         try {
-                            firestoreData[key] = Timestamp.fromDate(new Date(firestoreData[key]));
-                         } catch (e) {
-                             console.warn(`Could not convert string ${firestoreData[key]} to Timestamp for key ${key}. Keeping as string.`);
-                         }
-                     }
+            Object.keys(firestoreData).forEach(key => {
+                if (firestoreData[key] === undefined) {
+                    firestoreData[key] = null; // Convert undefined to null
+                }
+                if (typeof firestoreData[key] === 'string') {
+                    const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+                    if (isoDateRegex.test(firestoreData[key])) {
+                        try {
+                            const parsedDate = new Date(firestoreData[key]);
+                            if (isNaN(parsedDate.getTime())) { // Check if date is valid
+                                console.warn(`Invalid date string encountered for key ${key}: ${firestoreData[key]}. Setting to null.`);
+                                firestoreData[key] = null;
+                            } else {
+                                firestoreData[key] = Timestamp.fromDate(parsedDate);
+                            }
+                        } catch (e) {
+                            console.warn(`Could not convert string ${firestoreData[key]} to Timestamp for key ${key}. Setting to null. Error:`, e);
+                            firestoreData[key] = null;
+                        }
+                    }
+                }
+            });
+             // Ensure updatedAt is always a Firestore Timestamp for consistency
+            if (firestoreData.updatedAt && !(firestoreData.updatedAt instanceof Timestamp)) {
+                 try {
+                    const parsedUpdatedAt = new Date(firestoreData.updatedAt);
+                    if (!isNaN(parsedUpdatedAt.getTime())) {
+                        firestoreData.updatedAt = Timestamp.fromDate(parsedUpdatedAt);
+                    } else {
+                         firestoreData.updatedAt = Timestamp.now(); // Fallback if parsing fails
+                    }
+                 } catch {
+                    firestoreData.updatedAt = Timestamp.now(); // Fallback on any error
                  }
-                  if (firestoreData[key] === undefined) {
-                      firestoreData[key] = null;
-                  }
-             });
-             firestoreData.updatedAt = Timestamp.now();
-             return firestoreData;
-         };
+            } else if (!firestoreData.updatedAt) {
+                 firestoreData.updatedAt = Timestamp.now();
+            }
+            return firestoreData;
+        };
 
         if (action.startsWith('add_')) {
             const docId = after?.id ?? after?.subjectId ?? after?.eventId ?? (action.includes('general_announcement') ? after?.date : null);
@@ -194,7 +206,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
 
         } else if (action.startsWith('update_') || action.startsWith('upsert_')) {
              const docId = before?.id ?? after?.id ?? (action.includes('settings') ? 'timetable' : (action.includes('general_announcement') ? before?.date ?? after?.date : null));
-             if (!docId) throw new Error(`Cannot determine document ID to update for rollback of action ${action} (Log ID: ${logId}). Before: ${JSON.stringify(before)}, After: ${JSON.stringify(after)}`);
+             if (!docId) throw new Error(`Cannot determine document ID to update for rollback of action ${action} (Log ID: ${logId)). Before: ${JSON.stringify(before)}, After: ${JSON.stringify(after)}`);
              const collectionPath = getCollectionPathForAction(action);
              if (!collectionPath) throw new Error(`Unsupported action type for rollback: ${action}`);
              const docToUpdateRef = doc(db, collectionPath, docId);
@@ -218,17 +230,16 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
              const collectionPath = getCollectionPathForAction(action);
              if (!collectionPath) throw new Error(`Unsupported action type for rollback: ${action}`);
              const docToRestoreRef = doc(db, collectionPath, docId);
-             
+
              let dataToRestore: Partial<Subject> | any = {};
              if (action === 'delete_subject') {
-                // Specifically for subject, only restore name and teacherName to avoid issues
                 if (!before.name || !before.teacherName) {
                     throw new Error(`Cannot restore subject (Log ID: ${logId}) without name and teacherName in 'before' state.`);
                 }
                 dataToRestore = { name: before.name, teacherName: before.teacherName };
              } else {
                 dataToRestore = { ...before };
-                delete dataToRestore.id; // Remove ID from data if it was part of it
+                delete dataToRestore.id;
              }
 
              const firestoreReadyData = prepareDataForFirestore(dataToRestore);
@@ -236,8 +247,8 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
             rollbackDetails.restoredDocId = docId;
             rollbackDetails.restoredDocPath = docToRestoreRef.path;
 
-        } else if (action === 'batch_update_fixed_timetable') {
-            const beforeSlots: Array<{ id: string, subjectId: string | null }> = details.before || [];
+        } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable') {
+            const beforeSlots: Array<{ id: string, subjectId: string | null, day?: string, period?: number }> = details.before || [];
             if (!Array.isArray(beforeSlots)) {
                  throw new Error(`Rollback for ${action} requires 'before' details to be an array of slot changes.`);
             }
@@ -245,23 +256,13 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
             for(const beforeSlot of beforeSlots) {
                 if (!beforeSlot || typeof beforeSlot.id !== 'string') continue;
                 const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
-                batch.update(slotRef, { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() });
+                const dataToRestore: any = { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() };
+                if(beforeSlot.day) dataToRestore.day = beforeSlot.day;
+                if(beforeSlot.period) dataToRestore.period = beforeSlot.period;
+
+                batch.set(slotRef, dataToRestore, {merge: true}); // Use set with merge or update
                 restoredCount++;
             }
-             rollbackDetails.restoredSlotsCount = restoredCount;
-
-        } else if (action === 'reset_fixed_timetable') {
-             const beforeSlots: Array<{ id: string, subjectId: string | null }> = details.before || [];
-             if (!Array.isArray(beforeSlots)) {
-                 throw new Error(`Rollback for ${action} requires 'before' details to be an array of slot states.`);
-             }
-             let restoredCount = 0;
-             for(const beforeSlot of beforeSlots) {
-                if (!beforeSlot || typeof beforeSlot.id !== 'string') continue;
-                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
-                batch.update(slotRef, { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() });
-                restoredCount++;
-             }
              rollbackDetails.restoredSlotsCount = restoredCount;
 
         } else if (action === 'apply_fixed_timetable_future' || action === 'reset_future_daily_announcements') {
@@ -300,35 +301,58 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
         if (!data) return null;
         const firestoreData = { ...data };
         Object.keys(firestoreData).forEach(key => {
+            if (firestoreData[key] === undefined) {
+                firestoreData[key] = null; // Convert undefined to null
+            }
             if (typeof firestoreData[key] === 'string') {
-                const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
+                const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
                 if (isoDateRegex.test(firestoreData[key])) {
                     try {
-                        firestoreData[key] = Timestamp.fromDate(new Date(firestoreData[key]));
+                       const parsedDate = new Date(firestoreData[key]);
+                       if (isNaN(parsedDate.getTime())) {
+                           console.warn(`Invalid date string for re-apply key ${key}: ${firestoreData[key]}. Setting to null.`);
+                           firestoreData[key] = null;
+                       } else {
+                           firestoreData[key] = Timestamp.fromDate(parsedDate);
+                       }
                     } catch (e) {
-                         console.warn(`Could not convert string ${firestoreData[key]} to Timestamp for key ${key}. Keeping as string.`);
+                         console.warn(`Could not convert string ${firestoreData[key]} to Timestamp for re-apply key ${key}. Setting to null. Error:`, e);
+                         firestoreData[key] = null;
                     }
                 }
             }
-            if (firestoreData[key] === undefined) firestoreData[key] = null;
         });
-        firestoreData.updatedAt = Timestamp.now();
+        // Ensure updatedAt is always a Firestore Timestamp for consistency
+        if (firestoreData.updatedAt && !(firestoreData.updatedAt instanceof Timestamp)) {
+            try {
+                const parsedUpdatedAt = new Date(firestoreData.updatedAt);
+                if (!isNaN(parsedUpdatedAt.getTime())) {
+                    firestoreData.updatedAt = Timestamp.fromDate(parsedUpdatedAt);
+                } else {
+                    firestoreData.updatedAt = Timestamp.now(); // Fallback if parsing fails
+                }
+            } catch {
+                firestoreData.updatedAt = Timestamp.now(); // Fallback on any error
+            }
+        } else if (!firestoreData.updatedAt) {
+            firestoreData.updatedAt = Timestamp.now();
+        }
         return firestoreData;
     };
 
     if (action.startsWith('add_')) {
-        const docId = targetState?.id ?? targetState?.date;
+        const docId = targetState?.id ?? targetState?.date ?? targetState?.subjectId;
         if (!docId || !targetState) throw new Error(`Cannot determine document ID/data to re-add for action ${action} (${context})`);
         const docRef = doc(db, collectionPath, docId);
         const dataToRestore = { ...targetState };
-        delete dataToRestore.id;
+        delete dataToRestore.id; // ID is part of the ref path
         batch.set(docRef, prepareDataForFirestore(dataToRestore));
 
     } else if (action.startsWith('update_') || action.startsWith('upsert_')) {
          const docId = targetState?.id ?? previousState?.id ?? (action.includes('settings') ? 'timetable' : (action.includes('general_announcement') ? targetState?.date ?? previousState?.date : null));
          if (!docId) throw new Error(`Cannot determine document ID to re-update for action ${action} (${context})`);
          const docRef = doc(db, collectionPath, docId);
-        if (targetState === null || Object.keys(targetState).length === 0) {
+        if (targetState === null || Object.keys(targetState).length === 0) { // Handles if target was deletion
             batch.delete(docRef);
         } else {
              const dataToRestore = { ...targetState };
@@ -343,12 +367,15 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
          batch.delete(docRef);
 
     } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable') {
-         const targetSlots: Array<{ id: string, subjectId: string | null }> = (action === 'reset_fixed_timetable') ? (previousState || []).map((s: any) => ({ ...s, subjectId: null })) : (targetState || []);
+         const targetSlots: Array<{ id: string, subjectId: string | null, day?: string, period?: number }> = (action === 'reset_fixed_timetable') ? (previousState || []).map((s: any) => ({ ...s, subjectId: null })) : (targetState || []);
          if (!Array.isArray(targetSlots)) throw new Error(`Re-apply for ${action} requires target state to be an array.`);
          targetSlots.forEach(slot => {
              if (!slot || typeof slot.id !== 'string') return;
              const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, slot.id);
-             batch.update(slotRef, { subjectId: slot.subjectId ?? null, updatedAt: Timestamp.now() });
+             const dataToRestore: any = { subjectId: slot.subjectId ?? null, updatedAt: Timestamp.now() };
+             if(slot.day) dataToRestore.day = slot.day;
+             if(slot.period) dataToRestore.period = slot.period;
+             batch.set(slotRef, dataToRestore, {merge: true});
          });
 
     } else {
@@ -381,3 +408,4 @@ function getCollectionPathForAction(action: string): string | null {
     console.warn(`Could not determine collection path for action: ${action}`);
     return null;
 }
+
