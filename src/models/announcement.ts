@@ -38,5 +38,9 @@ export interface DailyGeneralAnnouncement {
     updatedAt: Date | Timestamp;
     /** Property to help differentiate in combined lists */
     itemType: 'general';
+    /** AI-generated summary of the content in Markdown format */
+    aiSummary?: string | null;
+    /** Timestamp of when the AI summary was last generated */
+    aiSummaryLastGeneratedAt?: Timestamp | Date | null;
 }
 
