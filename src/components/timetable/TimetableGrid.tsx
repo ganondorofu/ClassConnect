@@ -9,7 +9,7 @@ import { ja } from 'date-fns/locale';
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog"; // Removed DialogDescription
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,8 +40,9 @@ import { cn } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 
-const DAY_CELL_WIDTH = "flex-grow-0 min-w-[120px] xs:min-w-[130px] sm:min-w-[140px] md:min-w-[160px]";
+const DAY_CELL_WIDTH = "min-w-[100px] xs:min-w-[110px] sm:min-w-[120px] md:min-w-[140px] lg:min-w-[150px] xl:min-w-[160px]";
 const TIME_CELL_WIDTH = "w-[50px] sm:w-[60px] flex-shrink-0";
+
 
 interface TimetableGridProps {
   currentDate: Date;
@@ -56,7 +57,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     date: string,
     period: number,
     day: DayOfWeek,
-    baseFixedSubjectId: string | null, // Added to store the subjectId from fixedTimetable for comparison
+    baseFixedSubjectId: string | null,
     announcement?: DailyAnnouncement
   } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -180,28 +181,24 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         unsubSettings = onTimetableSettingsUpdate(
             (newSettings) => { 
               setLiveSettings(newSettings); 
-              if (isOffline && typeof navigator !== 'undefined' && navigator.onLine) setIsOffline(false); 
             }, 
             (error) => { console.error("RT Settings Error:", error); setIsOffline(true); }
         );
         unsubFixed = onFixedTimetableUpdate(
             (newFixedTimetable) => { 
               setLiveFixedTimetable(newFixedTimetable); 
-              if (isOffline && typeof navigator !== 'undefined' && navigator.onLine) setIsOffline(false); 
             },  
             (error) => { console.error("RT Fixed TT Error:", error); setIsOffline(true); }
         );
         unsubEvents = onSchoolEventsUpdate(
             (newEvents) => { 
               setLiveSchoolEvents(newEvents); 
-              if (isOffline && typeof navigator !== 'undefined' && navigator.onLine) setIsOffline(false); 
             }, 
             (error) => { console.error("RT Events Error:", error); setIsOffline(true); }
         );
         unsubSubjects = onSubjectsUpdate(
             (newSubjects) => { 
               setLiveSubjects(newSubjects); 
-              if (isOffline && typeof navigator !== 'undefined' && navigator.onLine) setIsOffline(false); 
             }, 
             (error) => { console.error("RT Subjects Error:", error); setIsOffline(true); }
         );
@@ -212,7 +209,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             return onDailyAnnouncementsUpdate(dateStr, 
               (announcements) => {
                   setLiveDailyAnnouncements(prev => ({ ...prev, [dateStr]: announcements }));
-                  if (isOffline && typeof navigator !== 'undefined' && navigator.onLine) setIsOffline(false);
               }, 
               (error) => { console.error(`RT Annc Error ${dateStr}:`, error); setIsOffline(true); });
           });
@@ -262,11 +258,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       date,
       period,
       day,
-      baseFixedSubjectId: fixedSlot?.subjectId ?? null, // Store the original fixed subjectId
+      baseFixedSubjectId: fixedSlot?.subjectId ?? null,
       announcement
     });
     setAnnouncementText(announcement?.text ?? '');
-    // If there's an override, use it. Otherwise, use the fixed subject. If no fixed, then null.
     setSubjectIdOverride(announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null);
     setShowOnCalendarModal(announcement?.showOnCalendar ?? false);
     setIsModalOpen(true);
@@ -288,20 +283,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const textToPersist = announcementText.trim();
     const showOnCalendarToPersist = showOnCalendarModal;
     
-    // For admin, allow subjectIdOverride to be set freely.
-    // For anonymous, subjectIdOverride should only persist if it's DIFFERENT from the original fixed subject.
-    // If text, or showOnCalendar is set, then subjectIdOverride (even if same as fixed) should be stored.
     let subjectIdOverrideToPersist: string | null;
     if (user && !isAnonymous) { 
         subjectIdOverrideToPersist = subjectIdOverride ?? null; 
     } else { 
-        // Anonymous user logic:
-        // Persist override only if it's different from the base fixed subject, OR if there's text/calendar flag
         if (textToPersist || showOnCalendarToPersist) {
             subjectIdOverrideToPersist = subjectIdOverride ?? selectedSlot.baseFixedSubjectId ?? null;
         } else {
-            // If no text and no calendar flag, only persist override if it's different from base.
-            // Otherwise, it implies no specific daily change to the subject.
             subjectIdOverrideToPersist = (subjectIdOverride !== selectedSlot.baseFixedSubjectId) ? (subjectIdOverride ?? null) : null;
         }
     }
@@ -358,14 +346,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       date: date,
       period: period,
       text: '',
-      // If admin, clear override. If anonymous, effectively revert to fixed or null if no fixed.
       subjectIdOverride: (user && !isAnonymous) ? null : baseFixedSubject, 
       showOnCalendar: false,
       itemType: 'announcement',
     };
     
     try {
-      await upsertDailyAnnouncement(clearedData, userIdForLog, true /* isClearing */);
+      await upsertDailyAnnouncement(clearedData, userIdForLog, true);
 
       toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアしました。` });
       setIsModalOpen(false); 
@@ -394,8 +381,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     return DisplayedWeekDaysOrder.map(dayEnum => {
       const dateForDay = weekDays.find(d => dayCodeToDayOfWeekEnum(getDay(d)) === dayEnum);
       if (!dateForDay) { 
-        // Should not happen as weekDays is Mon-Sun
-        const tempDate = new Date(); // Fallback, should be reviewed if this case occurs
+        const tempDate = new Date();
         return { date: tempDate, dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false };
       }
       const isConfigActive = activeDaysSetting.includes(dayEnum);
@@ -413,7 +399,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       const dateStr = format(date, 'yyyy-MM-dd');
       const eventsForDay = getEventsForDay(date);
       return (
-        <div key={`header-${dateStr}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50 dark:bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10 dark:bg-primary/20' : ''} bg-card whitespace-nowrap`}>
+        <div key={`header-${dateStr}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r ${isWeekend ? 'bg-muted/50 dark:bg-muted/30' : ''} ${isSameDay(date, currentDate) ? 'bg-primary/10 dark:bg-primary/20' : ''} bg-card whitespace-nowrap flex-1`}>
           <div>{getDayOfWeekName(dayOfWeek)}</div>
           <div className="text-xs text-muted-foreground">{format(date, 'M/d')}</div>
           {eventsForDay.map(event => (
@@ -471,7 +457,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
               const skeletonCells = [
                 <div key={`skeleton-period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}><Skeleton className="h-6 w-8" /></div>,
                 ...displayDays.map(({ date }) => (
-                  <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card`}>
+                  <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card flex-1`}>
                     <Skeleton className="h-4 w-3/4 mb-1" /><Skeleton className="h-3 w-1/2 mb-2" /><Skeleton className="h-8 w-full" />
                   </div>
                 ))
@@ -502,7 +488,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
                   return (
                     <div key={`${dateStr}-${period}-cell`} className={cn(
-                        DAY_CELL_WIDTH,
+                        DAY_CELL_WIDTH, "flex-1",
                         "p-1 sm:p-2 border-r relative flex flex-col justify-between bg-card min-h-[100px] md:min-h-[120px]",
                         isToday && "bg-primary/5 dark:bg-primary/10",
                         isWeekend && !isConfigActive && !hasEvents && "bg-muted/30 dark:bg-muted/20", 
