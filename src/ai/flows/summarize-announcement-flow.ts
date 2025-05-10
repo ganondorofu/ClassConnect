@@ -1,4 +1,6 @@
-'use server';
+
+// 'use server'; // Removed: This is not a Server Action, but a module used by an API route.
+
 /**
  * @fileOverview A Genkit flow for summarizing announcement text.
  *
@@ -7,8 +9,9 @@
  * - SummarizeAnnouncementOutput - The return type for the summarizeAnnouncement function.
  */
 
-import { ai, isAiConfigured } from '@/ai/ai-instance'; // Corrected import path and add isAiConfigured
+import { ai, isAiConfigured } from '@/ai/ai-instance';
 import { z } from 'genkit';
+import type { Flow, Prompt } from 'genkit'; // Import types for conditional assignment
 
 const SummarizeAnnouncementInputSchema = z.object({
   announcementText: z.string().describe('The full text of the announcement to be summarized.'),
@@ -20,40 +23,50 @@ const SummarizeAnnouncementOutputSchema = z.object({
 });
 export type SummarizeAnnouncementOutput = z.infer<typeof SummarizeAnnouncementOutputSchema>;
 
-export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): Promise<SummarizeAnnouncementOutput> {
-  if (!isAiConfigured()) {
-    console.warn("AI is not configured. Skipping summary generation.");
-    throw new Error("AI機能は設定されていません。管理者に連絡してください。");
-  }
-  return summarizeAnnouncementFlow(input);
-}
+// Conditionally define prompt and flow
+// These will hold the Genkit prompt and flow definitions if AI is configured.
+let summarizePromptInstance: Prompt<typeof SummarizeAnnouncementInputSchema, typeof SummarizeAnnouncementOutputSchema> | undefined;
+let summarizeAnnouncementFlowInstance: Flow<typeof SummarizeAnnouncementInputSchema, typeof SummarizeAnnouncementOutputSchema> | undefined;
 
-const summarizePrompt = ai.definePrompt({
-  name: 'summarizeAnnouncementPrompt',
-  model: 'googleai/gemini-2.0-flash', // Explicitly define model
-  input: { schema: SummarizeAnnouncementInputSchema },
-  output: { schema: SummarizeAnnouncementOutputSchema },
-  prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
+if (isAiConfigured()) {
+  summarizePromptInstance = ai.definePrompt({
+    name: 'summarizeAnnouncementPrompt',
+    model: 'googleai/gemini-2.0-flash', // Explicitly define model
+    input: { schema: SummarizeAnnouncementInputSchema },
+    output: { schema: SummarizeAnnouncementOutputSchema },
+    prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
 
 連絡事項:
 {{{announcementText}}}
 
 要約 (Markdown形式の箇条書き):
 `,
-});
+  });
 
-const summarizeAnnouncementFlow = ai.defineFlow(
-  {
-    name: 'summarizeAnnouncementFlow',
-    inputSchema: SummarizeAnnouncementInputSchema,
-    outputSchema: SummarizeAnnouncementOutputSchema,
-  },
-  async (input) => {
-    const { output } = await summarizePrompt(input);
-    if (!output) {
-      throw new Error('Failed to generate summary.');
+  summarizeAnnouncementFlowInstance = ai.defineFlow(
+    {
+      name: 'summarizeAnnouncementFlow',
+      inputSchema: SummarizeAnnouncementInputSchema,
+      outputSchema: SummarizeAnnouncementOutputSchema,
+    },
+    async (input) => {
+      if (!summarizePromptInstance) {
+        // This case should ideally not be reached if isAiConfigured() was true during setup.
+        throw new Error('Summarize prompt is not initialized. AI configuration issue.');
+      }
+      const { output } = await summarizePromptInstance(input);
+      if (!output) {
+        throw new Error('Failed to generate summary.');
+      }
+      return output;
     }
-    return output;
-  }
-);
+  );
+}
 
+export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): Promise<SummarizeAnnouncementOutput> {
+  if (!isAiConfigured() || !summarizeAnnouncementFlowInstance) {
+    console.warn("AI is not configured or the summarization flow is not defined. Skipping summary generation.");
+    throw new Error("AI機能は設定されていません。管理者に連絡してください。");
+  }
+  return summarizeAnnouncementFlowInstance(input);
+}
