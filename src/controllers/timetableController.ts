@@ -27,7 +27,7 @@ import type {
 } from '@/models/timetable';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
 import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum } from '@/models/timetable'; // Combined imports
-import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
 import { logAction } from '@/services/logService';
 import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
 import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
@@ -41,6 +41,32 @@ const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 
 const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
 const generalAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'generalAnnouncements');
 const eventsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'events');
+
+const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
+  if (!timestampField) return undefined;
+  if (typeof timestampField.toDate === 'function') { // Firestore Timestamp
+    return timestampField.toDate();
+  }
+  if (timestampField instanceof Date) { // Already a Date
+    return timestampField;
+  }
+  if (typeof timestampField === 'string') { // ISO String
+    const date = parseISO(timestampField);
+    return isValid(date) ? date : undefined;
+  }
+  if (typeof timestampField === 'object' && timestampField.seconds !== undefined && timestampField.nanoseconds !== undefined) {
+    // Plain object masquerading as Timestamp (e.g. from JSON.parse)
+    try {
+      return new Timestamp(timestampField.seconds, timestampField.nanoseconds).toDate();
+    } catch (e) {
+      console.warn("Failed to parse plain object as Timestamp:", timestampField, e);
+      return undefined;
+    }
+  }
+  console.warn("Unparseable timestamp field encountered:", timestampField);
+  return undefined;
+};
+
 
 const prepareStateForLog = (state: any): any => {
   if (state === undefined || state === null) return null;
@@ -282,7 +308,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
         ...data,
         subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
         showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
-        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
         itemType: 'announcement',
       } as DailyAnnouncement;
     });
@@ -312,7 +338,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
         ...oldData,
         subjectIdOverride: oldData.subjectIdOverride === undefined ? null : oldData.subjectIdOverride,
         showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
-        updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(),
         itemType: 'announcement',
       } as DailyAnnouncement;
     }
@@ -356,7 +382,7 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
             ...data,
             subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
             showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
-            updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(),
+            updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
             itemType: 'announcement',
         } as DailyAnnouncement;
     }));
@@ -378,10 +404,10 @@ export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGe
         id: docSnap.id, 
         date: data.date, 
         content: data.content ?? '', 
-        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), 
+        updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(), 
         itemType: 'general',
         aiSummary: data.aiSummary ?? null,
-        aiSummaryLastGeneratedAt: (data.aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+        aiSummaryLastGeneratedAt: parseFirestoreTimestamp(data.aiSummaryLastGeneratedAt) ?? null,
       } as DailyGeneralAnnouncement;
     }
     return null;
@@ -400,13 +426,14 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
   try {
     const oldSnap = await getDoc(docRef);
     if (oldSnap.exists()) {
+        const oldData = oldSnap.data();
         beforeState = { 
             id: date, 
-            ...oldSnap.data(), 
-            updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date(), 
+            ...oldData, 
+            updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(), 
             itemType: 'general',
-            aiSummary: oldSnap.data().aiSummary ?? null,
-            aiSummaryLastGeneratedAt: (oldSnap.data().aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+            aiSummary: oldData.aiSummary ?? null,
+            aiSummaryLastGeneratedAt: parseFirestoreTimestamp(oldData.aiSummaryLastGeneratedAt) ?? null,
         } as DailyGeneralAnnouncement;
     }
 
@@ -417,7 +444,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
         updatedAt: Timestamp.now()
     };
     
-    let afterStateContent = { ...dataToSet, id: date, aiSummary: beforeState?.aiSummary, aiSummaryLastGeneratedAt: beforeState?.aiSummaryLastGeneratedAt };
+    let afterStateContent = { ...dataToSet, id: date, aiSummary: beforeState?.aiSummary, aiSummaryLastGeneratedAt: beforeState?.aiSummaryLastGeneratedAt, updatedAt: new Date() };
 
 
     if (!trimmedContent) { // Content is being cleared
@@ -433,8 +460,6 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
       return;
     }
     
-    // If content changed, clear old summary, but keep it if admin is just editing and there's an existing summary.
-    // This specific condition is to ensure if content changed, a new summary is needed.
     if (beforeState && beforeState.content !== trimmedContent) { 
         dataToSet.aiSummary = null;
         dataToSet.aiSummaryLastGeneratedAt = null;
@@ -465,10 +490,10 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
         id: docSnap.id, 
         date: data.date, 
         content: data.content ?? '', 
-        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), 
+        updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(), 
         itemType: 'general',
         aiSummary: data.aiSummary ?? null,
-        aiSummaryLastGeneratedAt: (data.aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+        aiSummaryLastGeneratedAt: parseFirestoreTimestamp(data.aiSummaryLastGeneratedAt) ?? null,
       } as DailyGeneralAnnouncement);
     } else {
       callback(null);
@@ -483,7 +508,6 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
       if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
-        // Content was removed, clear the summary too.
         await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
          await logAction('clear_ai_summary_no_content', { date }, userId);
       }
@@ -511,7 +535,6 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
     try {
         const announcementSnap = await getDoc(announcementRef);
         if (announcementSnap.exists()) {
-             // Ensure summary is cleared if generation failed
              await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
              await logAction('clear_ai_summary_on_error', { date, error: String(error) }, userId);
         }
@@ -566,8 +589,8 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
             endDate: data.endDate,
             description: data.description,
             itemType: 'event', 
-            createdAt: (data.createdAt as Timestamp)?.toDate(), 
-            updatedAt: (data.updatedAt as Timestamp)?.toDate() 
+            createdAt: parseFirestoreTimestamp(data.createdAt), 
+            updatedAt: parseFirestoreTimestamp(data.updatedAt),
         } as SchoolEvent;
     });
   } catch (error) {
@@ -623,8 +646,8 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
             id: eventData.id, 
             ...oldData,
             itemType: 'event' as const, 
-            createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined, 
-            updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined 
+            createdAt: parseFirestoreTimestamp(oldData.createdAt), 
+            updatedAt: parseFirestoreTimestamp(oldData.updatedAt),
         } as SchoolEvent;
     }
     
@@ -641,8 +664,8 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
             id: afterSnap.id, 
             ...newData, 
             itemType: 'event' as const,
-            createdAt: (newData.createdAt as Timestamp)?.toDate() ?? undefined,
-            updatedAt: (newData.updatedAt as Timestamp)?.toDate() ?? undefined
+            createdAt: parseFirestoreTimestamp(newData.createdAt),
+            updatedAt: parseFirestoreTimestamp(newData.updatedAt),
         } as SchoolEvent;
     }
 
@@ -668,8 +691,8 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
           id: eventId, 
           ...oldData, 
           itemType: 'event' as const,
-          createdAt: (oldData.createdAt as Timestamp)?.toDate() ?? undefined,
-          updatedAt: (oldData.updatedAt as Timestamp)?.toDate() ?? undefined
+          createdAt: parseFirestoreTimestamp(oldData.createdAt),
+          updatedAt: parseFirestoreTimestamp(oldData.updatedAt),
       } as SchoolEvent;
       await deleteDoc(docRef);
       await logAction('delete_event', { before: prepareStateForLog(beforeState), after: null }, userId);
@@ -692,8 +715,8 @@ export const onSchoolEventsUpdate = (callback: (events: SchoolEvent[]) => void, 
       endDate: data.endDate,
       description: data.description,
       itemType: 'event' as const, 
-      createdAt:(data.createdAt as Timestamp)?.toDate(),
-      updatedAt:(data.updatedAt as Timestamp)?.toDate()
+      createdAt: parseFirestoreTimestamp(data.createdAt),
+      updatedAt: parseFirestoreTimestamp(data.updatedAt),
     } as SchoolEvent;
   })),
     (error) => {
@@ -824,7 +847,7 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
   try {
     const q = query(logsCollection, orderBy('timestamp', 'desc'), limit(limitCount));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data(), timestamp: (docSnap.data().timestamp as Timestamp)?.toDate() }));
+    return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data(), timestamp: parseFirestoreTimestamp(docSnap.data().timestamp) }));
   } catch (error) {
     console.error("Error fetching logs:", error);
     if ((error as FirestoreError).code === 'unavailable') return [];
@@ -857,8 +880,8 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         endDate: eventData.endDate,
         description: eventData.description,
         itemType: 'event', 
-        createdAt: (eventData.createdAt as Timestamp)?.toDate(),
-        updatedAt: (eventData.updatedAt as Timestamp)?.toDate(),
+        createdAt: parseFirestoreTimestamp(eventData.createdAt),
+        updatedAt: parseFirestoreTimestamp(eventData.updatedAt),
       };
       if ((event.endDate ?? event.startDate) >= monthStartDate) {
         items.push(event);
@@ -872,7 +895,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       where('date', '<=', monthEndDate),
       where('showOnCalendar', '==', true),
       orderBy('date'),
-      // orderBy('period') // Consider client-side sort for period if composite index becomes an issue
     );
     const announcementsSnapshot = await getDocs(announcementsQuery);
     announcementsSnapshot.forEach(docSnap => {
@@ -883,29 +905,32 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         period: annData.period,
         subjectIdOverride: annData.subjectIdOverride ?? null,
         text: annData.text ?? '',
-        showOnCalendar: annData.showOnCalendar ?? false, // Should be true due to query
-        updatedAt: (annData.updatedAt as Timestamp)?.toDate() ?? new Date(),
+        showOnCalendar: annData.showOnCalendar ?? false,
+        updatedAt: parseFirestoreTimestamp(annData.updatedAt) ?? new Date(),
         itemType: 'announcement',
       };
       items.push(announcementItem);
     });
     
     items.sort((a, b) => {
-        const dateA = new Date(a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date);
-        const dateB = new Date(b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date);
+        const dateAStr = a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date;
+        const dateBStr = b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date;
         
-        const timeA = dateA.getTime();
-        const timeB = dateB.getTime();
+        const dateA = parseISO(dateAStr);
+        const dateB = parseISO(dateBStr);
+
+        const timeA = isValid(dateA) ? dateA.getTime() : 0;
+        const timeB = isValid(dateB) ? dateB.getTime() : 0;
+
 
         if (timeA !== timeB) {
             return timeA - timeB;
         }
-        // If on the same day, sort by period for announcements, events could be considered "all day" or come first
         if (a.itemType === 'announcement' && b.itemType === 'announcement') {
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
-        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; // Events first
-        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  // Announcements after
+        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; 
+        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  
         return 0;
     });
     return items;
@@ -929,3 +954,4 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+
