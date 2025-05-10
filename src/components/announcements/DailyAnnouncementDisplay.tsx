@@ -10,11 +10,23 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
 import { format, isValid } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Edit, Save, X, AlertCircle, Info } from 'lucide-react';
+import { Edit, Save, X, AlertCircle, Info, Sparkles } from 'lucide-react';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
 import { upsertDailyGeneralAnnouncement } from '@/controllers/timetableController';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface DailyAnnouncementDisplayProps {
   date: Date | null;
@@ -27,32 +39,36 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
   const { toast } = useToast();
-  const { user, isAnonymous, loading: authLoading } = useAuth(); // Get auth state
+  const { user, isAnonymous, loading: authLoading } = useAuth();
   const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : '';
 
-  const canEdit = !!user || isAnonymous; // Admin or anonymous can edit announcements
+  const canEdit = !!user || isAnonymous;
 
   const handleEditClick = () => {
     if (!canEdit) return;
     setEditText(announcement?.content ?? '');
+    setSummary(null); // Clear previous summary
     setIsEditing(true);
   };
 
   const handleCancelClick = () => {
     setIsEditing(false);
     setEditText('');
+    setSummary(null);
   };
 
   const handleSaveClick = async () => {
     if (isSaving || !dateStr || !canEdit) return;
     setIsSaving(true);
     try {
-      // Pass user ID if logged in, otherwise null or 'anonymous' for logging
       const userId = user ? user.uid : (isAnonymous ? 'anonymous_general_edit' : 'unknown_user');
       await upsertDailyGeneralAnnouncement(dateStr, editText, userId);
       toast({ title: "成功", description: "今日のお知らせを保存しました。" });
       setIsEditing(false);
+      setSummary(null);
     } catch (err) {
       console.error("Failed to save general announcement:", err);
       toast({
@@ -64,6 +80,28 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       setIsSaving(false);
     }
   };
+
+  const handleSummarizeClick = async () => {
+    if (isSummarizing || !announcement?.content) return;
+    setIsSummarizing(true);
+    setSummary(null);
+    try {
+      const result = await summarizeAnnouncement({ announcementText: announcement.content });
+      setSummary(result.summary);
+      toast({ title: "要約完了", description: "お知らせの要約が生成されました。" });
+    } catch (err) {
+      console.error("Failed to summarize announcement:", err);
+      toast({
+        title: "要約エラー",
+        description: `お知らせの要約に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        variant: "destructive",
+      });
+      setSummary("要約の生成に失敗しました。");
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
 
   const renderContent = () => {
     if (isLoading || authLoading || !date) {
@@ -86,7 +124,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       );
     }
     
-    if (!user && !isAnonymous && !authLoading) { // Not logged in, not anonymous, and auth check done
+    if (!user && !isAnonymous && !authLoading) {
         return (
              <Alert variant="default" className="mt-4">
                 <Info className="h-4 w-4" />
@@ -140,9 +178,24 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     }
 
     return (
-      <div className="prose dark:prose-invert max-w-none text-sm">
-        <ReactMarkdown>{announcement.content}</ReactMarkdown>
-      </div>
+      <>
+        <div className="prose dark:prose-invert max-w-none text-sm">
+          <ReactMarkdown>{announcement.content}</ReactMarkdown>
+        </div>
+        {summary && (
+          <Card className="mt-4 bg-muted/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center">
+                <Sparkles className="w-4 h-4 mr-2 text-primary" />
+                AIによる要約
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm prose dark:prose-invert max-w-none">
+              <ReactMarkdown>{summary}</ReactMarkdown>
+            </CardContent>
+          </Card>
+        )}
+      </>
     );
   };
 
@@ -160,11 +213,39 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
           <CardTitle className="text-lg">{renderTitle()}</CardTitle>
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
-        {!isEditing && announcement?.content && date && canEdit && (
-          <Button variant="outline" size="sm" onClick={handleEditClick}>
-            <Edit className="mr-1 h-4 w-4" /> 編集
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {announcement?.content && !isEditing && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={isSummarizing}>
+                  <Sparkles className="mr-1 h-4 w-4" /> {isSummarizing ? '要約中...' : 'AI要約'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>お知らせをAIで要約しますか？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    このお知らせの内容をAIが解析し、簡潔な箇条書きに要約します。
+                    この処理には数秒かかる場合があります。
+                    <br /><br />
+                    <strong className="text-destructive">注意:</strong> AIによる要約は必ずしも完璧ではありません。重要な情報は必ず原文を確認してください。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isSummarizing}>キャンセル</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleSummarizeClick} disabled={isSummarizing}>
+                    {isSummarizing ? '要約中...' : '要約する'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {!isEditing && canEdit && (
+            <Button variant="outline" size="sm" onClick={handleEditClick}>
+              <Edit className="mr-1 h-4 w-4" /> {announcement?.content ? '編集' : '作成'}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>{renderContent()}</CardContent>
     </Card>
