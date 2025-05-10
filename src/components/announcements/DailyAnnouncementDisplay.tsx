@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
 import { format, isValid } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Edit, Save, X, AlertCircle, Info, Sparkles, Trash2 } from 'lucide-react';
+import { Edit, Save, X, AlertCircle, Info, Sparkles, Trash2, AlertTriangle } from 'lucide-react';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
 import { upsertDailyGeneralAnnouncement } from '@/controllers/timetableController';
 import { useToast } from '@/hooks/use-toast';
@@ -48,7 +48,6 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    // Update content check when announcement (potentially with new content or new summary) changes
     setCurrentContentForSummaryCheck(announcement?.content ?? null);
   }, [announcement?.content, announcement?.aiSummary]);
 
@@ -77,8 +76,6 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       await upsertDailyGeneralAnnouncement(dateStr, editText, userId);
       toast({ title: "成功", description: "今日のお知らせを保存しました。" });
       setIsEditing(false);
-      // After saving, the current content for check should match the new editText
-      // This will enable summary generation if the content indeed changed.
       if (currentContentForSummaryCheck !== editText) {
         setCurrentContentForSummaryCheck(editText); 
       }
@@ -108,8 +105,6 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     try {
       await requestSummaryGeneration(dateStr, user?.uid ?? (isAnonymous ? 'anonymous_summary_request' : 'system_summary_request'));
       toast({ title: "要約処理をリクエストしました", description: "まもなく表示が更新されます。" });
-      // After successfully requesting, update content check to prevent immediate re-generation prompt
-      // The actual summary will be updated via onSnapshot or next query refetch
       setCurrentContentForSummaryCheck(announcement.content);
       queryClient.invalidateQueries({ queryKey: ['dailyGeneralAnnouncement', dateStr] }); 
     } catch (err) {
@@ -255,6 +250,10 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                 </AlertDialog>
               )}
             </CardHeader>
+            <div className="px-6 pb-2 pt-0 text-xs text-muted-foreground flex items-start">
+              <AlertTriangle className="w-3.5 h-3.5 mr-1.5 mt-0.5 flex-shrink-0 text-amber-500" />
+              <span>注意: AIによる要約は必ずしも完璧ではありません。重要な情報は必ず原文を確認してください。</span>
+            </div>
             <CardContent className="text-sm prose dark:prose-invert max-w-none pt-0 pb-3">
               <ReactMarkdown>{announcement.aiSummary}</ReactMarkdown>
             </CardContent>
@@ -271,9 +270,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     return `${format(date, 'M月d日', { locale: ja })} (${format(date, 'EEEE', { locale: ja })}) のお知らせ`;
   };
   
-  // Show "AI要約" button if content exists, no summary yet, OR if content changed since last summary and user is an admin OR (anyone if content changed)
   const canGenerateNewSummary = announcement?.content && (!announcement.aiSummary || contentHasChanged);
-  // Show "AI要約を再生成" button if content exists, summary exists, and user is admin AND content has NOT changed (otherwise it's a new summary gen)
   const canRegenerateSummary = announcement?.content && announcement.aiSummary && isAdmin && !contentHasChanged;
 
 
@@ -296,9 +293,9 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                   <Sparkles className="mr-1 h-4 w-4" />
                   {isSummarizing
                     ? '要約中...'
-                    : canRegenerateSummary // If admin and summary exists and content NOT changed
+                    : canRegenerateSummary 
                     ? 'AI要約を再生成'
-                    : 'AI要約' // If no summary OR content changed
+                    : 'AI要約'
                   }
                 </Button>
               </AlertDialogTrigger>
@@ -340,3 +337,4 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     </Card>
   );
 }
+
