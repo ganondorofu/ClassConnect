@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -19,7 +18,7 @@ import { SubjectSelector } from '@/components/timetable/SubjectSelector';
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
-import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum, AllDays } from '@/models/timetable'; // Combined imports
 import type { DailyAnnouncement } from '@/models/announcement';
 import {
   queryFnGetTimetableSettings,
@@ -242,7 +241,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const announcement = getDailyAnnouncement(date, period);
     setSelectedSlot({ date, period, day, fixedSubjectId: fixedSlot?.subjectId ?? null, announcement });
     setAnnouncementText(announcement?.text ?? '');
-    setSubjectIdOverride(announcement?.subjectIdOverride ?? null);
+    setSubjectIdOverride(announcement?.subjectIdOverride ?? (fixedSlot?.subjectId ?? null));
     setShowOnCalendarModal(announcement?.showOnCalendar ?? false);
     setIsModalOpen(true);
   };
@@ -267,12 +266,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         text: announcementText.trim(),
         subjectIdOverride: (user && !isAnonymous) ? (subjectIdOverride ?? null) : (selectedSlot.announcement?.subjectIdOverride ?? selectedSlot.fixedSubjectId ?? null), 
         showOnCalendar: showOnCalendarModal,
-        itemType: 'announcement', // Add itemType
+        itemType: 'announcement', 
       };
       await upsertDailyAnnouncement(announcementData, userIdForLog);
       toast({ title: "成功", description: `${selectedSlot.date} ${selectedSlot.period}限目の連絡・変更を保存しました。` });
       setIsModalOpen(false);
       setSelectedSlot(null);
+      // Reset modal states
       setAnnouncementText('');
       setSubjectIdOverride(null);
       setShowOnCalendarModal(false);
@@ -294,10 +294,19 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const handleDeleteConfirmation = async () => {
     setAnnouncementText('');
-    setSubjectIdOverride(selectedSlot?.fixedSubjectId ?? null); // Reset to fixed subject on clear if admin
     setShowOnCalendarModal(false);
-    await handleSaveAnnouncement();
+
+    if (user && !isAnonymous) {
+      // For admin, "clear" means setting subject override to null (revert to fixed or become truly empty)
+      // This allows upsertDailyAnnouncement to potentially delete the document.
+      setSubjectIdOverride(null);
+    }
+    // For anonymous users, they cannot change subjectIdOverride through this modal state.
+    // handleSaveAnnouncement will use the original/fixed subject for them.
+
+    await handleSaveAnnouncement(); // Call save, which will use the new states from setXXX above
   };
+
 
   const numberOfPeriods = settings?.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
   const activeDaysSetting = settings?.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays; 
@@ -306,12 +315,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     return DisplayedWeekDaysOrder.map(dayEnum => {
       const dateForDay = weekDays.find(d => dayCodeToDayOfWeekEnum(getDay(d)) === dayEnum);
       if (!dateForDay) { 
-        // This case should ideally not happen if weekDays is Mon-Sun and DisplayedWeekDaysOrder is Mon-Sun
-        // Fallback to a generic date for the dayEnum if somehow dateForDay is undefined
-        // This part might need careful review based on how weekDays is generated.
-        // For now, let's assume weekDays will always contain the matching day.
-        // If it's possible for dateForDay to be undefined, a more robust fallback is needed.
-        const tempDate = new Date(); // Placeholder, will likely be incorrect for actual logic
+        const tempDate = new Date(); 
         console.warn(`Date not found for ${dayEnum}, using placeholder. Review weekDays generation.`);
         return { date: tempDate, dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false };
       }
@@ -381,7 +385,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </Alert>
         )}
         <CardContent className="p-0 overflow-x-auto">
-          <div className="flex sticky top-0 bg-card z-20 border-b min-w-max">{headers.map(header => header)}</div>
+          <div className="flex sticky top-0 bg-card z-20 border-b min-w-max">{headers}</div>
           {isLoadingCombined ? (
             periodNumbers.map((period) => {
               const skeletonCells = [
@@ -392,7 +396,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   </div>
                 ))
               ];
-              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{skeletonCells.map(cell => cell)}</div>;
+              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{skeletonCells}</div>;
             })
           ) : (
             periodNumbers.map((period) => {
@@ -408,8 +412,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const announcementDisplayText = announcement?.text;
                   
                   const isToday = isSameDay(date, currentDate);
-                  const isBaseSubjectDifferent = (fixedSlot?.subjectId ?? null) !== (initialFixedTimetable?.find(s => s.day === dayOfWeek && s.period === period)?.subjectId ?? null);
-                  const showSubjectChangeIndicator = (announcement?.subjectIdOverride !== undefined) && (announcement.subjectIdOverride !== (fixedSlot?.subjectId ?? null));
+                  
+                  const baseFixedSubjectId = fixedTimetable.find(s => s.day === dayOfWeek && s.period === period)?.subjectId ?? null;
+                  const showSubjectChangeIndicator = (announcement?.subjectIdOverride !== undefined) && (announcement.subjectIdOverride !== baseFixedSubjectId);
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend;
@@ -426,7 +431,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       {cellIsInteractive ? (
                         <>
                           <div className="mb-1">
-                            <div className={cn("text-sm truncate font-medium", isToday && displaySubject && "font-bold")} title={displaySubject?.name ?? (isConfigActive || isWeekend ? '未設定' : '')}>
+                            <div className={cn("text-sm truncate", displaySubject && isToday ? "font-bold" : "font-medium" )} title={displaySubject?.name ?? (isConfigActive || isWeekend ? '未設定' : '')}>
                               {displaySubject?.name ?? ((isConfigActive || isWeekend) ? '未設定' : '')}
                               {showSubjectChangeIndicator && <span className="text-xs text-destructive ml-1">(変更)</span>}
                             </div>
@@ -461,7 +466,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   );
                 })
               ];
-              return <div key={`row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{cells.map(cell=>cell)}</div>;
+              return <div key={`row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{cells}</div>;
             })
           )}
         </CardContent>
@@ -561,4 +566,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-
