@@ -17,6 +17,25 @@ export function Header() {
     router.push('/login');
   };
 
+  const CalendarLinkButton = (
+    <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
+      <Link href="/calendar" aria-label="カレンダー">
+        <CalendarDays className="h-4 w-4" />
+        <span className="hidden sm:inline ml-1">カレンダー</span>
+      </Link>
+    </Button>
+  );
+
+  const HelpLinkButton = (
+    <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
+      <Link href="/help" aria-label="ヘルプ">
+        <HelpCircle className="h-4 w-4" />
+        <span className="hidden sm:inline ml-1">ヘルプ</span>
+      </Link>
+    </Button>
+  );
+
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center px-4 md:px-8">
@@ -36,14 +55,6 @@ export function Header() {
           </Link>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-1 md:space-x-2">
-          {/* Calendar Link - Visible to all */}
-          <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
-            <Link href="/calendar" aria-label="カレンダー">
-              <CalendarDays className="h-4 w-4" />
-              <span className="hidden sm:inline ml-1">カレンダー</span>
-            </Link>
-          </Button>
-
           {loading ? (
              <div className="flex items-center gap-1 sm:gap-2">
                 <Skeleton className="h-8 w-8 sm:w-20" />
@@ -72,12 +83,8 @@ export function Header() {
                     <span className="hidden sm:inline ml-1">履歴</span>
                   </Link>
                 </Button>
-                 <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
-                  <Link href="/help" aria-label="ヘルプ">
-                    <HelpCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline ml-1">ヘルプ</span>
-                  </Link>
-                </Button>
+                {CalendarLinkButton}
+                {HelpLinkButton}
               </nav>
               <span className="text-sm text-muted-foreground hidden md:inline-block truncate max-w-xs" title={user.email ?? undefined}>
                  {user.email}
@@ -96,12 +103,8 @@ export function Header() {
                     <span className="sm:hidden">ゲスト</span>
                 </span>
              )}
-              <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
-                  <Link href="/help" aria-label="ヘルプ">
-                    <HelpCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline ml-1">ヘルプ</span>
-                  </Link>
-              </Button>
+              {CalendarLinkButton}
+              {HelpLinkButton}
              <Button variant="outline" size="sm" onClick={handleLoginClick}>
                 <LogIn className="h-4 w-4 sm:mr-1" />
                 <span className="hidden sm:inline">管理者ログイン</span>
