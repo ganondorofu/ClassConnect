@@ -1,4 +1,3 @@
-
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -58,7 +57,7 @@ const prepareStateForLog = (state: any): any => {
     }
     if (value instanceof Timestamp) return value.toDate().toISOString();
     if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
       return value;
     }
     return value;
@@ -434,7 +433,9 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
       return;
     }
     
-    if (beforeState && beforeState.content !== trimmedContent) { // Content changed, clear old summary
+    // If content changed, clear old summary, but keep it if admin is just editing and there's an existing summary.
+    // This specific condition is to ensure if content changed, a new summary is needed.
+    if (beforeState && beforeState.content !== trimmedContent) { 
         dataToSet.aiSummary = null;
         dataToSet.aiSummaryLastGeneratedAt = null;
         afterStateContent.aiSummary = null;
@@ -516,6 +517,36 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
         }
     } catch (clearError) {
         console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
+    }
+    throw error;
+  }
+};
+
+export const deleteAiSummary = async (date: string, userId: string): Promise<void> => {
+  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
+  try {
+    const announcementSnap = await getDoc(announcementRef);
+    if (!announcementSnap.exists() || !announcementSnap.data()?.aiSummary) {
+      console.log(`No AI summary to delete for announcement on ${date}.`);
+      return;
+    }
+
+    const oldSummary = announcementSnap.data()!.aiSummary;
+
+    await updateDoc(announcementRef, {
+      aiSummary: null,
+      aiSummaryLastGeneratedAt: null,
+    });
+
+    await logAction('delete_ai_summary', {
+      date,
+      deletedSummaryPreview: oldSummary ? oldSummary.substring(0, 50) + '...' : 'N/A',
+    }, userId);
+
+  } catch (error) {
+    console.error(`Error deleting AI summary for ${date}:`, error);
+    if ((error as FirestoreError).code === 'unavailable') {
+      throw new Error("オフラインのためAI要約を削除できませんでした。");
     }
     throw error;
   }
@@ -898,5 +929,3 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
-
-
