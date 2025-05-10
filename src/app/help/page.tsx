@@ -7,32 +7,55 @@ import ReactMarkdown from 'react-markdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
-import { cn } from "@/lib/utils"; // Import cn utility function
+import { cn } from "@/lib/utils";
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function HelpPage() {
-  const [markdown, setMarkdown] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [rawMarkdown, setRawMarkdown] = useState<string>('');
+  const [isLoadingMarkdown, setIsLoadingMarkdown] = useState<boolean>(true);
+  const [errorMarkdown, setErrorMarkdown] = useState<string | null>(null);
+  const { user, isAnonymous, loading: authLoading } = useAuth();
 
   useEffect(() => {
     const fetchMarkdown = async () => {
+      setIsLoadingMarkdown(true);
       try {
         const response = await fetch('/docs/USAGE.md');
         if (!response.ok) {
           throw new Error(`Failed to fetch usage guide: ${response.statusText}`);
         }
         const text = await response.text();
-        setMarkdown(text);
+        setRawMarkdown(text);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        setErrorMarkdown(err instanceof Error ? err.message : 'An unknown error occurred');
         console.error(err);
       } finally {
-        setIsLoading(false);
+        setIsLoadingMarkdown(false);
       }
     };
 
     fetchMarkdown();
   }, []);
+
+  const filterAdminContent = (markdown: string, isAdminUser: boolean): string => {
+    if (isAdminUser) {
+      return markdown;
+    }
+    // This regex removes the content between the markers, including the markers themselves.
+    // It uses a non-greedy match ([\s\S]*?) to handle multi-line content.
+    const adminSectionRegex = /<!-- ADMIN_SECTION_START -->[\s\S]*?<!-- ADMIN_SECTION_END -->/g;
+    return markdown.replace(adminSectionRegex, '');
+  };
+
+  const isAdmin = !authLoading && user && !isAnonymous;
+  const isLoading = isLoadingMarkdown || authLoading;
+  
+  // Memoize displayedMarkdown to avoid re-filtering on every render unless dependencies change
+  const displayedMarkdown = React.useMemo(() => {
+    if (isLoading || !rawMarkdown) return '';
+    return filterAdminContent(rawMarkdown, isAdmin);
+  }, [isLoading, rawMarkdown, isAdmin]);
+
 
   return (
     <MainLayout>
@@ -49,17 +72,17 @@ export default function HelpPage() {
             <Skeleton className="h-4 w-full" />
           </div>
         )}
-        {error && (
+        {errorMarkdown && !isLoading && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>エラー</AlertTitle>
             <AlertDescription>
               利用ガイドの読み込みに失敗しました。時間をおいて再度お試しください。
-              <p className="mt-2 text-xs">{error}</p>
+              <p className="mt-2 text-xs">{errorMarkdown}</p>
             </AlertDescription>
           </Alert>
         )}
-        {!isLoading && !error && (
+        {!isLoading && !errorMarkdown && displayedMarkdown && (
           <article className="prose dark:prose-invert max-w-none lg:prose-lg bg-card p-6 rounded-lg shadow-md">
             <ReactMarkdown
               components={{
@@ -81,15 +104,24 @@ export default function HelpPage() {
                   )
                 },
                 a: ({node, ...props}) => <a className="text-primary hover:underline" {...props} />,
-                // Add more custom components if needed
               }}
             >
-              {markdown}
+              {displayedMarkdown}
             </ReactMarkdown>
           </article>
+        )}
+         {!isLoading && !errorMarkdown && !displayedMarkdown && rawMarkdown && (
+          // This case means markdown was fetched but filtering resulted in empty (e.g. non-admin seeing only admin content)
+          // Or, the markdown file itself is empty after filtering (unlikely with current setup but good to handle)
+           <Alert variant="default">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>情報</AlertTitle>
+            <AlertDescription>
+              表示できるヘルプコンテンツがありません。
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     </MainLayout>
   );
 }
-
