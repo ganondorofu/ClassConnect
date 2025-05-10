@@ -1,4 +1,4 @@
-'use server';
+
 
 /**
  * @fileOverview Service for logging user and system actions to Firestore.
@@ -39,7 +39,7 @@ const prepareStateForLog = (state: any): any => {
         return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
       } catch (e) {
         console.warn(`Could not convert object to ISOString for logging, value: ${JSON.stringify(value)}`);
-        return value;
+        return value; 
       }
     }
     if (value instanceof Timestamp) return value.toDate().toISOString();
