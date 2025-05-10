@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -183,14 +182,14 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
           <ReactMarkdown>{announcement.content}</ReactMarkdown>
         </div>
         {summary && (
-          <Card className="mt-4 bg-muted/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center">
-                <Sparkles className="w-4 h-4 mr-2 text-primary" />
+          <Card className="mt-4 bg-muted/30 dark:bg-muted/50 border-primary/30 shadow-sm">
+            <CardHeader className="pb-2 pt-3">
+              <CardTitle className="text-base flex items-center font-semibold text-primary">
+                <Sparkles className="w-4 h-4 mr-2" />
                 AIによる要約
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm prose dark:prose-invert max-w-none">
+            <CardContent className="text-sm prose dark:prose-invert max-w-none pt-0 pb-3">
               <ReactMarkdown>{summary}</ReactMarkdown>
             </CardContent>
           </Card>
