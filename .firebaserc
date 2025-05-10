@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "tool-prototype"
-  }
+    "default": "classconnect-5f2on",
+    "main": "classconnect-5f2on"
+  },
+  "targets": {},
+  "etags": {}
 }
