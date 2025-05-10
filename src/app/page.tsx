@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react'; // Added Suspense
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import MainLayout from '@/components/layout/MainLayout';
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
@@ -225,7 +226,24 @@ function HomePageContent() {
 export default function Home() {
   return (
     <QueryClientProvider client={queryClient}>
-        <HomePageContent />
+        <Suspense fallback={
+          <MainLayout>
+             <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
+                 <Skeleton className="h-8 w-32 sm:w-48" />
+                 <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
+                     <Skeleton className="h-9 w-16" />
+                     <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
+                     <Skeleton className="h-9 w-24 sm:w-28" />
+                      <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
+                 </div>
+             </div>
+            <Skeleton className="h-24 sm:h-32 w-full mb-6" />
+            <Skeleton className="h-80 sm:h-96 w-full" />
+          </MainLayout>
+        }>
+          <HomePageContent />
+        </Suspense>
     </QueryClientProvider>
   );
 }
+

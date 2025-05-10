@@ -7,7 +7,7 @@
  * - SummarizeAnnouncementOutput - The return type for the summarizeAnnouncement function.
  */
 
-import { ai } from '@/ai/ai-instance'; // Corrected import path
+import { ai, isAiConfigured } from '@/ai/ai-instance'; // Corrected import path and add isAiConfigured
 import { z } from 'genkit';
 
 const SummarizeAnnouncementInputSchema = z.object({
@@ -21,11 +21,16 @@ const SummarizeAnnouncementOutputSchema = z.object({
 export type SummarizeAnnouncementOutput = z.infer<typeof SummarizeAnnouncementOutputSchema>;
 
 export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): Promise<SummarizeAnnouncementOutput> {
+  if (!isAiConfigured()) {
+    console.warn("AI is not configured. Skipping summary generation.");
+    throw new Error("AI機能は設定されていません。管理者に連絡してください。");
+  }
   return summarizeAnnouncementFlow(input);
 }
 
 const summarizePrompt = ai.definePrompt({
   name: 'summarizeAnnouncementPrompt',
+  model: 'googleai/gemini-2.0-flash', // Explicitly define model
   input: { schema: SummarizeAnnouncementInputSchema },
   output: { schema: SummarizeAnnouncementOutputSchema },
   prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
@@ -51,4 +56,3 @@ const summarizeAnnouncementFlow = ai.defineFlow(
     return output;
   }
 );
-
