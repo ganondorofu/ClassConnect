@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -13,8 +14,8 @@ import { Edit, Save, X, AlertCircle, Info, Sparkles } from 'lucide-react';
 import type { DailyGeneralAnnouncement } from '@/models/announcement';
 import { upsertDailyGeneralAnnouncement } from '@/controllers/timetableController';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
+import { useAuth } from '@/contexts/AuthContext';
+import { requestSummaryGeneration } from '@/app/actions/summaryActions'; // Import the server action
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,24 +40,23 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const [editText, setEditText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
   const { toast } = useToast();
   const { user, isAnonymous, loading: authLoading } = useAuth();
   const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : '';
 
   const canEdit = !!user || isAnonymous;
+  const isAdmin = !!user && !isAnonymous;
+  const hasExistingSummary = !!announcement?.aiSummary;
 
   const handleEditClick = () => {
     if (!canEdit) return;
     setEditText(announcement?.content ?? '');
-    setSummary(null); // Clear previous summary
     setIsEditing(true);
   };
 
   const handleCancelClick = () => {
     setIsEditing(false);
     setEditText('');
-    setSummary(null);
   };
 
   const handleSaveClick = async () => {
@@ -67,7 +67,6 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       await upsertDailyGeneralAnnouncement(dateStr, editText, userId);
       toast({ title: "成功", description: "今日のお知らせを保存しました。" });
       setIsEditing(false);
-      setSummary(null);
     } catch (err) {
       console.error("Failed to save general announcement:", err);
       toast({
@@ -80,22 +79,26 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     }
   };
 
-  const handleSummarizeClick = async () => {
-    if (isSummarizing || !announcement?.content) return;
-    setIsSummarizing(true);
-    setSummary(null);
-    try {
-      const result = await summarizeAnnouncement({ announcementText: announcement.content });
-      setSummary(result.summary);
-      toast({ title: "要約完了", description: "お知らせの要約が生成されました。" });
-    } catch (err) {
-      console.error("Failed to summarize announcement:", err);
+  const handleTriggerSummaryGeneration = async () => {
+    if (isSummarizing || !dateStr || !announcement?.content) {
       toast({
-        title: "要約エラー",
-        description: `お知らせの要約に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        title: "情報",
+        description: "要約するお知らせの内容がありません。",
+        variant: "default",
+      });
+      return;
+    }
+    setIsSummarizing(true);
+    try {
+      await requestSummaryGeneration(dateStr, user?.uid ?? 'anonymous_summary_request');
+      toast({ title: "要約処理をリクエストしました", description: "まもなく表示が更新されます。" });
+    } catch (err) {
+      console.error("Failed to request summary generation:", err);
+      toast({
+        title: "要約リクエストエラー",
+        description: `お知らせの要約リクエストに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
         variant: "destructive",
       });
-      setSummary("要約の生成に失敗しました。");
     } finally {
       setIsSummarizing(false);
     }
@@ -181,7 +184,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
         <div className="prose dark:prose-invert max-w-none text-sm">
           <ReactMarkdown>{announcement.content}</ReactMarkdown>
         </div>
-        {summary && (
+        {hasExistingSummary && (
           <Card className="mt-4 bg-muted/30 dark:bg-muted/50 border-primary/30 shadow-sm">
             <CardHeader className="pb-2 pt-3">
               <CardTitle className="text-base flex items-center font-semibold text-primary">
@@ -190,7 +193,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm prose dark:prose-invert max-w-none pt-0 pb-3">
-              <ReactMarkdown>{summary}</ReactMarkdown>
+              <ReactMarkdown>{announcement.aiSummary!}</ReactMarkdown>
             </CardContent>
           </Card>
         )}
@@ -213,17 +216,34 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {announcement?.content && !isEditing && (
+          {announcement?.content && (canEdit || isAnonymous) && ( // Check if there's content and user has rights
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" disabled={isSummarizing}>
-                  <Sparkles className="mr-1 h-4 w-4" /> {isSummarizing ? '要約中...' : 'AI要約'}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSummarizing}
+                  hidden={hasExistingSummary && !isAdmin} // Hide if summary exists & not admin
+                >
+                  <Sparkles className="mr-1 h-4 w-4" />
+                  {isSummarizing
+                    ? '要約中...'
+                    : hasExistingSummary && isAdmin
+                    ? 'AI要約を再生成'
+                    : 'AI要約'}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>お知らせをAIで要約しますか？</AlertDialogTitle>
+                  <AlertDialogTitle>
+                    {hasExistingSummary && isAdmin
+                      ? 'お知らせのAI要約を再生成しますか？'
+                      : 'お知らせをAIで要約しますか？'}
+                  </AlertDialogTitle>
                   <AlertDialogDescription>
+                    {hasExistingSummary && isAdmin
+                      ? '現在のAIによる要約が上書きされます。'
+                      : ''}
                     このお知らせの内容をAIが解析し、簡潔な箇条書きに要約します。
                     この処理には数秒かかる場合があります。
                     <br /><br />
@@ -232,8 +252,8 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={isSummarizing}>キャンセル</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleSummarizeClick} disabled={isSummarizing}>
-                    {isSummarizing ? '要約中...' : '要約する'}
+                  <AlertDialogAction onClick={handleTriggerSummaryGeneration} disabled={isSummarizing}>
+                    {isSummarizing ? '処理中...' : (hasExistingSummary && isAdmin ? '再生成する' : '要約する')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

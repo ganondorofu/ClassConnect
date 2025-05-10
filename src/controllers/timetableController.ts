@@ -18,6 +18,7 @@ import {
   FirestoreError,
   runTransaction,
   addDoc, 
+  updateDoc,
 } from 'firebase/firestore';
 import type {
   FixedTimeSlot,
@@ -26,10 +27,11 @@ import type {
   SchoolEvent,
 } from '@/models/timetable';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
-import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays } from '@/models/timetable'; // Combined imports
+import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum } from '@/models/timetable'; // Combined imports
 import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { logAction } from '@/services/logService';
 import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
+import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
 
 
 const CURRENT_CLASS_ID = 'defaultClass';
@@ -373,7 +375,15 @@ export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGe
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return { id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement;
+      return { 
+        id: docSnap.id, 
+        date: data.date, 
+        content: data.content ?? '', 
+        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), 
+        itemType: 'general',
+        aiSummary: data.aiSummary ?? null,
+        aiSummaryLastGeneratedAt: (data.aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+      } as DailyGeneralAnnouncement;
     }
     return null;
   } catch (error) {
@@ -390,21 +400,52 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
 
   try {
     const oldSnap = await getDoc(docRef);
-    if (oldSnap.exists()) beforeState = { id: date, ...oldSnap.data(), updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement;
+    if (oldSnap.exists()) {
+        beforeState = { 
+            id: date, 
+            ...oldSnap.data(), 
+            updatedAt: (oldSnap.data().updatedAt as Timestamp)?.toDate() ?? new Date(), 
+            itemType: 'general',
+            aiSummary: oldSnap.data().aiSummary ?? null,
+            aiSummaryLastGeneratedAt: (oldSnap.data().aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+        } as DailyGeneralAnnouncement;
+    }
 
-    if (!trimmedContent) {
-      if (beforeState) {
-        await deleteDoc(docRef);
+    if (!trimmedContent) { // Content is being cleared
+      if (beforeState) { // If it existed before
+        await updateDoc(docRef, {
+            content: null,
+            aiSummary: null, 
+            aiSummaryLastGeneratedAt: null,
+            updatedAt: Timestamp.now()
+        });
         await logAction('delete_general_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
       }
       return;
     }
-    const dataToSet: Omit<DailyGeneralAnnouncement, 'id'|'updatedAt'> = { date, content: trimmedContent, itemType: 'general' };
-    const afterState = { ...dataToSet, id: date, updatedAt: new Date() };
-    if (beforeState?.content !== trimmedContent) {
-      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()});
-      await logAction('upsert_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
+
+    const dataToSet: Partial<DailyGeneralAnnouncement> = {
+        date,
+        content: trimmedContent,
+        itemType: 'general',
+        updatedAt: Timestamp.now()
+    };
+    
+    let afterStateContent = { ...dataToSet, id: date, aiSummary: beforeState?.aiSummary, aiSummaryLastGeneratedAt: beforeState?.aiSummaryLastGeneratedAt };
+
+
+    if (beforeState && beforeState.content !== trimmedContent) {
+        dataToSet.aiSummary = null; // Clear old summary if content changed
+        dataToSet.aiSummaryLastGeneratedAt = null;
+        afterStateContent.aiSummary = null; // Reflect this in the 'after' state for logging
+        afterStateContent.aiSummaryLastGeneratedAt = null;
     }
+    
+    if (!beforeState || beforeState.content !== trimmedContent) {
+        await setDoc(docRef, dataToSet, { merge: true }); // Use merge true to not overwrite other fields like aiSummary if content hasn't changed
+        await logAction('upsert_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterStateContent) }, userId);
+    }
+
   } catch (error) {
     console.error(`Error upserting general announcement for ${date}:`, error);
     if ((error as FirestoreError).code === 'unavailable') throw new Error("オフラインのためお知らせを保存できませんでした。");
@@ -413,18 +454,68 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
   }
 };
 
+
 export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announcement: DailyGeneralAnnouncement | null) => void, onError?: (error: Error) => void): Unsubscribe => {
   const docRef = doc(generalAnnouncementsCollectionRef, date);
   const unsubscribe = onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
-      callback({ id: docSnap.id, date: data.date, content: data.content ?? '', updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), itemType: 'general' } as DailyGeneralAnnouncement);
+      callback({ 
+        id: docSnap.id, 
+        date: data.date, 
+        content: data.content ?? '', 
+        updatedAt: (data.updatedAt as Timestamp)?.toDate() ?? new Date(), 
+        itemType: 'general',
+        aiSummary: data.aiSummary ?? null,
+        aiSummaryLastGeneratedAt: (data.aiSummaryLastGeneratedAt as Timestamp)?.toDate() ?? null,
+      } as DailyGeneralAnnouncement);
     } else {
       callback(null);
     }
   }, (error) => { if (onError) onError(error); else console.error(`Snapshot error on general announcement for ${date}:`, error); });
   return unsubscribe;
 };
+
+export const generateAndStoreAnnouncementSummary = async (date: string, userId: string = 'system_ai_summary'): Promise<string | null> => {
+  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
+  try {
+    const announcementSnap = await getDoc(announcementRef);
+    if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
+      if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
+        await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+      }
+      console.log(`No content to summarize for announcement on ${date}.`);
+      return null;
+    }
+
+    const announcementContent = announcementSnap.data()!.content;
+    const summaryResult = await summarizeAnnouncement({ announcementText: announcementContent });
+
+    if (summaryResult && summaryResult.summary) {
+      await updateDoc(announcementRef, {
+        aiSummary: summaryResult.summary,
+        aiSummaryLastGeneratedAt: Timestamp.now(),
+      });
+      await logAction('generate_ai_summary', { date, summaryLength: summaryResult.summary.length }, userId);
+      return summaryResult.summary;
+    } else {
+      await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+      throw new Error('AI summary generation returned no content.');
+    }
+  } catch (error) {
+    console.error(`Error generating or storing AI summary for ${date}:`, error);
+    try {
+        const announcementSnap = await getDoc(announcementRef);
+        if (announcementSnap.exists()) {
+             await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+        }
+    } catch (clearError) {
+        console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
+    }
+    throw error;
+  }
+};
+
 
 export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   try {
