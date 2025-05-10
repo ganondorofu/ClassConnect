@@ -58,7 +58,7 @@ const prepareStateForLog = (state: any): any => {
     }
     if (value instanceof Timestamp) return value.toDate().toISOString();
     if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
       return value;
     }
     return value;
@@ -204,7 +204,7 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[], userId: 
   const batch = writeBatch(db);
   let changesMade = false;
   const existingSlotsData = await getFixedTimetable();
-  const existingSlotsMap: Map<string, FixedTimeSlot> = new Map(existingSlotsData.map(slot => [slot.id, slot]));
+  const existingSlotsMap: Map<string, FixedTimeSlot> = new Map(existingSlotsData.map(slot => [slot.id, slot]))
 
   const beforeStates: Array<{ id: string, subjectId: string | null }> = [];
   const afterStates: Array<{ id: string, subjectId: string | null }> = [];
@@ -411,19 +411,6 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
         } as DailyGeneralAnnouncement;
     }
 
-    if (!trimmedContent) { // Content is being cleared
-      if (beforeState) { // If it existed before
-        await updateDoc(docRef, {
-            content: null,
-            aiSummary: null, 
-            aiSummaryLastGeneratedAt: null,
-            updatedAt: Timestamp.now()
-        });
-        await logAction('delete_general_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
-      }
-      return;
-    }
-
     const dataToSet: Partial<DailyGeneralAnnouncement> = {
         date,
         content: trimmedContent,
@@ -434,15 +421,28 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
     let afterStateContent = { ...dataToSet, id: date, aiSummary: beforeState?.aiSummary, aiSummaryLastGeneratedAt: beforeState?.aiSummaryLastGeneratedAt };
 
 
-    if (beforeState && beforeState.content !== trimmedContent) {
-        dataToSet.aiSummary = null; // Clear old summary if content changed
+    if (!trimmedContent) { // Content is being cleared
+      if (beforeState) { // If it existed before
+        dataToSet.aiSummary = null; 
         dataToSet.aiSummaryLastGeneratedAt = null;
-        afterStateContent.aiSummary = null; // Reflect this in the 'after' state for logging
+        afterStateContent.aiSummary = null;
+        afterStateContent.aiSummaryLastGeneratedAt = null;
+
+        await setDoc(docRef, dataToSet, { merge: true }); // Still set content to null and update timestamp
+        await logAction('delete_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterStateContent) }, userId);
+      }
+      return;
+    }
+    
+    if (beforeState && beforeState.content !== trimmedContent) { // Content changed, clear old summary
+        dataToSet.aiSummary = null;
+        dataToSet.aiSummaryLastGeneratedAt = null;
+        afterStateContent.aiSummary = null;
         afterStateContent.aiSummaryLastGeneratedAt = null;
     }
     
-    if (!beforeState || beforeState.content !== trimmedContent) {
-        await setDoc(docRef, dataToSet, { merge: true }); // Use merge true to not overwrite other fields like aiSummary if content hasn't changed
+    if (!beforeState || beforeState.content !== trimmedContent || (beforeState.aiSummary && !dataToSet.aiSummary )) { // Log if content changed or summary was cleared
+        await setDoc(docRef, dataToSet, { merge: true });
         await logAction('upsert_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterStateContent) }, userId);
     }
 
@@ -482,7 +482,9 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
       if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
+        // Content was removed, clear the summary too.
         await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+         await logAction('clear_ai_summary_no_content', { date }, userId);
       }
       console.log(`No content to summarize for announcement on ${date}.`);
       return null;
@@ -500,6 +502,7 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
       return summaryResult.summary;
     } else {
       await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+      await logAction('clear_ai_summary_empty_result', { date }, userId);
       throw new Error('AI summary generation returned no content.');
     }
   } catch (error) {
@@ -507,7 +510,9 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
     try {
         const announcementSnap = await getDoc(announcementRef);
         if (announcementSnap.exists()) {
+             // Ensure summary is cleared if generation failed
              await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
+             await logAction('clear_ai_summary_on_error', { date, error: String(error) }, userId);
         }
     } catch (clearError) {
         console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
@@ -893,4 +898,5 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+
 

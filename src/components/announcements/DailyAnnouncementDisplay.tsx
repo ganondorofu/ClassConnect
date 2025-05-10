@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,10 +43,24 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
   const { toast } = useToast();
   const { user, isAnonymous, loading: authLoading } = useAuth();
   const dateStr = date && isValid(date) ? format(date, 'yyyy-MM-dd') : '';
+  const [currentContentForSummaryCheck, setCurrentContentForSummaryCheck] = useState<string | null | undefined>(null);
+
+  useEffect(() => {
+    if (announcement) {
+      setCurrentContentForSummaryCheck(announcement.content);
+    } else {
+      setCurrentContentForSummaryCheck(null);
+    }
+  }, [announcement]);
+
 
   const canEdit = !!user || isAnonymous;
   const isAdmin = !!user && !isAnonymous;
+  
+  // Summary exists and (content hasn't changed OR it's admin only regen)
   const hasExistingSummary = !!announcement?.aiSummary;
+  const contentChangedSinceLastSummary = announcement?.content !== currentContentForSummaryCheck && currentContentForSummaryCheck !== null;
+
 
   const handleEditClick = () => {
     if (!canEdit) return;
@@ -66,6 +81,9 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
       await upsertDailyGeneralAnnouncement(dateStr, editText, userId);
       toast({ title: "成功", description: "今日のお知らせを保存しました。" });
       setIsEditing(false);
+      if (announcement?.content !== editText) { // If content changed, update for summary check
+        setCurrentContentForSummaryCheck(editText);
+      }
     } catch (err) {
       console.error("Failed to save general announcement:", err);
       toast({
@@ -91,6 +109,8 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     try {
       await requestSummaryGeneration(dateStr, user?.uid ?? 'anonymous_summary_request');
       toast({ title: "要約処理をリクエストしました", description: "まもなく表示が更新されます。" });
+      // After requesting, update content check to prevent immediate re-generation prompt
+      setCurrentContentForSummaryCheck(announcement.content); 
     } catch (err) {
       console.error("Failed to request summary generation:", err);
       toast({
@@ -180,7 +200,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
 
     return (
       <>
-        <div className="prose dark:prose-invert max-w-none text-sm">
+        <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed">
           <ReactMarkdown>{announcement.content}</ReactMarkdown>
         </div>
         {hasExistingSummary && (
@@ -207,7 +227,8 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     return `${format(date, 'M月d日', { locale: ja })} (${format(date, 'EEEE', { locale: ja })}) のお知らせ`;
   };
   
-  const showSummaryButton = announcement?.content && ( (hasExistingSummary && isAdmin) || !hasExistingSummary && (canEdit || isAnonymous) );
+  const showInitialSummaryButton = announcement?.content && !announcement.aiSummary;
+  const showRegenerateButton = announcement?.content && announcement.aiSummary && isAdmin;
 
 
   return (
@@ -218,7 +239,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {showSummaryButton && (
+          {(showInitialSummaryButton || showRegenerateButton) && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
@@ -229,7 +250,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                   <Sparkles className="mr-1 h-4 w-4" />
                   {isSummarizing
                     ? '要約中...'
-                    : hasExistingSummary && isAdmin
+                    : showRegenerateButton
                     ? 'AI要約を再生成'
                     : 'AI要約'}
                 </Button>
@@ -237,12 +258,12 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>
-                    {hasExistingSummary && isAdmin
+                    {showRegenerateButton
                       ? 'お知らせのAI要約を再生成しますか？'
                       : 'お知らせをAIで要約しますか？'}
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    {hasExistingSummary && isAdmin
+                    {showRegenerateButton
                       ? '現在のAIによる要約が上書きされます。'
                       : ''}
                     このお知らせの内容をAIが解析し、簡潔な箇条書きに要約します。
@@ -254,7 +275,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={isSummarizing}>キャンセル</AlertDialogCancel>
                   <AlertDialogAction onClick={handleTriggerSummaryGeneration} disabled={isSummarizing || !announcement?.content}>
-                    {isSummarizing ? '処理中...' : (hasExistingSummary && isAdmin ? '再生成する' : '要約する')}
+                    {isSummarizing ? '処理中...' : (showRegenerateButton ? '再生成する' : '要約する')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
