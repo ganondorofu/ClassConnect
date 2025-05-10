@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -207,6 +206,9 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
     }
     return `${format(date, 'M月d日', { locale: ja })} (${format(date, 'EEEE', { locale: ja })}) のお知らせ`;
   };
+  
+  const showSummaryButton = announcement?.content && ( (hasExistingSummary && isAdmin) || !hasExistingSummary && (canEdit || isAnonymous) );
+
 
   return (
     <Card className="mb-6 shadow-md">
@@ -216,14 +218,13 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
           <CardDescription>クラス全体への連絡事項です。</CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {announcement?.content && (canEdit || isAnonymous) && ( // Check if there's content and user has rights
+          {showSummaryButton && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={isSummarizing}
-                  hidden={hasExistingSummary && !isAdmin} // Hide if summary exists & not admin
+                  disabled={isSummarizing || !announcement?.content}
                 >
                   <Sparkles className="mr-1 h-4 w-4" />
                   {isSummarizing
@@ -252,7 +253,7 @@ export function DailyAnnouncementDisplay({ date, announcement, isLoading, error 
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={isSummarizing}>キャンセル</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleTriggerSummaryGeneration} disabled={isSummarizing}>
+                  <AlertDialogAction onClick={handleTriggerSummaryGeneration} disabled={isSummarizing || !announcement?.content}>
                     {isSummarizing ? '処理中...' : (hasExistingSummary && isAdmin ? '再生成する' : '要約する')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
