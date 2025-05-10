@@ -206,7 +206,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
 
         } else if (action.startsWith('update_') || action.startsWith('upsert_')) {
              const docId = before?.id ?? after?.id ?? (action.includes('settings') ? 'timetable' : (action.includes('general_announcement') ? before?.date ?? after?.date : null));
-             if (!docId) throw new Error(`Cannot determine document ID to update for rollback of action ${action} (Log ID: ${logId)). Before: ${JSON.stringify(before)}, After: ${JSON.stringify(after)}`);
+             if (!docId) throw new Error(`Cannot determine document ID to update for rollback of action ${action} (Log ID: ${logId}). Before: ${JSON.stringify(before)}, After: ${JSON.stringify(after)}`);
              const collectionPath = getCollectionPathForAction(action);
              if (!collectionPath) throw new Error(`Unsupported action type for rollback: ${action}`);
              const docToUpdateRef = doc(db, collectionPath, docId);
