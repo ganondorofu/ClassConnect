@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
         net: false,
         child_process: false, // Often a dependency of server-side packages
         module: false, // Sometimes needed for similar reasons
+        async_hooks: false, // Added to resolve 'async_hooks' module not found error
       };
     }
 
