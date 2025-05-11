@@ -30,7 +30,7 @@ import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, DayOfWeek as DayOfWee
 import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
 import { logAction } from '@/services/logService';
 import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
-import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
+// Removed: import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
 
 
 const CURRENT_CLASS_ID = 'defaultClass';
@@ -186,6 +186,7 @@ export const onTimetableSettingsUpdate = (
   const unsubscribe = onSnapshot(
     docRef,
     (docSnap) => {
+      let newSettings: TimetableSettings;
       if (docSnap.exists()) {
         const data = docSnap.data();
         const activeDays =
@@ -194,14 +195,15 @@ export const onTimetableSettingsUpdate = (
           data.activeDays.length > 0
             ? data.activeDays
             : DEFAULT_TIMETABLE_SETTINGS.activeDays;
-        callback({
+        newSettings = {
           numberOfPeriods:
             data.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
           activeDays,
-        });
+        };
       } else {
-        callback(DEFAULT_TIMETABLE_SETTINGS);
+        newSettings = DEFAULT_TIMETABLE_SETTINGS;
       }
+      callback(newSettings);
     },
     (error) => {
       if (onError) onError(error);
@@ -320,7 +322,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
   }
 };
 
-export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>, userId: string = 'system_upsert_announcement'): Promise<void> => {
+export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>, userId: string = 'system_upsert_announcement', isClearing: boolean = false): Promise<void> => {
   const { date, period } = announcementData;
   const docId = `${date}_${period}`;
   const docRef = doc(dailyAnnouncementsCollectionRef, docId);
@@ -343,13 +345,25 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
       } as DailyAnnouncement;
     }
 
-    if (!text && subjectIdOverride === null && !showOnCalendar) {
-      if (beforeState) {
+    const isEffectivelyEmpty = !text && subjectIdOverride === null && !showOnCalendar;
+
+    if (isClearing && isEffectivelyEmpty) {
+      if (beforeState) { // Only delete if it existed
         await deleteDoc(docRef);
         await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
       }
-      return;
+      return; // Done if clearing and it's already effectively empty or was deleted.
     }
+    
+    // If not clearing, but it's effectively empty, and it existed before, delete it.
+    if (!isClearing && isEffectivelyEmpty) {
+        if (beforeState) {
+             await deleteDoc(docRef);
+             await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
+        }
+        return;
+    }
+
 
     const dataToSet: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date, period, subjectIdOverride, text, showOnCalendar, itemType: 'announcement' };
     const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: new Date() }; 
@@ -501,80 +515,6 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
   }, (error) => { if (onError) onError(error); else console.error(`Snapshot error on general announcement for ${date}:`, error); });
   return unsubscribe;
 };
-
-export const generateAndStoreAnnouncementSummary = async (date: string, userId: string = 'system_ai_summary'): Promise<string | null> => {
-  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
-  try {
-    const announcementSnap = await getDoc(announcementRef);
-    if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
-      if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
-        await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
-         await logAction('clear_ai_summary_no_content', { date }, userId);
-      }
-      console.log(`No content to summarize for announcement on ${date}.`);
-      return null;
-    }
-
-    const announcementContent = announcementSnap.data()!.content;
-    const summaryResult = await summarizeAnnouncement({ announcementText: announcementContent });
-
-    if (summaryResult && summaryResult.summary) {
-      await updateDoc(announcementRef, {
-        aiSummary: summaryResult.summary,
-        aiSummaryLastGeneratedAt: Timestamp.now(),
-      });
-      await logAction('generate_ai_summary', { date, summaryLength: summaryResult.summary.length }, userId);
-      return summaryResult.summary;
-    } else {
-      await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
-      await logAction('clear_ai_summary_empty_result', { date }, userId);
-      throw new Error('AI summary generation returned no content.');
-    }
-  } catch (error) {
-    console.error(`Error generating or storing AI summary for ${date}:`, error);
-    try {
-        const announcementSnap = await getDoc(announcementRef);
-        if (announcementSnap.exists()) {
-             await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
-             await logAction('clear_ai_summary_on_error', { date, error: String(error) }, userId);
-        }
-    } catch (clearError) {
-        console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
-    }
-    throw error;
-  }
-};
-
-export const deleteAiSummary = async (date: string, userId: string): Promise<void> => {
-  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
-  try {
-    const announcementSnap = await getDoc(announcementRef);
-    if (!announcementSnap.exists() || !announcementSnap.data()?.aiSummary) {
-      console.log(`No AI summary to delete for announcement on ${date}.`);
-      return;
-    }
-
-    const oldSummary = announcementSnap.data()!.aiSummary;
-
-    await updateDoc(announcementRef, {
-      aiSummary: null,
-      aiSummaryLastGeneratedAt: null,
-    });
-
-    await logAction('delete_ai_summary', {
-      date,
-      deletedSummaryPreview: oldSummary ? oldSummary.substring(0, 50) + '...' : 'N/A',
-    }, userId);
-
-  } catch (error) {
-    console.error(`Error deleting AI summary for ${date}:`, error);
-    if ((error as FirestoreError).code === 'unavailable') {
-      throw new Error("オフラインのためAI要約を削除できませんでした。");
-    }
-    throw error;
-  }
-};
-
 
 export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   try {
@@ -954,4 +894,3 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
-

@@ -1,6 +1,6 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { generateAndStoreAnnouncementSummary } from '@/controllers/timetableController';
+import { generateAndStoreAnnouncementSummary } from '@/services/aiSummarizationService'; // Updated import
 import type { FirebaseError } from 'firebase/app';
 
 export async function POST(request: NextRequest) {

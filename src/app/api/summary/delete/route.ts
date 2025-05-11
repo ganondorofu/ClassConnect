@@ -1,6 +1,6 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { deleteAiSummary } from '@/controllers/timetableController';
+import { deleteAiSummary } from '@/services/aiSummarizationService'; // Updated import
 import type { FirebaseError } from 'firebase/app';
 
 export async function POST(request: NextRequest) {
