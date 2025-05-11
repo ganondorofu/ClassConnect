@@ -2,7 +2,7 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  // output: 'export', // Commented out or removed to enable server-side API routes
+  output: 'export', // Uncommented to enable static site generation
   images: {
     unoptimized: true, 
     remotePatterns: [
