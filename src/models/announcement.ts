@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 /**
@@ -21,6 +22,8 @@ export interface DailyAnnouncement {
   showOnCalendar?: boolean;
   /** Property to help differentiate in combined lists */
   itemType: 'announcement';
+  /** Indicates if the slot was manually cleared by the user, overriding auto-population */
+  isManuallyCleared?: boolean;
 }
 
 /**
