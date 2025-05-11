@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview A Genkit flow for summarizing announcement text.
@@ -7,7 +8,7 @@
  * - SummarizeAnnouncementOutput - The return type for the summarizeAnnouncement function.
  */
 
-import { ai, isAiConfigured } from '@/ai/ai-instance'; // Corrected import path and add isAiConfigured
+import { ai, isAiConfigured } from '@/ai/ai-instance'; 
 import { z } from 'genkit';
 
 const SummarizeAnnouncementInputSchema = z.object({
@@ -21,16 +22,18 @@ const SummarizeAnnouncementOutputSchema = z.object({
 export type SummarizeAnnouncementOutput = z.infer<typeof SummarizeAnnouncementOutputSchema>;
 
 export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): Promise<SummarizeAnnouncementOutput> {
+  console.log('[AI Flow Entry] summarizeAnnouncement called.');
   if (!isAiConfigured()) {
-    console.warn("AI is not configured. Skipping summary generation.");
+    console.warn("[AI Flow Entry] AI is not configured (isAiConfigured() returned false). Skipping summary generation.");
     throw new Error("AI機能は設定されていません。管理者に連絡してください。");
   }
+  console.log('[AI Flow Entry] AI is configured. Proceeding to call summarizeAnnouncementFlow.');
   return summarizeAnnouncementFlow(input);
 }
 
 const summarizePrompt = ai.definePrompt({
   name: 'summarizeAnnouncementPrompt',
-  model: 'googleai/gemini-2.0-flash', // Explicitly define model
+  model: 'googleai/gemini-2.0-flash', 
   input: { schema: SummarizeAnnouncementInputSchema },
   output: { schema: SummarizeAnnouncementOutputSchema },
   prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
@@ -49,10 +52,20 @@ const summarizeAnnouncementFlow = ai.defineFlow(
     outputSchema: SummarizeAnnouncementOutputSchema,
   },
   async (input) => {
-    const { output } = await summarizePrompt(input);
-    if (!output) {
-      throw new Error('Failed to generate summary.');
+    try {
+      console.log(`[Genkit Flow summarizeAnnouncementFlow] Starting for text: ${input.announcementText.substring(0, 70)}...`);
+      const { output } = await summarizePrompt(input);
+      if (!output) {
+        console.error('[Genkit Flow summarizeAnnouncementFlow] summarizePrompt returned no output.');
+        throw new Error('Failed to generate summary from AI.');
+      }
+      console.log(`[Genkit Flow summarizeAnnouncementFlow] Summary generated successfully. Length: ${output.summary.length}`);
+      return output;
+    } catch (flowError: any) {
+      console.error(`[Genkit Flow summarizeAnnouncementFlow] Error: ${flowError.message}`, flowError.stack, JSON.stringify(flowError, Object.getOwnPropertyNames(flowError)));
+      // It's better to throw a new error with a message that can be displayed to the user,
+      // or let the controller handle the specifics of the error.
+      throw new Error(`AI要約フローでエラーが発生しました。詳細はサーバーログを確認してください。 (Original: ${flowError.message || 'Unknown AI flow error'})`);
     }
-    return output;
   }
 );
