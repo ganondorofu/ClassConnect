@@ -152,8 +152,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
     queryKey: ['timetableSettings'],
     queryFn: queryFnGetTimetableSettings,
-    staleTime: 1000 * 60 * 5, // Increased staleTime
-    refetchOnWindowFocus: false, // Avoid too frequent refetches
+    staleTime: 1000 * 60 * 5, 
+    refetchOnWindowFocus: false, 
     onError: handleQueryError('timetableSettings'),
     enabled: !isOffline && (!!user || isAnonymous),
   });
@@ -332,12 +332,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     
     let subjectIdOverrideToPersist: string | null = subjectIdOverride ?? null;
 
-    if (isAnonymous) {
-      const baseSubjectId = selectedSlot.baseFixedSubjectId ?? null;
-      if (!textToPersist && !showOnCalendarToPersist && subjectIdOverrideToPersist === baseSubjectId) {
-        subjectIdOverrideToPersist = null;
-      }
-    }
+    // This is handled by the controller logic, but being explicit client-side can be good.
+    const isManuallyCleared = false; // When saving, it's not a manual clear operation.
 
     try {
       const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_edit' : 'unknown_user');
@@ -349,7 +345,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         subjectIdOverride: subjectIdOverrideToPersist,
         showOnCalendar: showOnCalendarToPersist,
         itemType: 'announcement',
-        isManuallyCleared: false, 
+        isManuallyCleared: isManuallyCleared, 
       };
 
       await upsertDailyAnnouncement(announcementData, userIdForLog);
@@ -397,10 +393,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date: date,
         period: period,
         text: '',
-        subjectIdOverride: null, // Reverts to fixed subject implicitly
+        subjectIdOverride: null, 
         showOnCalendar: false,
         itemType: 'announcement',
-        isManuallyCleared: true, // Mark that this slot should not be auto-populated by applyFixedTimetableForFuture
+        isManuallyCleared: true, 
       }, userIdForLog);
 
       toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアし、基本の時間割に戻しました。` });
@@ -522,26 +518,27 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 ...displayDays.map(({ date, dayOfWeek, isConfigActive, isWeekend, hasEvents }) => {
                   const dateStr = format(date, 'yyyy-MM-dd');
                   const fixedSlot = getFixedSlot(dayOfWeek, period);
+                  const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
                   const announcement = getDailyAnnouncement(dateStr, period);
                   
-                  const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
-                  let displaySubjectId = baseFixedSubjectId;
-                  if (announcement && announcement.subjectIdOverride !== undefined) {
-                      displaySubjectId = announcement.subjectIdOverride;
+                  let finalDisplaySubjectId: string | null = baseFixedSubjectId;
+                  let isDailyChangeForSubject = false;
+
+                  if (announcement) {
+                      if (announcement.isManuallyCleared) {
+                          finalDisplaySubjectId = baseFixedSubjectId;
+                      } else if (typeof announcement.subjectIdOverride !== 'undefined') {
+                          finalDisplaySubjectId = announcement.subjectIdOverride;
+                          isDailyChangeForSubject = true;
+                      }
                   }
-                  const displaySubject = getSubjectById(displaySubjectId);
+                  const displaySubject = getSubjectById(finalDisplaySubjectId);
                   const announcementDisplayText = announcement?.text;
-                  
                   const isToday = isSameDay(date, currentDate);
                   
-                  // Show "(変更)" only if subjectIdOverride is different from baseFixedSubjectId AND not null
-                  // AND the slot has not been manually cleared.
-                  const showSubjectChangeIndicator = 
-                    announcement?.subjectIdOverride !== undefined &&
-                    announcement.subjectIdOverride !== null && // Explicit override exists
-                    announcement.subjectIdOverride !== baseFixedSubjectId && // And it's different from fixed
-                    !announcement?.isManuallyCleared; // And not manually cleared
-
+                  const showSubjectChangeIndicator =
+                      isDailyChangeForSubject &&
+                      finalDisplaySubjectId !== baseFixedSubjectId;
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY;
@@ -559,17 +556,17 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                         <>
                           <div className="mb-1 flex-shrink-0">
                             <div className={cn("text-sm truncate", displaySubject && isToday ? "font-bold" : "font-medium", showSubjectChangeIndicator && "text-red-600 dark:text-red-400" )} title={displaySubject?.name ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
-                              {announcement?.isManuallyCleared ? <span className="text-muted-foreground italic">未設定 (クリア済)</span> : displaySubject?.name ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
+                              {displaySubject?.name ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
                               {showSubjectChangeIndicator && <span className="text-xs ml-1">(変更)</span>}
                             </div>
-                            {displaySubject?.teacherName && !announcement?.isManuallyCleared && (
+                            {displaySubject?.teacherName && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
                                 <User className="w-3 h-3 shrink-0" />{displaySubject.teacherName}
                               </div>
                             )}
                           </div>
                           <div className="text-xs flex-grow mb-1 break-words overflow-hidden">
-                            {announcementDisplayText && !announcement?.isManuallyCleared && (
+                            {announcementDisplayText && (
                               <div className="p-1 rounded bg-card border border-dashed border-accent/50 dark:border-accent/30">
                                 <p className="text-foreground whitespace-pre-wrap">{announcementDisplayText}</p>
                               </div>
@@ -582,7 +579,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               </Button>
                             </div>
                           )}
-                           {!displaySubject && !announcementDisplayText && !announcement?.isManuallyCleared && (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY || hasEvents) && (
+                           {!displaySubject && !announcementDisplayText && (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY || hasEvents) && (
                              <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">{hasEvents ? '行事日' : (isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) && !isConfigActive ? '休日' : ''}</div>
                           )}
                         </>
@@ -714,3 +711,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+

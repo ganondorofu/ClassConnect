@@ -81,7 +81,7 @@ function CalendarPageContent() {
   const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<CalendarItemUnion[], Error>({
     queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
-    staleTime: 1000 * 60 * 1, 
+    staleTime: 0, // Ensure fresh data is fetched after invalidation
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
     refetchOnMount: true, 
@@ -383,8 +383,8 @@ function CalendarPageContent() {
                   day: cn(
                     "inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
-                     buttonVariants({ variant: "ghost" }), // Apply ghost variant for consistent no-hover bg
-                    "hover:bg-transparent focus:bg-transparent" // Override hover/focus for day cells
+                     buttonVariants({ variant: "ghost" }), 
+                    "hover:bg-transparent focus:bg-transparent" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/80 focus:bg-primary/90 focus:text-primary-foreground", 
                   day_today: "border border-primary/30", 
