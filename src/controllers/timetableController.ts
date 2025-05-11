@@ -310,6 +310,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
         showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
         updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
         itemType: 'announcement',
+        isManuallyCleared: data.isManuallyCleared === undefined ? false : data.isManuallyCleared,
       } as DailyAnnouncement;
     });
   } catch (error) {
@@ -331,6 +332,9 @@ export const upsertDailyAnnouncement = async (
   const textToPersist = announcementData.text?.trim() ?? '';
   const subjectIdOverrideToPersist = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride;
   const showOnCalendarToPersist = announcementData.showOnCalendar === undefined ? false : announcementData.showOnCalendar;
+  // If isManuallyCleared is explicitly passed (e.g. for a clear operation), use it. Otherwise, default to false.
+  const isManuallyClearedToPersist = announcementData.isManuallyCleared === true;
+
 
   let beforeState: DailyAnnouncement | null = null;
 
@@ -345,37 +349,54 @@ export const upsertDailyAnnouncement = async (
         showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
         updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(),
         itemType: 'announcement',
+        isManuallyCleared: oldData.isManuallyCleared === undefined ? false : oldData.isManuallyCleared,
       } as DailyAnnouncement;
     }
 
-    const isEffectivelyEmpty = textToPersist === '' && subjectIdOverrideToPersist === null && !showOnCalendarToPersist;
+    // Determine if this upsert represents a "clear" operation or saving content.
+    // A "clear" operation is identified by the caller explicitly setting isManuallyClearedToPersist to true.
+    let dataToSet: Partial<DailyAnnouncement>;
+    let actionType: string;
 
-    if (isEffectivelyEmpty) {
-      if (beforeState) { // Only delete if it existed
-        await deleteDoc(docRef);
-        await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null, reason: "empty_upsert" }, userId);
-      }
-      return; // Done if effectively empty
+    if (isManuallyClearedToPersist) {
+        // This is an explicit "clear" operation.
+        dataToSet = {
+            date,
+            period,
+            text: '', // Cleared text
+            subjectIdOverride: null, // Cleared subject override
+            showOnCalendar: false, // Cleared calendar display
+            isManuallyCleared: true,
+            itemType: 'announcement',
+            updatedAt: Timestamp.now(),
+        };
+        actionType = 'clear_announcement_slot';
+    } else {
+        // This is a regular content save.
+        dataToSet = { 
+            date, 
+            period, 
+            subjectIdOverride: subjectIdOverrideToPersist, 
+            text: textToPersist, 
+            showOnCalendar: showOnCalendarToPersist, 
+            itemType: 'announcement',
+            isManuallyCleared: false, // When saving content, it's not manually cleared
+            updatedAt: Timestamp.now(),
+        };
+        actionType = 'upsert_announcement';
     }
     
-    const dataToSet: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { 
-      date, 
-      period, 
-      subjectIdOverride: subjectIdOverrideToPersist, 
-      text: textToPersist, 
-      showOnCalendar: showOnCalendarToPersist, 
-      itemType: 'announcement' 
-    };
-    const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: new Date() };
+    const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: (dataToSet.updatedAt as Timestamp).toDate() } as DailyAnnouncement;
 
     const hasChanged = !beforeState ||
-                       beforeState.text !== textToPersist ||
-                       (beforeState.subjectIdOverride ?? null) !== (subjectIdOverrideToPersist ?? null) ||
-                       (beforeState.showOnCalendar ?? false) !== (showOnCalendarToPersist ?? false);
+                       beforeState.text !== dataToSet.text ||
+                       (beforeState.subjectIdOverride ?? null) !== (dataToSet.subjectIdOverride ?? null) ||
+                       (beforeState.showOnCalendar ?? false) !== (dataToSet.showOnCalendar ?? false) ||
+                       (beforeState.isManuallyCleared ?? false) !== (dataToSet.isManuallyCleared ?? false);
 
     if (hasChanged) {
-      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()});
-      await logAction('upsert_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
+      await setDoc(docRef, dataToSet); // Using setDoc will overwrite or create
+      await logAction(actionType, { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
     }
   } catch (error) {
     console.error("Error upserting daily announcement:", error);
@@ -385,6 +406,8 @@ export const upsertDailyAnnouncement = async (
   }
 };
 
+// This function is kept for potential direct deletions if ever needed by other logic,
+// but the "Clear" button in TimetableGrid now uses upsertDailyAnnouncement with specific "cleared" state.
 export const deleteDailyAnnouncementById = async (docId: string, userId: string): Promise<void> => {
   const docRef = doc(dailyAnnouncementsCollectionRef, docId);
   let beforeState: DailyAnnouncement | null = null;
@@ -401,6 +424,7 @@ export const deleteDailyAnnouncementById = async (docId: string, userId: string)
         showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
         updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(),
         itemType: 'announcement',
+        isManuallyCleared: oldData.isManuallyCleared ?? false,
       } as DailyAnnouncement;
       
       await deleteDoc(docRef);
@@ -430,6 +454,7 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
             showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
             updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
             itemType: 'announcement',
+            isManuallyCleared: data.isManuallyCleared === undefined ? false : data.isManuallyCleared,
         } as DailyAnnouncement;
     }));
   }, (error) => {
@@ -551,16 +576,11 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
 export const generateAndStoreAnnouncementSummary = async (date: string, userId: string = 'system_ai_summary'): Promise<string | null> => {
   const announcementRef = doc(generalAnnouncementsCollectionRef, date);
   try {
-    console.log(`[AI Summary Controller] Attempting to generate summary for date: ${date}, userId: ${userId}`);
     if (!process.env.GOOGLE_GENAI_API_KEY) {
-        console.error("[AI Summary Controller] CRITICAL: GOOGLE_GENAI_API_KEY is not set on the server.");
         throw new Error("AI機能のサーバー設定に問題があります。APIキーが設定されていません。");
     }
-    console.log("[AI Summary Controller] GOOGLE_GENAI_API_KEY seems to be set.");
-
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
-      console.log(`[AI Summary Controller] No content to summarize for announcement on ${date}. Clearing existing summary if any.`);
       if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
         await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
         await logAction('clear_ai_summary_no_content', { date }, userId);
@@ -568,12 +588,8 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
       return null;
     }
 
-    const announcementContent = announcementSnap.data()!.content;
-    console.log(`[AI Summary Controller] Content found for ${date}, length: ${announcementContent.length}. Calling AI flow.`);
-    
+    const announcementContent = announcementSnap.data()!.content;    
     const summaryResult = await summarizeAnnouncement({ announcementText: announcementContent });
-    console.log(`[AI Summary Controller] AI flow returned for ${date}. Summary: ${summaryResult?.summary ? summaryResult.summary.substring(0,100)+'...' : 'No summary'}`);
-
 
     if (summaryResult && summaryResult.summary) {
       await updateDoc(announcementRef, {
@@ -581,27 +597,27 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
         aiSummaryLastGeneratedAt: Timestamp.now(),
       });
       await logAction('generate_ai_summary', { date, summaryLength: summaryResult.summary.length }, userId);
-      console.log(`[AI Summary Controller] Successfully stored AI summary for ${date}.`);
       return summaryResult.summary;
     } else {
-      console.warn(`[AI Summary Controller] AI summary generation returned no content for ${date}. Clearing existing summary.`);
       await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
       await logAction('clear_ai_summary_empty_result', { date }, userId);
       throw new Error('AI summary generation returned no content.');
     }
   } catch (error: any) {
-    console.error(`[AI Summary Controller] Full error during generateAndStoreAnnouncementSummary for ${date}:`, error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    console.error(`Full error during generateAndStoreAnnouncementSummary for ${date}:`, error);
     try {
         const announcementSnap = await getDoc(announcementRef);
         if (announcementSnap.exists()) {
-             console.log(`[AI Summary Controller] Clearing AI summary on error for ${date}.`);
              await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
              await logAction('clear_ai_summary_on_error', { date, error: String(error.message || error) }, userId);
         }
     } catch (clearError: any) {
-        console.error(`[AI Summary Controller] Failed to clear AI summary on error for ${date}:`, clearError.message, clearError.stack);
+        console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
     }
-    throw error;
+    if (error.message && error.message.includes("AI機能は設定されていません")) {
+        throw error;
+    }
+    throw new Error(`AI要約の生成または保存中にエラーが発生しました: ${error.message || '不明なエラー'}`);
   }
 };
 
@@ -813,11 +829,16 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
       for (const fixedSlot of fixedSlotsForDay) {
         if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) continue;
         const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
+        
+        if (existingAnn?.isManuallyCleared) { // Respect manually cleared slots
+            continue; 
+        }
+
         const fixedSubjectIdOrNull = fixedSlot.subjectId ?? null;
         
         if (!existingAnn || (!existingAnn.text && (existingAnn.subjectIdOverride ?? null) === null && !existingAnn.showOnCalendar)) {
           const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${fixedSlot.period}`);
-          const newAnnouncementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, itemType: 'announcement' };
+          const newAnnouncementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date: dateStr, period: fixedSlot.period, subjectIdOverride: fixedSubjectIdOrNull, text: '', showOnCalendar: false, itemType: 'announcement', isManuallyCleared: false };
           
           if (!existingAnn || (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull) {
             batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()}); 
@@ -870,19 +891,22 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
         const existingAnnForLog = existingAnnouncementsMap.get(period);
         if (existingAnnForLog) beforeStates[dateStr].push(prepareStateForLog(existingAnnForLog)); else beforeStates[dateStr].push(null);
         
-        const newAnnouncementData: Omit<DailyAnnouncement, 'id'|'updatedAt'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, itemType: 'announcement' };
+        const newAnnouncementData: Omit<DailyAnnouncement, 'id'|'updatedAt'> = { date: dateStr, period: period, subjectIdOverride: fixedSlot?.subjectId ?? null, text: '', showOnCalendar: false, itemType: 'announcement', isManuallyCleared: false };
         
         const existingDoc = existingAnnouncementsMap.get(period);
+        // Only overwrite if it's not manually cleared OR if it IS manually cleared but we are resetting it to default.
+        // The current logic implies resetting *everything* to default.
         if (existingDoc && 
             ( (existingDoc.text !== '') || 
               ((existingDoc.subjectIdOverride ?? null) !== (fixedSlot?.subjectId ?? null)) ||
-              (existingDoc.showOnCalendar !== false)
+              (existingDoc.showOnCalendar !== false) ||
+              (existingDoc.isManuallyCleared === true) // If it was manually cleared, reset it too
             )
            ) {
             batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()});
             operationsCount++;
             dateNeedsUpdate = true;
-        } else if (!existingDoc && fixedSlot?.subjectId !== null) { 
+        } else if (!existingDoc && (fixedSlot?.subjectId !== null || fixedSlot?.subjectId === null /* ensure all slots are created up to numberOfPeriods*/ ) ) { 
              batch.set(docRef, {...newAnnouncementData, updatedAt: Timestamp.now()});
              operationsCount++;
              dateNeedsUpdate = true;
@@ -966,13 +990,14 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         showOnCalendar: annData.showOnCalendar ?? false,
         updatedAt: parseFirestoreTimestamp(annData.updatedAt) ?? new Date(),
         itemType: 'announcement',
+        isManuallyCleared: annData.isManuallyCleared ?? false,
       };
       items.push(announcementItem);
     });
     
     items.sort((a, b) => {
         const dateAStr = a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date;
-        const dateBStr = b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date;
+        const dateBStr = b.itemType === 'event' ? (b as SchoolEvent).startDate : (a as DailyAnnouncement).date;
         
         const dateA = parseISO(dateAStr);
         const dateB = parseISO(dateBStr);
