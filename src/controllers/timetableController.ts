@@ -1,3 +1,4 @@
+
 import { db } from '@/config/firebase';
 import {
   collection,
@@ -55,7 +56,6 @@ const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
     return isValid(date) ? date : undefined;
   }
   if (typeof timestampField === 'object' && timestampField.seconds !== undefined && timestampField.nanoseconds !== undefined) {
-    // Plain object masquerading as Timestamp (e.g. from JSON.parse)
     try {
       return new Timestamp(timestampField.seconds, timestampField.nanoseconds).toDate();
     } catch (e) {
@@ -152,7 +152,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
           }
         } else {
           const q = query(fixedTimetableCollectionRef, where('period', '>', newPeriodsValue), where('day', 'in', daysToUpdate));
-          const snapshot = await getDocs(q); // Needs await
+          const snapshot = await getDocs(q); 
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
       } else if (settingsUpdates.activeDays && JSON.stringify(newActiveDays.sort()) !== JSON.stringify(currentActiveDaysInTx.sort())) {
@@ -163,7 +163,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
         for (const day of addedDays) for (let period = 1; period <= periodsToManage; period++) transaction.set(doc(fixedTimetableCollectionRef, `${day}_${period}`), { id: `${day}_${period}`, day, period, subjectId: null });
         if (removedDays.length > 0) {
           const q = query(fixedTimetableCollectionRef, where('day', 'in', removedDays));
-          const snapshot = await getDocs(q); // Needs await
+          const snapshot = await getDocs(q); 
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
       }
@@ -320,13 +320,18 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
   }
 };
 
-export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>, userId: string = 'system_upsert_announcement', isClearing: boolean = false): Promise<void> => {
+export const upsertDailyAnnouncement = async (
+  announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>,
+  userId: string = 'system_upsert_announcement'
+): Promise<void> => {
   const { date, period } = announcementData;
   const docId = `${date}_${period}`;
   const docRef = doc(dailyAnnouncementsCollectionRef, docId);
-  const text = announcementData.text ?? '';
-  const subjectIdOverride = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride;
-  const showOnCalendar = announcementData.showOnCalendar === undefined ? false : announcementData.showOnCalendar;
+  
+  const textToPersist = announcementData.text?.trim() ?? '';
+  const subjectIdOverrideToPersist = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride;
+  const showOnCalendarToPersist = announcementData.showOnCalendar === undefined ? false : announcementData.showOnCalendar;
+
   let beforeState: DailyAnnouncement | null = null;
 
   try {
@@ -343,30 +348,71 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
       } as DailyAnnouncement;
     }
 
-    if (isClearing) {
-      if (beforeState) {
-        await deleteDoc(docRef);
-        await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
-      }
-      return;
-    }
+    const isEffectivelyEmpty = textToPersist === '' && subjectIdOverrideToPersist === null && !showOnCalendarToPersist;
 
-    const dataToSet: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { date, period, subjectIdOverride, text, showOnCalendar, itemType: 'announcement' };
-    const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: new Date() }; 
+    if (isEffectivelyEmpty) {
+      if (beforeState) { // Only delete if it existed
+        await deleteDoc(docRef);
+        await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null, reason: "empty_upsert" }, userId);
+      }
+      return; // Done if effectively empty
+    }
+    
+    const dataToSet: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { 
+      date, 
+      period, 
+      subjectIdOverride: subjectIdOverrideToPersist, 
+      text: textToPersist, 
+      showOnCalendar: showOnCalendarToPersist, 
+      itemType: 'announcement' 
+    };
+    const afterState: DailyAnnouncement = { ...dataToSet, id: docId, updatedAt: new Date() };
 
     const hasChanged = !beforeState ||
-                       beforeState.text !== text ||
-                       (beforeState.subjectIdOverride ?? null) !== (subjectIdOverride ?? null) ||
-                       (beforeState.showOnCalendar ?? false) !== (showOnCalendar ?? false);
+                       beforeState.text !== textToPersist ||
+                       (beforeState.subjectIdOverride ?? null) !== (subjectIdOverrideToPersist ?? null) ||
+                       (beforeState.showOnCalendar ?? false) !== (showOnCalendarToPersist ?? false);
 
     if (hasChanged) {
-      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()}); // Save with Firestore Timestamp
+      await setDoc(docRef, {...dataToSet, updatedAt: Timestamp.now()});
       await logAction('upsert_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterState) }, userId);
     }
   } catch (error) {
     console.error("Error upserting daily announcement:", error);
     if ((error as FirestoreError).code === 'unavailable') throw new Error("オフラインのため連絡を保存できませんでした。");
     if ((error as FirestoreError).code === 'invalid-argument') throw new Error("保存データに無効な値が含まれていました。");
+    throw error;
+  }
+};
+
+export const deleteDailyAnnouncementById = async (docId: string, userId: string): Promise<void> => {
+  const docRef = doc(dailyAnnouncementsCollectionRef, docId);
+  let beforeState: DailyAnnouncement | null = null;
+  try {
+    const oldDataSnap = await getDoc(docRef);
+    if (oldDataSnap.exists()) {
+      const oldData = oldDataSnap.data();
+      beforeState = {
+        id: oldDataSnap.id,
+        date: oldData.date,
+        period: oldData.period,
+        subjectIdOverride: oldData.subjectIdOverride === undefined ? null : oldData.subjectIdOverride,
+        text: oldData.text ?? '',
+        showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
+        updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(),
+        itemType: 'announcement',
+      } as DailyAnnouncement;
+      
+      await deleteDoc(docRef);
+      await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null, deletedDocId: docId }, userId);
+    } else {
+      console.warn(`Daily announcement with docId ${docId} not found for deletion.`);
+    }
+  } catch (error) {
+    console.error(`Error deleting daily announcement by ID ${docId}:`, error);
+    if ((error as FirestoreError).code === 'unavailable') {
+      throw new Error("オフラインのため連絡を削除できませんでした。");
+    }
     throw error;
   }
 };
@@ -447,14 +493,14 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
     let afterStateContent = { ...dataToSet, id: date, aiSummary: beforeState?.aiSummary, aiSummaryLastGeneratedAt: beforeState?.aiSummaryLastGeneratedAt, updatedAt: new Date() };
 
 
-    if (!trimmedContent) { // Content is being cleared
-      if (beforeState) { // If it existed before
+    if (!trimmedContent) { 
+      if (beforeState) { 
         dataToSet.aiSummary = null; 
         dataToSet.aiSummaryLastGeneratedAt = null;
         afterStateContent.aiSummary = null;
         afterStateContent.aiSummaryLastGeneratedAt = null;
 
-        await setDoc(docRef, dataToSet, { merge: true }); // Still set content to null and update timestamp
+        await setDoc(docRef, dataToSet, { merge: true }); 
         await logAction('delete_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterStateContent) }, userId);
       }
       return;
@@ -467,7 +513,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
         afterStateContent.aiSummaryLastGeneratedAt = null;
     }
     
-    if (!beforeState || beforeState.content !== trimmedContent || (beforeState.aiSummary && !dataToSet.aiSummary )) { // Log if content changed or summary was cleared
+    if (!beforeState || beforeState.content !== trimmedContent || (beforeState.aiSummary && !dataToSet.aiSummary )) { 
         await setDoc(docRef, dataToSet, { merge: true });
         await logAction('upsert_general_announcement', { before: prepareStateForLog(beforeState), after: prepareStateForLog(afterStateContent) }, userId);
     }
@@ -555,7 +601,6 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
     } catch (clearError: any) {
         console.error(`[AI Summary Controller] Failed to clear AI summary on error for ${date}:`, clearError.message, clearError.stack);
     }
-    // Re-throw the original error to be handled by the caller (e.g., the API route or server action)
     throw error;
   }
 };
@@ -879,7 +924,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
   const items: CalendarItemUnion[] = [];
 
   try {
-    // Fetch School Events
     const eventsQuery = query(
       eventsCollectionRef,
       where('startDate', '<=', monthEndDate),
@@ -903,7 +947,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       }
     });
 
-    // Fetch Daily Announcements marked for calendar
     const announcementsQuery = query(
       dailyAnnouncementsCollectionRef,
       where('date', '>=', monthStartDate),
@@ -969,3 +1012,5 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+
+    
