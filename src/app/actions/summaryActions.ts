@@ -19,8 +19,22 @@ export async function requestSummaryGeneration(date: string, userId: string): Pr
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      let errorMessage = `API error: ${response.status}`;
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          const errorText = await response.text();
+          // Truncate long HTML error messages
+          errorMessage = `API error ${response.status}: ${errorText.substring(0, 200)}${errorText.length > 200 ? '...' : ''}`;
+        }
+      } catch (e) {
+        // If parsing errorData fails or reading text fails, stick with the status code
+        console.error("Failed to parse error response:", e);
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -52,8 +66,21 @@ export async function requestSummaryDeletion(date: string, userId: string): Prom
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      let errorMessage = `API error: ${response.status}`;
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          const errorText = await response.text();
+          // Truncate long HTML error messages
+          errorMessage = `API error ${response.status}: ${errorText.substring(0, 200)}${errorText.length > 200 ? '...' : ''}`;
+        }
+      } catch (e) {
+        console.error("Failed to parse error response for deletion:", e);
+      }
+      throw new Error(errorMessage);
     }
     // No specific data to return on success for deletion
   } catch (error: any) {
@@ -64,3 +91,4 @@ export async function requestSummaryDeletion(date: string, userId: string): Prom
     throw new Error(error.message || "要約の削除中に予期せぬエラーが発生しました。");
   }
 }
+
