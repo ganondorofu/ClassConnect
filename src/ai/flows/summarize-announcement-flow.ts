@@ -1,86 +1,103 @@
-
-// 'use server'; // Removed: This is not a module used by an API route.
+import { z } from 'zod';
+import { getApiKey, isAiConfigured } from '@/ai/ai-instance';
 
 /**
- * @fileOverview A Genkit flow for summarizing announcement text.
- *
- * - summarizeAnnouncement - A function that handles the announcement summarization.
- * - SummarizeAnnouncementInput - The input type for the summarizeAnnouncement function.
- * - SummarizeAnnouncementOutput - The return type for the summarizeAnnouncement function.
+ * 要約対象の入力オブジェクトのスキーマ定義
+ * - announcementText: 要約したい連絡事項テキスト（必須・非空）
  */
-
-import { ai, isAiConfigured } from '@/ai/ai-instance';
-import { z } from 'genkit';
-import type { Flow, Prompt } from 'genkit'; // Import types for conditional assignment
-
 const SummarizeAnnouncementInputSchema = z.object({
-  announcementText: z.string().describe('The full text of the announcement to be summarized.'),
+  announcementText: z
+    .string()
+    .min(1, '連絡事項のテキストが空です。')
+    .describe('要約対象の連絡事項テキスト'),
 });
-export type SummarizeAnnouncementInput = z.infer<typeof SummarizeAnnouncementInputSchema>;
+export type SummarizeAnnouncementInput = z.infer<
+  typeof SummarizeAnnouncementInputSchema
+>;
 
+/**
+ * 要約結果オブジェクトのスキーマ定義
+ * - summary: Markdown 形式の要約テキスト
+ */
 const SummarizeAnnouncementOutputSchema = z.object({
-  summary: z.string().describe('A concise summary of the announcement, formatted as Markdown bullet points.'),
+  summary: z.string().describe('Markdown形式の要約結果'),
 });
-export type SummarizeAnnouncementOutput = z.infer<typeof SummarizeAnnouncementOutputSchema>;
+export type SummarizeAnnouncementOutput = z.infer<
+  typeof SummarizeAnnouncementOutputSchema
+>;
 
-// Conditionally define prompt and flow
-// These will hold the Genkit prompt and flow definitions if AI is configured.
-let summarizePromptInstance: Prompt<typeof SummarizeAnnouncementInputSchema, typeof SummarizeAnnouncementOutputSchema> | undefined;
-let summarizeAnnouncementFlowInstance: Flow<typeof SummarizeAnnouncementInputSchema, typeof SummarizeAnnouncementOutputSchema> | undefined;
+/**
+ * Google Generative Language API の generateContent を直接叩いて
+ * announcementText を Markdown 箇条書きで要約します。
+ *
+ * @param input { announcementText: string }
+ * @returns { summary: string }
+ * @throws 入力エラー、APIキー未設定、リクエスト失敗、レスポンス形式エラー など
+ */
+export async function summarizeAnnouncement(
+  input: SummarizeAnnouncementInput
+): Promise<SummarizeAnnouncementOutput> {
+  // 1) 入力検証
+  const parsedInput = SummarizeAnnouncementInputSchema.safeParse(input);
+  if (!parsedInput.success) {
+    throw new Error(parsedInput.error.errors.map((e) => e.message).join('; '));
+  }
+  const textToSummarize = parsedInput.data.announcementText;
 
-if (isAiConfigured()) {
-  summarizePromptInstance = ai.definePrompt({
-    name: 'summarizeAnnouncementPrompt',
-    model: 'googleai/gemini-1.5-flash-latest', // Updated model name
-    input: { schema: SummarizeAnnouncementInputSchema },
-    output: { schema: SummarizeAnnouncementOutputSchema },
-    prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
+  // 2) AI設定チェック
+  if (!isAiConfigured()) {
+    throw new Error('AI 機能が設定されていません。API キーを確認してください。');
+  }
+  const apiKey = getApiKey();
 
-連絡事項:
-{{{announcementText}}}
+  // 3) エンドポイントとリクエストボディ組み立て
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [
+      {
+        parts: [{ text: textToSummarize }],
+      },
+    ],
+    // generationConfig: { temperature: 0.5 }, // 必要なら有効化
+  };
 
-要約 (Markdown形式の箇条書き):
-`,
+  // 4) fetch でリクエスト実行
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
-  summarizeAnnouncementFlowInstance = ai.defineFlow(
-    {
-      name: 'summarizeAnnouncementFlow',
-      inputSchema: SummarizeAnnouncementInputSchema,
-      outputSchema: SummarizeAnnouncementOutputSchema,
-    },
-    async (input) => {
-      if (!summarizePromptInstance) {
-        // This case should ideally not be reached if isAiConfigured() was true during setup.
-        throw new Error('Summarize prompt is not initialized. AI configuration issue.');
-      }
-      try {
-        const { output } = await summarizePromptInstance(input);
-        if (!output) {
-          throw new Error('Failed to generate summary (no output).');
-        }
-        return output;
-      } catch (flowError: any) {
-        console.error("Error within summarizeAnnouncementFlow:", flowError);
-        // Re-throw to be caught by the service/API route, but with potentially more info
-        // This helps in distinguishing AI specific processing errors.
-        let detail = flowError.message || String(flowError);
-        if (flowError.cause && typeof flowError.cause === 'object' && flowError.cause.message) {
-            detail += ` | Cause: ${flowError.cause.message}`;
-        } else if (flowError.details) {
-            detail += ` | Details: ${JSON.stringify(flowError.details)}`;
-        }
-        throw new Error(`AI Flow Error: ${detail}`);
-      }
-    }
-  );
-}
-
-export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): Promise<SummarizeAnnouncementOutput> {
-  if (!isAiConfigured() || !summarizeAnnouncementFlowInstance) {
-    console.warn("AI is not configured or the summarization flow is not defined. Skipping summary generation.");
-    throw new Error("AI機能は設定されていません。管理者に連絡してください。");
+  // 5) レスポンステキスト取得 → JSON パース
+  const raw = await res.text();
+  let json: any;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    console.error('⚠️ 非JSONレスポンス:', raw);
+    throw new Error('APIがHTMLまたは不正な形式で応答しました。');
   }
-  return summarizeAnnouncementFlowInstance(input);
-}
 
+  // 6) HTTP ステータスチェック
+  if (!res.ok) {
+    console.error('🔴 API エラー詳細:', json);
+    const code = json.error?.code ?? res.status;
+    const msg = json.error?.message ?? res.statusText;
+    throw new Error(`API error ${code}: ${msg}`);
+  }
+
+  // 7) 要約テキスト抽出
+  const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!candidate) {
+    console.error('⚠️ 要約テキストが見つかりませんでした:', json);
+    throw new Error('要約テキストの抽出に失敗しました。');
+  }
+
+  // 8) 出力検証＆返却
+  const out = { summary: candidate };
+  const parsedOut = SummarizeAnnouncementOutputSchema.safeParse(out);
+  if (!parsedOut.success) {
+    throw new Error('要約結果がスキーマ検証に失敗しました。');
+  }
+  return parsedOut.data;
+}
