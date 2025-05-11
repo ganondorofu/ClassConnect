@@ -1,30 +1,31 @@
+/**
+ * AI 関連の共通ユーティリティ
+ * ・環境変数から API キーを取り出す
+ * ・AI 機能が利用可能か判定する
+ */
 
-import {genkit} from 'genkit';
-import {googleAI, type GoogleAIPlugin} from '@genkit-ai/googleai';
-
-const googleApiKey = process.env.GOOGLE_GENAI_API_KEY;
-
-let activePlugins: GoogleAIPlugin[] = [];
-
-if (!googleApiKey) {
-  console.warn(
-    "WARNING: GOOGLE_GENAI_API_KEY is not set in environment variables. AI features will be disabled. Please set it in your .env.local file if you want to use AI capabilities."
-  );
-} else {
-  activePlugins.push(googleAI({ apiKey: googleApiKey }));
+ /**
+  * 環境変数に設定した Google Generative Language API キーを取得します。
+  * .env.local に次のように設定してください:
+  *   GENERATIVE_LANGUAGE_API_KEY=あなたのAPIキー
+  * @throws キー未設定時は例外を投げる
+  * @returns API キー文字列
+  */
+ export function getApiKey(): string {
+  //const key = process.env.GENERATIVE_LANGUAGE_API_KEY;
+  const key = "AIzaSyAZQRxzXE8A8ODIL-FyjEo4rbSKIWFG1dU";
+  if (!key) {
+    throw new Error(
+      'Generative Language API キーが環境変数に設定されていません。'
+    );
+  }
+  return key;
 }
 
-export const ai = genkit({
-  promptDir: './src/ai/prompts', // Adjusted path to be relative to project root or a clear location
-  plugins: activePlugins,
-  // Model should ideally be specified per prompt or generate call for clarity
-  // model: 'googleai/gemini-2.0-flash', 
-});
-
 /**
- * Checks if the AI features are configured (i.e., API key is set).
- * @returns {boolean} True if AI is configured, false otherwise.
+ * AI 機能が利用可能（API キーが設定されている）かどうかを判定します。
+ * @returns true: キーあり → AI 利用可 / false: キーなし → AI 無効
  */
-export const isAiConfigured = (): boolean => {
-  return !!googleApiKey;
-};
+export function isAiConfigured(): boolean {
+  return !!process.env.GENERATIVE_LANGUAGE_API_KEY;
+}
