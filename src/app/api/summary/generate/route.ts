@@ -11,32 +11,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Date is required and must be a string.' }, { status: 400 });
     }
     if (!userId || typeof userId !== 'string') {
-      return NextResponse.json({ error: 'User ID is required and must be a string.' }, { status: 400 });
+      return NextResponse.json({ error: 'User ID is required and must be a string for logging.' }, { status: 400 });
     }
 
     const summary = await generateAndStoreAnnouncementSummary(date, userId);
     return NextResponse.json({ summary });
   } catch (error: any) {
-    console.error(`API Error generating summary (route handler):`);
-    console.error(`Error Type: ${typeof error}`);
-    if (error && error.message) {
-      console.error(`Error Message: ${error.message}`);
+    // Log the full error details on the server side for better debugging
+    console.error(`[API_ERROR] /api/summary/generate: Failed to generate summary for date ${request.nextUrl.searchParams.get('date')}`);
+    console.error(`[API_ERROR_DETAILS] Message: ${error.message}`);
+    console.error(`[API_ERROR_DETAILS] Name: ${error.name}`);
+    console.error(`[API_ERROR_DETAILS] Stack: ${error.stack}`);
+    if (error.cause) {
+      console.error(`[API_ERROR_DETAILS] Cause: ${JSON.stringify(error.cause)}`);
     }
-    if (error && error.name) {
-      console.error(`Error Name: ${error.name}`);
-    }
-    if (error && error.stack) {
-      console.error(`Error Stack: ${error.stack}`);
-    }
-    // Attempt to get more details from the error object
-    let errorDetails = {};
-    if (error && typeof error === 'object') {
-        errorDetails = Object.getOwnPropertyNames(error).reduce((acc, key) => {
-            acc[key] = (error as any)[key];
-            return acc;
-        }, {} as Record<string, any>);
-    }
-    console.error(`Full Error Object (stringified): ${JSON.stringify(errorDetails)}`);
+    // Extract additional properties if available
+    const errorProperties = Object.getOwnPropertyNames(error).reduce((acc, key) => {
+        acc[key] = (error as any)[key];
+        return acc;
+    }, {} as Record<string, any>);
+    console.error(`[API_ERROR_DETAILS] All Properties: ${JSON.stringify(errorProperties, null, 2)}`);
 
 
     if (error.message && error.message.includes("AI機能は設定されていません")) {
@@ -53,10 +47,11 @@ export async function POST(request: NextRequest) {
         responseErrorMessage = error;
     }
 
+    // Ensure a JSON response is always sent
     return NextResponse.json({ 
-        error: responseErrorMessage, 
-        type: error?.name || (typeof error), 
-        details: errorDetails 
+        error: `サーバーエラー: ${responseErrorMessage}`, 
+        type: error?.name || (typeof error),
+        details: `An unexpected error occurred on the server. Please check server logs. Original error: ${error.message}`
     }, { status: 500 });
   }
 }

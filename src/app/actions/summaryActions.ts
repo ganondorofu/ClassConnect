@@ -20,34 +20,47 @@ export async function requestSummaryGeneration(date: string, userId: string): Pr
 
     if (!response.ok) {
       let errorMessage = `API error: ${response.status}`;
+      let errorType = 'UNKNOWN_API_ERROR';
       try {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
+          errorType = errorData.type || errorType;
+          // If the server sends detailed error info, use it
+          if (errorData.details) {
+            console.error("Server error details:", errorData.details);
+          }
         } else {
+          // Attempt to read text only if not JSON, could be HTML error page
           const errorText = await response.text();
-          // Truncate long HTML error messages
           errorMessage = `API error ${response.status}: ${errorText.substring(0, 200)}${errorText.length > 200 ? '...' : ''}`;
         }
       } catch (e) {
-        // If parsing errorData fails or reading text fails, stick with the status code
         console.error("Failed to parse error response:", e);
       }
-      throw new Error(errorMessage);
+      
+      // Specific user-facing messages based on error type from server
+      if (errorType === 'AI_NOT_CONFIGURED') {
+        throw new Error("AI機能は設定されていません。管理者に連絡してください。");
+      } else if (errorType === 'FIREBASE_OFFLINE') {
+         throw new Error("オフラインのため要約を生成できませんでした。");
+      }
+      // For other 500 errors or unparsed errors
+      throw new Error(errorMessage.startsWith("API error") ? "要約の生成中にサーバーでエラーが発生しました。" : errorMessage);
     }
 
     const data = await response.json();
     return data.summary;
   } catch (error: any) {
     console.error(`Error requesting summary generation for date ${date}:`, error);
-    if (error.message && error.message.includes("AI機能は設定されていません")) {
+    // Re-throw specific errors already constructed, or create a new one
+    if (error.message.includes("AI機能は設定されていません") || error.message.includes("オフラインのため")) {
         throw error; 
     }
     if ((error as FirebaseError).code === 'unavailable' || error.message.includes("offline") || error.message.includes("Failed to fetch")) {
         throw new Error("オフラインのため要約を生成できませんでした。");
     }
-    // Throw the already constructed error message from the !response.ok block, or a generic one
     throw new Error(error.message || "要約の生成中に予期せぬエラーが発生しました。");
   }
 }
@@ -75,13 +88,12 @@ export async function requestSummaryDeletion(date: string, userId: string): Prom
           errorMessage = errorData.error || errorMessage;
         } else {
           const errorText = await response.text();
-          // Truncate long HTML error messages
           errorMessage = `API error ${response.status}: ${errorText.substring(0, 200)}${errorText.length > 200 ? '...' : ''}`;
         }
       } catch (e) {
         console.error("Failed to parse error response for deletion:", e);
       }
-      throw new Error(errorMessage);
+      throw new Error(errorMessage.startsWith("API error") ? "要約の削除中にサーバーでエラーが発生しました。" : errorMessage);
     }
     // No specific data to return on success for deletion
   } catch (error: any) {
@@ -89,7 +101,6 @@ export async function requestSummaryDeletion(date: string, userId: string): Prom
      if ((error as FirebaseError).code === 'unavailable' || error.message.includes("offline") || error.message.includes("Failed to fetch")) {
        throw new Error("オフラインのため要約を削除できませんでした。");
     }
-    // Throw the already constructed error message from the !response.ok block, or a generic one
     throw new Error(error.message || "要約の削除中に予期せぬエラーが発生しました。");
   }
 }

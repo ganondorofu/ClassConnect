@@ -2,9 +2,9 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export', // Uncommented to enable static site generation
+  output: 'export', // Re-enabled for static site generation
   images: {
-    unoptimized: true, 
+    unoptimized: true, // Required for static export if next/image is used with external URLs
     remotePatterns: [
       {
         protocol: 'https',
