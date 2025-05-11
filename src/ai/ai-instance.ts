@@ -7,11 +7,15 @@ import {googleAI} from '@genkit-ai/googleai';
 const initializeActivePlugins = (): GenkitPlugin[] => {
   const apiKey = process.env.GOOGLE_GENAI_API_KEY;
   if (!apiKey) {
-    console.warn(
-      "WARNING: GOOGLE_GENAI_API_KEY is not set in environment variables. AI features will be disabled. Please set it in your .env.local file and restart the server if you want to use AI capabilities."
-    );
+    const errorMessage = "CRITICAL: GOOGLE_GENAI_API_KEY is not set in environment variables. AI features will be disabled. Please set this in your Vercel project environment variables for the production build, or in .env.local for local development.";
+    console.error(errorMessage); // Log as error for server logs
+    // For Vercel deployment, throwing an error here might provide clearer build failure reasons.
+    // However, returning an empty array allows the app to start, with AI features failing at runtime.
+    // Consider uncommenting the throw if a hard failure on missing key is preferred during deployment.
+    // throw new Error(errorMessage); 
     return [];
   }
+  console.log("[Genkit Init] GOOGLE_GENAI_API_KEY is set. Initializing GoogleAI plugin.");
   return [googleAI({ apiKey })];
 };
 
@@ -28,12 +32,8 @@ export const ai = genkit({
  */
 export const isAiConfigured = (): boolean => {
   const apiKey = process.env.GOOGLE_GENAI_API_KEY;
-  // A warning here might be redundant if initializeActivePlugins already warned,
-  // but could be useful if this function is called from other contexts.
-  // Consider removing if too noisy and initializeActivePlugins warning is sufficient.
   if (!apiKey) {
-    // console.warn("isAiConfigured check: GOOGLE_GENAI_API_KEY is not set.");
+    console.warn("[isAiConfigured] Check: GOOGLE_GENAI_API_KEY is not set.");
   }
   return !!apiKey;
 };
-

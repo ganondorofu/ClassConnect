@@ -73,7 +73,7 @@ const prepareStateForLog = (state: any): any => {
   return JSON.parse(JSON.stringify(state, (key, value) =>
     value === undefined ? null : value
   ), (key, value) => {
-    if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined) {
+    if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined && !(value instanceof Timestamp)) {
       try {
         return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
       } catch (e) {
@@ -320,7 +320,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
   }
 };
 
-export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>, userId: string = 'system_upsert_announcement'): Promise<void> => {
+export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'>, userId: string = 'system_upsert_announcement', isClearing: boolean = false): Promise<void> => {
   const { date, period } = announcementData;
   const docId = `${date}_${period}`;
   const docRef = doc(dailyAnnouncementsCollectionRef, docId);
@@ -343,7 +343,7 @@ export const upsertDailyAnnouncement = async (announcementData: Omit<DailyAnnoun
       } as DailyAnnouncement;
     }
 
-    if (!text && subjectIdOverride === null && !showOnCalendar) {
+    if (isClearing) {
       if (beforeState) {
         await deleteDoc(docRef);
         await logAction('delete_announcement', { before: prepareStateForLog(beforeState), after: null }, userId);
@@ -505,18 +505,29 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
 export const generateAndStoreAnnouncementSummary = async (date: string, userId: string = 'system_ai_summary'): Promise<string | null> => {
   const announcementRef = doc(generalAnnouncementsCollectionRef, date);
   try {
+    console.log(`[AI Summary Controller] Attempting to generate summary for date: ${date}, userId: ${userId}`);
+    if (!process.env.GOOGLE_GENAI_API_KEY) {
+        console.error("[AI Summary Controller] CRITICAL: GOOGLE_GENAI_API_KEY is not set on the server.");
+        throw new Error("AI機能のサーバー設定に問題があります。APIキーが設定されていません。");
+    }
+    console.log("[AI Summary Controller] GOOGLE_GENAI_API_KEY seems to be set.");
+
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
+      console.log(`[AI Summary Controller] No content to summarize for announcement on ${date}. Clearing existing summary if any.`);
       if (announcementSnap.exists() && announcementSnap.data()?.aiSummary) {
         await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
-         await logAction('clear_ai_summary_no_content', { date }, userId);
+        await logAction('clear_ai_summary_no_content', { date }, userId);
       }
-      console.log(`No content to summarize for announcement on ${date}.`);
       return null;
     }
 
     const announcementContent = announcementSnap.data()!.content;
+    console.log(`[AI Summary Controller] Content found for ${date}, length: ${announcementContent.length}. Calling AI flow.`);
+    
     const summaryResult = await summarizeAnnouncement({ announcementText: announcementContent });
+    console.log(`[AI Summary Controller] AI flow returned for ${date}. Summary: ${summaryResult?.summary ? summaryResult.summary.substring(0,100)+'...' : 'No summary'}`);
+
 
     if (summaryResult && summaryResult.summary) {
       await updateDoc(announcementRef, {
@@ -524,23 +535,27 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
         aiSummaryLastGeneratedAt: Timestamp.now(),
       });
       await logAction('generate_ai_summary', { date, summaryLength: summaryResult.summary.length }, userId);
+      console.log(`[AI Summary Controller] Successfully stored AI summary for ${date}.`);
       return summaryResult.summary;
     } else {
+      console.warn(`[AI Summary Controller] AI summary generation returned no content for ${date}. Clearing existing summary.`);
       await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
       await logAction('clear_ai_summary_empty_result', { date }, userId);
       throw new Error('AI summary generation returned no content.');
     }
-  } catch (error) {
-    console.error(`Error generating or storing AI summary for ${date}:`, error);
+  } catch (error: any) {
+    console.error(`[AI Summary Controller] Full error during generateAndStoreAnnouncementSummary for ${date}:`, error.message, error.stack, JSON.stringify(error, Object.getOwnPropertyNames(error)));
     try {
         const announcementSnap = await getDoc(announcementRef);
         if (announcementSnap.exists()) {
+             console.log(`[AI Summary Controller] Clearing AI summary on error for ${date}.`);
              await updateDoc(announcementRef, { aiSummary: null, aiSummaryLastGeneratedAt: null });
-             await logAction('clear_ai_summary_on_error', { date, error: String(error) }, userId);
+             await logAction('clear_ai_summary_on_error', { date, error: String(error.message || error) }, userId);
         }
-    } catch (clearError) {
-        console.error(`Failed to clear AI summary on error for ${date}:`, clearError);
+    } catch (clearError: any) {
+        console.error(`[AI Summary Controller] Failed to clear AI summary on error for ${date}:`, clearError.message, clearError.stack);
     }
+    // Re-throw the original error to be handled by the caller (e.g., the API route or server action)
     throw error;
   }
 };
@@ -589,7 +604,7 @@ export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
             endDate: data.endDate,
             description: data.description,
             itemType: 'event', 
-            createdAt: parseFirestoreTimestamp(data.createdAt), 
+            createdAt: parseFirestoreTimestamp(data.createdAt),
             updatedAt: parseFirestoreTimestamp(data.updatedAt),
         } as SchoolEvent;
     });
@@ -954,4 +969,3 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
-
