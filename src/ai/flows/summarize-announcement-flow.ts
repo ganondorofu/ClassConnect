@@ -1,5 +1,5 @@
 
-// 'use server'; // Removed: This is not a Server Action, but a module used by an API route.
+// 'use server'; // Removed: This is not a module used by an API route.
 
 /**
  * @fileOverview A Genkit flow for summarizing announcement text.
@@ -54,11 +54,24 @@ if (isAiConfigured()) {
         // This case should ideally not be reached if isAiConfigured() was true during setup.
         throw new Error('Summarize prompt is not initialized. AI configuration issue.');
       }
-      const { output } = await summarizePromptInstance(input);
-      if (!output) {
-        throw new Error('Failed to generate summary.');
+      try {
+        const { output } = await summarizePromptInstance(input);
+        if (!output) {
+          throw new Error('Failed to generate summary (no output).');
+        }
+        return output;
+      } catch (flowError: any) {
+        console.error("Error within summarizeAnnouncementFlow:", flowError);
+        // Re-throw to be caught by the service/API route, but with potentially more info
+        // This helps in distinguishing AI specific processing errors.
+        let detail = flowError.message || String(flowError);
+        if (flowError.cause && typeof flowError.cause === 'object' && flowError.cause.message) {
+            detail += ` | कॉज: ${flowError.cause.message}`;
+        } else if (flowError.details) {
+            detail += ` | 詳細: ${JSON.stringify(flowError.details)}`;
+        }
+        throw new Error(`AI Flow Error: ${detail}`);
       }
-      return output;
     }
   );
 }
@@ -70,3 +83,4 @@ export async function summarizeAnnouncement(input: SummarizeAnnouncementInput): 
   }
   return summarizeAnnouncementFlowInstance(input);
 }
+

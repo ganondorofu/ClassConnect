@@ -43,25 +43,52 @@ export async function requestSummaryGeneration(date: string, userId: string): Pr
       // Specific user-facing messages based on error type from server
       if (errorType === 'AI_NOT_CONFIGURED') {
         throw new Error("AI機能は設定されていません。管理者に連絡してください。");
+      } else if (errorType === 'AI_PROCESSING_ERROR') {
+        throw new Error(errorMessage); // Show the specific AI processing error from the server
       } else if (errorType === 'FIREBASE_OFFLINE') {
          throw new Error("オフラインのため要約を生成できませんでした。");
       }
-      // For other 500 errors or unparsed errors
-      throw new Error(errorMessage.startsWith("API error") ? "要約の生成中にサーバーでエラーが発生しました。" : errorMessage);
+      
+      // Revised logic for other errors:
+      // Prefer the specific message from the server unless it's very generic.
+      const genericApiErrorMessages = [
+        "API error 500: Failed to generate summary.", // Exact match for a very generic server error
+        `API error ${response.status}: Failed to generate summary.`, // Another form
+        "サーバーエラー: Failed to generate summary.",
+        `サーバーエラー: サーバーエラー: Failed to generate summary.` // In case it gets double wrapped
+      ];
+      
+      const isVeryGenericApiErrorMessage = genericApiErrorMessages.some(msg => errorMessage.startsWith(msg) && errorMessage.length < (msg.length + 10)); // allow for small additions but not much detail
+
+      if (errorMessage.startsWith("API error") || errorMessage.startsWith("サーバーエラー:")) {
+        if (isVeryGenericApiErrorMessage && !errorMessage.includes("AI Flow Error")) {
+          // If it's a truly generic message and not a relayed AI Flow Error, show our standard fallback.
+          throw new Error("要約の生成中にサーバーでエラーが発生しました。");
+        } else {
+          // Otherwise, the server message (errorMessage) likely contains more useful details.
+          throw new Error(errorMessage); 
+        }
+      } else {
+          // For non-API errors or errors parsed differently.
+          throw new Error(errorMessage);
+      }
     }
 
     const data = await response.json();
     return data.summary;
   } catch (error: any) {
     console.error(`Error requesting summary generation for date ${date}:`, error);
-    // Re-throw specific errors already constructed, or create a new one
-    if (error.message.includes("AI機能は設定されていません") || error.message.includes("オフラインのため")) {
+    // Re-throw specific errors already constructed, or create a new one for general issues.
+    if (error.message.includes("AI機能は設定されていません") || 
+        error.message.includes("AI処理エラー:") || 
+        error.message.includes("オフラインのため")) {
         throw error; 
     }
     if ((error as FirebaseError).code === 'unavailable' || error.message.includes("offline") || error.message.includes("Failed to fetch")) {
         throw new Error("オフラインのため要約を生成できませんでした。");
     }
-    throw new Error(error.message || "要約の生成中に予期せぬエラーが発生しました。");
+    // Fallback for other unexpected client-side errors or unhandled re-throws
+    throw new Error(error.message || "要約の生成リクエスト中に予期せぬエラーが発生しました。");
   }
 }
 
