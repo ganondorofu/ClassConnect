@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -30,6 +31,7 @@ import {
   onDailyAnnouncementsUpdate,
   onSchoolEventsUpdate,
   upsertDailyAnnouncement,
+  deleteDailyAnnouncementById, // Import the new delete function
 } from '@/controllers/timetableController';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import { AlertCircle, CalendarDays, Edit2, Trash2, WifiOff, User, Info } from 'lucide-react';
@@ -49,10 +51,9 @@ interface TimetableGridProps {
 
 type Unsubscribe = () => void;
 
-// Helper to compare TimetableSettings objects
-const areSettingsEqual = (s1: TimetableSettings | null, s2: TimetableSettings): boolean => {
-  if (!s1) return false;
-  if (s1 === s2) return true;
+const areSettingsEqual = (s1: TimetableSettings | null, s2: TimetableSettings | null): boolean => {
+  if (!s1 && !s2) return true;
+  if (!s1 || !s2) return false;
   if (s1.numberOfPeriods !== s2.numberOfPeriods) return false;
   if (s1.activeDays.length !== s2.activeDays.length) return false;
   const sortedS1Days = [...s1.activeDays].sort();
@@ -60,19 +61,24 @@ const areSettingsEqual = (s1: TimetableSettings | null, s2: TimetableSettings): 
   return sortedS1Days.every((day, index) => day === sortedS2Days[index]);
 };
 
-// Helper to compare arrays of simple objects by stringifying (use with caution for performance on large/complex arrays)
-const areArraysOfObjectsEqual = <T extends Record<string, any>>(arr1: T[], arr2: T[]): boolean => {
+const areArraysOfObjectsEqual = <T extends Record<string, any>>(arr1: T[] | undefined, arr2: T[] | undefined): boolean => {
   if (!arr1 && !arr2) return true;
   if (!arr1 || !arr2) return false;
   if (arr1.length !== arr2.length) return false;
   try {
-    // A more robust comparison would iterate and compare specific fields, especially IDs and key properties.
-    // For now, this is a simpler check. Consider a library for deep equality if issues persist.
-    return JSON.stringify(arr1.map(item => ({...item, updatedAt: null, createdAt: null})).sort((a,b) => (a.id ?? '').localeCompare(b.id ?? ''))) === 
-           JSON.stringify(arr2.map(item => ({...item, updatedAt: null, createdAt: null})).sort((a,b) => (a.id ?? '').localeCompare(b.id ?? '')));
+    const normalize = (item: T) => {
+      const newItem = {...item};
+      delete (newItem as any).updatedAt; 
+      delete (newItem as any).createdAt;
+      // Add other potentially volatile fields to ignore for comparison if needed
+      return newItem;
+    };
+    const sortedNormalizedArr1 = arr1.map(normalize).sort((a,b) => (a.id ?? '').localeCompare(b.id ?? ''));
+    const sortedNormalizedArr2 = arr2.map(normalize).sort((a,b) => (a.id ?? '').localeCompare(b.id ?? ''));
+    return JSON.stringify(sortedNormalizedArr1) === JSON.stringify(sortedNormalizedArr2);
   } catch (e) {
     console.error("Error stringifying arrays for comparison:", e);
-    return false; // Fallback to assume they are different if stringify fails
+    return false; 
   }
 };
 
@@ -100,19 +106,19 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const { user, isAnonymous, loading: authLoading } = useAuth();
 
   const [liveSettings, setLiveSettings] = useState<TimetableSettings | null>(null);
-  const [liveFixedTimetable, setLiveFixedTimetable] = useState<FixedTimeSlot[]>([]);
+  const [liveFixedTimetable, setLiveFixedTimetable] = useState<FixedTimeSlot[] | undefined>(undefined);
   const [liveDailyAnnouncements, setLiveDailyAnnouncements] = useState<Record<string, DailyAnnouncement[]>>({});
-  const [liveSchoolEvents, setLiveSchoolEvents] = useState<SchoolEvent[]>([]);
-  const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
+  const [liveSchoolEvents, setLiveSchoolEvents] = useState<SchoolEvent[] | undefined>(undefined);
+  const [liveSubjects, setLiveSubjects] = useState<Subject[] | undefined>(undefined);
 
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 }); 
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 }); 
   const weekEnd = addDays(weekStart, 6); 
   const weekDays = useMemo(() => eachDayOfInterval({ start: weekStart, end: weekEnd }), [weekStart, weekEnd]);
 
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(prevIsOffline => {
-        if (prevIsOffline) { // Only act if state changes from offline to online
+        if (prevIsOffline) { 
           queryClientHook.invalidateQueries({ queryKey: ['timetableSettings'] });
           queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
           queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
@@ -135,7 +141,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       };
     }
     return () => {};
-  }, [queryClientHook, weekStart]); // weekStart might change, ensure query keys are updated
+  }, [queryClientHook, weekStart]);
 
   const handleQueryError = (queryKey: string) => (error: unknown) => {
     console.error(`Query Error (${queryKey}):`, error);
@@ -275,13 +281,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       unsubSubjects?.();
       unsubAnnouncementsList.forEach(unsub => unsub?.());
     };
-  }, [isOffline, user, isAnonymous, weekDays, queryClientHook]); // Removed weekStart, use weekDays which is memoized
+  }, [isOffline, user, isAnonymous, weekDays, queryClientHook]); 
 
 
   const settings = useMemo(() => liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS, [liveSettings, initialSettings]);
-  const fixedTimetable = useMemo(() => liveFixedTimetable.length > 0 ? liveFixedTimetable : initialFixedTimetable ?? [], [liveFixedTimetable, initialFixedTimetable]);
-  const schoolEvents = useMemo(() => liveSchoolEvents.length > 0 ? liveSchoolEvents : initialSchoolEvents ?? [], [liveSchoolEvents, initialSchoolEvents]);
-  const subjects = useMemo(() => liveSubjects.length > 0 ? liveSubjects : initialSubjects ?? [], [liveSubjects, initialSubjects]);
+  const fixedTimetable = useMemo(() => liveFixedTimetable !== undefined ? liveFixedTimetable : initialFixedTimetable ?? [], [liveFixedTimetable, initialFixedTimetable]);
+  const schoolEvents = useMemo(() => liveSchoolEvents !== undefined ? liveSchoolEvents : initialSchoolEvents ?? [], [liveSchoolEvents, initialSchoolEvents]);
+  const subjects = useMemo(() => liveSubjects !== undefined ? liveSubjects : initialSubjects ?? [], [liveSubjects, initialSubjects]);
   const subjectsMap = useMemo(() => new Map(subjects.map(s => [s.id, s])), [subjects]);
   const dailyAnnouncements = useMemo(() => Object.keys(liveDailyAnnouncements).length > 0 ? { ...initialDailyAnnouncementsData, ...liveDailyAnnouncements } : initialDailyAnnouncementsData ?? {}, [liveDailyAnnouncements, initialDailyAnnouncementsData]);
 
@@ -341,37 +347,26 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     let subjectIdOverrideToPersist: string | null;
     const baseSubjectId = selectedSlot.baseFixedSubjectId ?? null;
 
-    // If admin, persist selected subject.
-    // If anonymous:
-    //   - if text or showOnCalendar is set, persist selected or base.
-    //   - if text and showOnCalendar are NOT set (clearing):
-    //     - if selected subject is DIFFERENT from base, it means user intended a subject change, so persist selected (which might be null).
-    //     - if selected subject is SAME as base (or both null), it means no subject change intended, so clear override (persist null).
     if (user && !isAnonymous) { 
         subjectIdOverrideToPersist = subjectIdOverride ?? null; 
-    } else { // Anonymous user
+    } else { 
         if (textToPersist || showOnCalendarToPersist) {
-            // If there's text or calendar flag, subject change (even to null) is intentional if different from base
             subjectIdOverrideToPersist = (subjectIdOverride !== baseSubjectId) ? (subjectIdOverride ?? null) : baseSubjectId;
             if (subjectIdOverride === null && baseSubjectId !== null && (textToPersist || showOnCalendarToPersist)) {
-              // If anonymous user clears subject while having text/calendar, it might mean they want base subject restored
               subjectIdOverrideToPersist = baseSubjectId;
             } else if (subjectIdOverride !== null) {
                subjectIdOverrideToPersist = subjectIdOverride;
             } else {
                 subjectIdOverrideToPersist = baseSubjectId;
             }
-
-
-        } else { // Clearing text and calendar flag
-            if (subjectIdOverride !== baseSubjectId) { // User explicitly changed subject from base (even to null)
+        } else { 
+            if (subjectIdOverride !== baseSubjectId) { 
                 subjectIdOverrideToPersist = subjectIdOverride ?? null;
-            } else { // Subject was not changed from base, or base was null and selected is null
-                subjectIdOverrideToPersist = null; // No specific override needed if no text/calendar
+            } else { 
+                subjectIdOverrideToPersist = null; 
             }
         }
     }
-
 
     try {
       const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_edit' : 'unknown_user');
@@ -391,7 +386,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       setIsModalOpen(false); 
       
       queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
-      queryClientHook.invalidateQueries({ queryKey: ['calendarItems'] });
+      const calendarYear = selectedSlot.date ? new Date(selectedSlot.date).getFullYear() : new Date().getFullYear();
+      const calendarMonth = selectedSlot.date ? new Date(selectedSlot.date).getMonth() + 1 : new Date().getMonth() + 1;
+      queryClientHook.invalidateQueries({ queryKey: ['calendarItems', calendarYear, calendarMonth] });
+
+
     } catch (error: any) {
       console.error("Failed to save/delete announcement:", error);
       const isFirebaseOfflineError = (error as FirestoreError)?.code === 'unavailable' || error?.message?.includes("オフラインのため");
@@ -407,39 +406,32 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   };
   
   const handleDeleteConfirmation = async () => {
-    if (!selectedSlot) {
-        toast({ title: "エラー", description: "対象スロットが選択されていません。", variant: "destructive"});
+    if (!selectedSlot || isSaving || !canEditTimetableSlot) {
+      toast({ title: "エラー", description: "クリア対象のスロットが選択されていないか、操作を実行できません。", variant: "destructive"});
+      return;
+    }
+    if (isOffline) {
+        toast({ title: "オフライン", description: "クリア操作はオフラインでは実行できません。", variant: "destructive"});
         return;
     }
-    if (isOffline || isSaving || !canEditTimetableSlot) return;
 
     setIsSaving(true); 
 
-    const date = selectedSlot.date;
-    const period = selectedSlot.period;
+    const { date, period } = selectedSlot;
+    const docId = `${date}_${period}`;
     const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_clear' : 'unknown_user');
     
-    const baseFixedSubject = getFixedSlot(selectedSlot.day, selectedSlot.period)?.subjectId ?? null;
-
-    const clearedData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = {
-      date: date,
-      period: period,
-      text: '',
-      // For admin, clearing means subject override becomes null.
-      // For anonymous, clearing means subject override becomes null (effectively reverting to fixed or unsetting if fixed was also null).
-      subjectIdOverride: null, 
-      showOnCalendar: false,
-      itemType: 'announcement',
-    };
-    
     try {
-      await upsertDailyAnnouncement(clearedData, userIdForLog, true); // true for isClearing
+      await deleteDailyAnnouncementById(docId, userIdForLog);
 
       toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアしました。` });
       setIsModalOpen(false); 
       
       queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
-      queryClientHook.invalidateQueries({ queryKey: ['calendarItems'] });
+      const calendarYear = new Date(date).getFullYear();
+      const calendarMonth = new Date(date).getMonth() + 1;
+      queryClientHook.invalidateQueries({ queryKey: ['calendarItems', calendarYear, calendarMonth] });
+
 
     } catch (error: any) {
       console.error("Failed to clear announcement:", error);
@@ -561,7 +553,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   
                   const isToday = isSameDay(date, currentDate);
                   
-                  const showSubjectChangeIndicator = (announcement?.subjectIdOverride !== undefined) && (announcement.subjectIdOverride !== baseFixedSubjectId);
+                  const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined && announcement.subjectIdOverride !== baseFixedSubjectId;
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY;
@@ -735,3 +727,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   );
 }
 
+    
