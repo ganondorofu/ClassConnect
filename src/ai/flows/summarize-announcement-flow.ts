@@ -31,7 +31,7 @@ let summarizeAnnouncementFlowInstance: Flow<typeof SummarizeAnnouncementInputSch
 if (isAiConfigured()) {
   summarizePromptInstance = ai.definePrompt({
     name: 'summarizeAnnouncementPrompt',
-    model: 'googleai/gemini-2.0-flash', // Explicitly define model
+    model: 'googleai/gemini-1.5-flash-latest', // Updated model name
     input: { schema: SummarizeAnnouncementInputSchema },
     output: { schema: SummarizeAnnouncementOutputSchema },
     prompt: `以下の連絡事項を、Markdown形式の簡潔な箇条書きで要約してください。
@@ -66,9 +66,9 @@ if (isAiConfigured()) {
         // This helps in distinguishing AI specific processing errors.
         let detail = flowError.message || String(flowError);
         if (flowError.cause && typeof flowError.cause === 'object' && flowError.cause.message) {
-            detail += ` | कॉज: ${flowError.cause.message}`;
+            detail += ` | Cause: ${flowError.cause.message}`;
         } else if (flowError.details) {
-            detail += ` | 詳細: ${JSON.stringify(flowError.details)}`;
+            detail += ` | Details: ${JSON.stringify(flowError.details)}`;
         }
         throw new Error(`AI Flow Error: ${detail}`);
       }
