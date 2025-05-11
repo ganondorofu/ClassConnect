@@ -9,8 +9,10 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // output: 'export', // Removed: Incompatible with server-side API routes needed for Genkit AI features.
+                      // For Vercel deployment with server-side features, this should not be 'export'.
   images: {
-    unoptimized: true, // Disable Image Optimization for static export
+    unoptimized: true, 
     remotePatterns: [
       {
         protocol: 'https',
