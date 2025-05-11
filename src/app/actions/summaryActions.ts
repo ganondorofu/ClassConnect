@@ -47,6 +47,7 @@ export async function requestSummaryGeneration(date: string, userId: string): Pr
     if ((error as FirebaseError).code === 'unavailable' || error.message.includes("offline") || error.message.includes("Failed to fetch")) {
         throw new Error("オフラインのため要約を生成できませんでした。");
     }
+    // Throw the already constructed error message from the !response.ok block, or a generic one
     throw new Error(error.message || "要約の生成中に予期せぬエラーが発生しました。");
   }
 }
@@ -88,6 +89,7 @@ export async function requestSummaryDeletion(date: string, userId: string): Prom
      if ((error as FirebaseError).code === 'unavailable' || error.message.includes("offline") || error.message.includes("Failed to fetch")) {
        throw new Error("オフラインのため要約を削除できませんでした。");
     }
+    // Throw the already constructed error message from the !response.ok block, or a generic one
     throw new Error(error.message || "要約の削除中に予期せぬエラーが発生しました。");
   }
 }
