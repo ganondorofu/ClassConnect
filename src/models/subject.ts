@@ -8,5 +8,5 @@ export interface Subject {
   /** Name of the subject (e.g., "Mathematics", "English") */
   name: string;
   /** Name of the teacher responsible for the subject */
-  teacherName: string;
+  teacherName: string | null;
 }

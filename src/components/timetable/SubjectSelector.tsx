@@ -43,7 +43,7 @@ export function SubjectSelector({
         </SelectItem>
         {subjects.map((subject) => (
           <SelectItem key={subject.id} value={subject.id!}>
-            {subject.name} ({subject.teacherName})
+            {subject.name} {subject.teacherName ? `(${subject.teacherName})` : ''}
           </SelectItem>
         ))}
       </SelectContent>

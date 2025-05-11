@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -31,7 +32,7 @@ function SubjectsPageContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectName, setSubjectName] = useState('');
-  const [teacherName, setTeacherName] = useState('');
+  const [teacherName, setTeacherName] = useState<string | null>(''); // Allow null or empty string
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -94,7 +95,7 @@ function SubjectsPageContent() {
   const userIdForLog = user?.uid ?? 'admin_user_subjects';
 
   const addMutation = useMutation({
-    mutationFn: ({ name, teacher }: { name: string; teacher: string }) => addSubject(name, teacher, userIdForLog),
+    mutationFn: ({ name, teacher }: { name: string; teacher: string | null }) => addSubject(name, teacher, userIdForLog),
     onSuccess: async () => {
       toast({ title: "成功", description: "科目を追加しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
@@ -105,7 +106,7 @@ function SubjectsPageContent() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, teacher }: { id: string; name: string; teacher: string }) => updateSubject(id, name, teacher, userIdForLog),
+    mutationFn: ({ id, name, teacher }: { id: string; name: string; teacher: string | null }) => updateSubject(id, name, teacher, userIdForLog),
     onSuccess: async () => {
       toast({ title: "成功", description: "科目を更新しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
@@ -131,8 +132,8 @@ function SubjectsPageContent() {
 
   const handleSave = () => {
     if (isSaving || isOffline) return;
-    if (!subjectName.trim() || !teacherName.trim()) {
-      toast({ title: "入力エラー", description: "科目名と教員名は必須です。", variant: "destructive" });
+    if (!subjectName.trim()) { // Teacher name is no longer required
+      toast({ title: "入力エラー", description: "科目名は必須です。", variant: "destructive" });
       return;
     }
     setIsSaving(true);
@@ -177,7 +178,7 @@ function SubjectsPageContent() {
                   {subjects.map((subject) => {
                     const cells = [
                       <TableCell key={`${subject.id}-name`} className="font-medium">{subject.name}</TableCell>,
-                      <TableCell key={`${subject.id}-teacher`}>{subject.teacherName}</TableCell>,
+                      <TableCell key={`${subject.id}-teacher`}>{subject.teacherName || <span className="text-muted-foreground italic">未設定</span>}</TableCell>,
                       <TableCell key={`${subject.id}-actions`} className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => openEditModal(subject)} className="mr-1 h-8 w-8" disabled={isOffline}><Edit className="h-4 w-4" /><span className="sr-only">編集</span></Button>
                         <AlertDialog>
@@ -205,7 +206,7 @@ function SubjectsPageContent() {
           <DialogHeader><DialogTitle>{editingSubject ? '科目を編集' : '新規科目を追加'}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="subjectName" className="text-right">科目名</Label><Input id="subjectName" value={subjectName} onChange={(e) => setSubjectName(e.target.value)} className="col-span-3" placeholder="例: 数学I" disabled={isSaving} /></div>
-            <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="teacherName" className="text-right">担当教員名</Label><Input id="teacherName" value={teacherName} onChange={(e) => setTeacherName(e.target.value)} className="col-span-3" placeholder="例: 山田 太郎" disabled={isSaving} /></div>
+            <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="teacherName" className="text-right">担当教員名</Label><Input id="teacherName" value={teacherName ?? ''} onChange={(e) => setTeacherName(e.target.value)} className="col-span-3" placeholder="例: 山田 太郎 (任意)" disabled={isSaving} /></div>
           </div>
           <DialogFooter><DialogClose asChild><Button type="button" variant="secondary" disabled={isSaving} size="sm">キャンセル</Button></DialogClose><Button onClick={handleSave} disabled={isSaving || isOffline} size="sm"><Save className="mr-2 h-4 w-4" />{isSaving ? '保存中...' : '保存'}</Button></DialogFooter>
         </DialogContent>

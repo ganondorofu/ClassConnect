@@ -69,7 +69,6 @@ const areArraysOfObjectsEqual = <T extends Record<string, any>>(arr1: T[] | unde
       const newItem = {...item};
       delete (newItem as any).updatedAt; 
       delete (newItem as any).createdAt;
-      // Add other potentially volatile fields to ignore for comparison if needed
       return newItem;
     };
     const sortedNormalizedArr1 = arr1.map(normalize).sort((a,b) => (a.id ?? '').localeCompare(b.id ?? ''));
@@ -153,8 +152,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const { data: initialSettings, isLoading: isLoadingSettings, error: errorSettings } = useQuery({
     queryKey: ['timetableSettings'],
     queryFn: queryFnGetTimetableSettings,
-    staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 5, // Increased staleTime
+    refetchOnWindowFocus: false, // Avoid too frequent refetches
     onError: handleQueryError('timetableSettings'),
     enabled: !isOffline && (!!user || isAnonymous),
   });
@@ -205,7 +204,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     enabled: !isOffline && (!!user || isAnonymous) && weekDays.length > 0,
   });
 
-  useEffect(() => {
+ useEffect(() => {
     if (isOffline || (!user && !isAnonymous)) return () => {};
     let unsubSettings: Unsubscribe | undefined;
     let unsubFixed: Unsubscribe | undefined;
@@ -216,39 +215,27 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const setupListeners = () => {
         unsubSettings = onTimetableSettingsUpdate(
             (newSettings) => { 
-              setLiveSettings(prevSettings => {
-                if (areSettingsEqual(prevSettings, newSettings)) return prevSettings;
-                return newSettings;
-              }); 
+              setLiveSettings(prevSettings => areSettingsEqual(prevSettings, newSettings) ? prevSettings : newSettings); 
             }, 
-            (error) => { console.error("RT Settings Error:", error); setIsOffline(prev => !prev ? true : prev); }
+            (error) => { console.error("RT Settings Error:", error); setIsOffline(true); }
         );
         unsubFixed = onFixedTimetableUpdate(
             (newFixedTimetable) => { 
-              setLiveFixedTimetable(prev => {
-                if(areArraysOfObjectsEqual(prev, newFixedTimetable)) return prev;
-                return newFixedTimetable;
-              }); 
+              setLiveFixedTimetable(prev => areArraysOfObjectsEqual(prev, newFixedTimetable) ? prev : newFixedTimetable); 
             },  
-            (error) => { console.error("RT Fixed TT Error:", error); setIsOffline(prev => !prev ? true : prev); }
+            (error) => { console.error("RT Fixed TT Error:", error); setIsOffline(true); }
         );
         unsubEvents = onSchoolEventsUpdate(
             (newEvents) => { 
-              setLiveSchoolEvents(prev => {
-                if(areArraysOfObjectsEqual(prev, newEvents)) return prev;
-                return newEvents;
-              }); 
+              setLiveSchoolEvents(prev => areArraysOfObjectsEqual(prev, newEvents) ? prev : newEvents); 
             }, 
-            (error) => { console.error("RT Events Error:", error); setIsOffline(prev => !prev ? true : prev); }
+            (error) => { console.error("RT Events Error:", error); setIsOffline(true); }
         );
         unsubSubjects = onSubjectsUpdate(
             (newSubjects) => { 
-              setLiveSubjects(prev => {
-                if(areArraysOfObjectsEqual(prev, newSubjects)) return prev;
-                return newSubjects;
-              }); 
+              setLiveSubjects(prev => areArraysOfObjectsEqual(prev, newSubjects) ? prev : newSubjects); 
             }, 
-            (error) => { console.error("RT Subjects Error:", error); setIsOffline(prev => !prev ? true : prev); }
+            (error) => { console.error("RT Subjects Error:", error); setIsOffline(true); }
         );
         
         if (weekDays.length > 0) {
@@ -264,7 +251,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                     return { ...prev, [dateStr]: announcements };
                   });
               }, 
-              (error) => { console.error(`RT Annc Error ${dateStr}:`, error); setIsOffline(prev => !prev ? true : prev); });
+              (error) => { console.error(`RT Annc Error ${dateStr}:`, error); setIsOffline(true); });
           });
         }
     }
@@ -345,13 +332,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     
     let subjectIdOverrideToPersist: string | null = subjectIdOverride ?? null;
 
-    // If logged in as admin, any selected subjectIdOverride is used.
-    // If anonymous, only allow subjectIdOverride if there's also text or showOnCalendar is true.
-    // Or if the selected subject is different from the base fixed subject.
     if (isAnonymous) {
       const baseSubjectId = selectedSlot.baseFixedSubjectId ?? null;
       if (!textToPersist && !showOnCalendarToPersist && subjectIdOverrideToPersist === baseSubjectId) {
-        // If anonymous, no text, not on calendar, and subject is same as fixed, treat as no override.
         subjectIdOverrideToPersist = null;
       }
     }
@@ -366,7 +349,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         subjectIdOverride: subjectIdOverrideToPersist,
         showOnCalendar: showOnCalendarToPersist,
         itemType: 'announcement',
-        isManuallyCleared: false, // Saving content means it's not manually cleared
+        isManuallyCleared: false, 
       };
 
       await upsertDailyAnnouncement(announcementData, userIdForLog);
@@ -410,19 +393,17 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_clear' : 'unknown_user');
     
     try {
-      // Upsert with "cleared" state
-      const clearedAnnouncementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = {
+      await upsertDailyAnnouncement({
         date: date,
         period: period,
         text: '',
-        subjectIdOverride: null, // Explicitly null to signify no override
+        subjectIdOverride: null, // Reverts to fixed subject implicitly
         showOnCalendar: false,
         itemType: 'announcement',
-        isManuallyCleared: true, // Mark as manually cleared
-      };
-      await upsertDailyAnnouncement(clearedAnnouncementData, userIdForLog);
+        isManuallyCleared: true, // Mark that this slot should not be auto-populated by applyFixedTimetableForFuture
+      }, userIdForLog);
 
-      toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアしました。` });
+      toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアし、基本の時間割に戻しました。` });
       setIsModalOpen(false); 
       
       queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
@@ -544,13 +525,23 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const announcement = getDailyAnnouncement(dateStr, period);
                   
                   const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
-                  const displaySubjectId = announcement?.subjectIdOverride ?? baseFixedSubjectId;
+                  let displaySubjectId = baseFixedSubjectId;
+                  if (announcement && announcement.subjectIdOverride !== undefined) {
+                      displaySubjectId = announcement.subjectIdOverride;
+                  }
                   const displaySubject = getSubjectById(displaySubjectId);
                   const announcementDisplayText = announcement?.text;
                   
                   const isToday = isSameDay(date, currentDate);
                   
-                  const showSubjectChangeIndicator = announcement?.subjectIdOverride !== undefined && announcement.subjectIdOverride !== baseFixedSubjectId && !announcement.isManuallyCleared;
+                  // Show "(変更)" only if subjectIdOverride is different from baseFixedSubjectId AND not null
+                  // AND the slot has not been manually cleared.
+                  const showSubjectChangeIndicator = 
+                    announcement?.subjectIdOverride !== undefined &&
+                    announcement.subjectIdOverride !== null && // Explicit override exists
+                    announcement.subjectIdOverride !== baseFixedSubjectId && // And it's different from fixed
+                    !announcement?.isManuallyCleared; // And not manually cleared
+
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY;
@@ -568,7 +559,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                         <>
                           <div className="mb-1 flex-shrink-0">
                             <div className={cn("text-sm truncate", displaySubject && isToday ? "font-bold" : "font-medium", showSubjectChangeIndicator && "text-red-600 dark:text-red-400" )} title={displaySubject?.name ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
-                              {announcement?.isManuallyCleared ? '未設定 (クリア済)' : displaySubject?.name ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
+                              {announcement?.isManuallyCleared ? <span className="text-muted-foreground italic">未設定 (クリア済)</span> : displaySubject?.name ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
                               {showSubjectChangeIndicator && <span className="text-xs ml-1">(変更)</span>}
                             </div>
                             {displaySubject?.teacherName && !announcement?.isManuallyCleared && (
@@ -602,7 +593,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   );
                 })
               ];
-              return <div key={`row-${period}`} className="flex border-b min-w-max">{cells.map(cell => cell)}</div>;
+              return <div key={`row-${period}`} className="flex border-b min-w-max">{cells}</div>;
             })
           )}
         </CardContent>
@@ -623,7 +614,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             {selectedSlot?.baseFixedSubjectId && getSubjectById(selectedSlot.baseFixedSubjectId) && (user && !isAnonymous) && ( 
               <p className="text-sm text-muted-foreground pt-1">
                 元の科目: {getSubjectById(selectedSlot.baseFixedSubjectId)?.name ?? '未設定'}
-                {getSubjectById(selectedSlot.baseFixedSubjectId)?.teacherName && ` (${getSubjectById(selectedSlot.baseFixedSubjectId)?.teacherName})`}
+                {getSubjectById(selectedSlot.baseFixedSubjectId)?.teacherName ? ` (${getSubjectById(selectedSlot.baseFixedSubjectId)?.teacherName})` : ''}
               </p>
             )}
           </DialogHeader>
@@ -723,5 +714,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-
-    

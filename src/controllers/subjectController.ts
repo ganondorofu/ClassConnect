@@ -42,13 +42,14 @@ export const getSubjects = async (): Promise<Subject[]> => {
   }
 };
 
-export const addSubject = async (name: string, teacherName: string, userId: string = 'system_add_subject'): Promise<string> => {
-  if (!name || !teacherName) {
-    throw new Error("科目名と教員名は必須です。");
+export const addSubject = async (name: string, teacherName: string | null, userId: string = 'system_add_subject'): Promise<string> => {
+  if (!name) {
+    throw new Error("科目名は必須です。");
   }
+  const trimmedTeacherName = teacherName?.trim() || null;
   const dataToSet: Omit<Subject, 'id'> = {
     name: name.trim(),
-    teacherName: teacherName.trim(),
+    teacherName: trimmedTeacherName,
   };
   try {
     const docRef = await addDoc(subjectsCollectionRef, dataToSet);
@@ -56,7 +57,7 @@ export const addSubject = async (name: string, teacherName: string, userId: stri
     await logAction('add_subject', {
         before: null,
         after: newSubjectWithId
-    }, userId); // Pass userId to logAction
+    }, userId);
     return docRef.id;
   } catch (error) {
     console.error("Error adding subject:", error);
@@ -71,14 +72,15 @@ export const addSubject = async (name: string, teacherName: string, userId: stri
   }
 };
 
-export const updateSubject = async (id: string, name: string, teacherName: string, userId: string = 'system_update_subject'): Promise<void> => {
+export const updateSubject = async (id: string, name: string, teacherName: string | null, userId: string = 'system_update_subject'): Promise<void> => {
    if (!id) throw new Error("Subject ID is required for updates.");
-   if (!name || !teacherName) throw new Error("科目名と教員名は必須です。");
+   if (!name) throw new Error("科目名は必須です。");
 
   const docRef = doc(subjectsCollectionRef, id);
+  const trimmedTeacherName = teacherName?.trim() || null;
   const dataToSet: Omit<Subject, 'id'> = {
     name: name.trim(),
-    teacherName: teacherName.trim(),
+    teacherName: trimmedTeacherName,
   };
   let beforeState: Subject | null = null;
 
@@ -93,7 +95,7 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
     await logAction('update_subject', {
         before: beforeState,
         after: afterState
-     }, userId); // Pass userId to logAction
+     }, userId);
   } catch (error) {
     console.error("Error updating subject:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -144,7 +146,7 @@ export const deleteSubject = async (id: string, userId: string = 'system_delete_
       before: beforeState,
       after: null,
       meta: { referencesUpdatedCount }
-    }, userId); // Pass userId to logAction
+    }, userId);
 
   } catch (error: any) {
     console.error(`Error deleting subject ${id} and updating references:`, error);
@@ -161,7 +163,7 @@ export const onSubjectsUpdate = (
 ): Unsubscribe => {
     const q = query(subjectsCollectionRef, orderBy('name'));
     return onSnapshot(q, (snapshot) => {
-        const subjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject));
+        const subjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), teacherName: doc.data().teacherName ?? null } as Subject));
         callback(subjects);
     }, (error) => {
       console.error("Snapshot error on subjects:", error);
