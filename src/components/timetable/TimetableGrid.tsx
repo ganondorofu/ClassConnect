@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -309,7 +308,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       announcement
     });
     setAnnouncementText(announcement?.text ?? '');
-    setSubjectIdOverride(announcement?.subjectIdOverride ?? fixedSlot?.subjectId ?? null);
+    setSubjectIdOverride(announcement?.subjectIdOverride ?? null); // Initialize with current override or null
     setShowOnCalendarModal(announcement?.showOnCalendar ?? false);
     setIsModalOpen(true);
   };
@@ -330,10 +329,9 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const textToPersist = announcementText.trim();
     const showOnCalendarToPersist = showOnCalendarModal;
     
-    let subjectIdOverrideToPersist: string | null = subjectIdOverride ?? null;
-
-    // This is handled by the controller logic, but being explicit client-side can be good.
-    const isManuallyCleared = false; // When saving, it's not a manual clear operation.
+    // If subjectIdOverride is null, it means use the fixed subject.
+    // If it's a specific ID, it's an override.
+    const subjectIdOverrideToPersist: string | null = subjectIdOverride; 
 
     try {
       const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_edit' : 'unknown_user');
@@ -345,7 +343,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         subjectIdOverride: subjectIdOverrideToPersist,
         showOnCalendar: showOnCalendarToPersist,
         itemType: 'announcement',
-        isManuallyCleared: isManuallyCleared, 
+        isManuallyCleared: false, // When saving specific content, it's not a manual clear of the slot itself
       };
 
       await upsertDailyAnnouncement(announcementData, userIdForLog);
@@ -389,6 +387,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_clear' : 'unknown_user');
     
     try {
+      // Clearing means setting override to null (to revert to fixed), empty text, and calendar off.
+      // isManuallyCleared is set to true to indicate user explicitly cleared this slot.
       await upsertDailyAnnouncement({
         date: date,
         period: period,
@@ -522,23 +522,17 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const announcement = getDailyAnnouncement(dateStr, period);
                   
                   let finalDisplaySubjectId: string | null = baseFixedSubjectId;
-                  let isDailyChangeForSubject = false;
 
                   if (announcement) {
                       if (announcement.isManuallyCleared) {
                           finalDisplaySubjectId = baseFixedSubjectId;
                       } else if (typeof announcement.subjectIdOverride !== 'undefined') {
                           finalDisplaySubjectId = announcement.subjectIdOverride;
-                          isDailyChangeForSubject = true;
                       }
                   }
                   const displaySubject = getSubjectById(finalDisplaySubjectId);
                   const announcementDisplayText = announcement?.text;
                   const isToday = isSameDay(date, currentDate);
-                  
-                  const showSubjectChangeIndicator =
-                      isDailyChangeForSubject &&
-                      finalDisplaySubjectId !== baseFixedSubjectId;
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY;
@@ -555,9 +549,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       {cellIsInteractive ? (
                         <>
                           <div className="mb-1 flex-shrink-0">
-                            <div className={cn("text-sm truncate", displaySubject && isToday ? "font-bold" : "font-medium", showSubjectChangeIndicator && "text-red-600 dark:text-red-400" )} title={displaySubject?.name ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
+                            <div className={cn("text-sm truncate", displaySubject && isToday ? "font-bold" : "font-medium")} title={displaySubject?.name ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
                               {displaySubject?.name ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
-                              {showSubjectChangeIndicator && <span className="text-xs ml-1">(変更)</span>}
                             </div>
                             {displaySubject?.teacherName && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displaySubject.teacherName}>
@@ -624,7 +617,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   subjects={subjects}
                   selectedSubjectId={subjectIdOverride}
                   onValueChange={setSubjectIdOverride}
-                  placeholder="科目を選択 (変更なし)"
+                  placeholder="科目を選択 (変更なし)" 
                   disabled={isSaving || isLoadingSubjects}
                   className="col-span-3"
                 />
