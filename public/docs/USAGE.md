@@ -178,7 +178,31 @@ ClassConnectは、クラスの時間割や日々の連絡事項を簡単に共�
     <!-- ADMIN_SECTION_START_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->
     <!-- ADMIN_SECTION_END_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->
 
+## 8. オープンソースライセンス (Open Source Licenses)
+
+本アプリケーション ClassConnect は、以下のオープンソースソフトウェアを利用して開発されています。これらのソフトウェアのライセンス条件は、各ソフトウェアの公式サイトまたは配布元で確認できます。
+
+*   **Next.js:** MIT License
+*   **React:** MIT License
+*   **Tailwind CSS:** MIT License
+*   **Firebase SDKs (firebase, firebase-admin):** Apache License 2.0
+*   **Genkit (および関連する @genkit-ai パッケージ):** Apache License 2.0
+*   **Shadcn/UI (Radix UI, Lucide Reactなどを含む):** MIT License
+*   **Tanstack Query:** MIT License
+*   **date-fns:** MIT License
+*   **Zod:** MIT License
+*   **React Hook Form:** MIT License
+*   **React Markdown:** MIT License
+*   **clsx:** MIT License
+*   **tailwind-merge:** MIT License
+
+上記以外にも、多数のオープンソースソフトウェアが依存関係として利用されています。各パッケージの詳細なライセンス情報は、プロジェクトの `node_modules` ディレクトリ内の各パッケージの `LICENSE` ファイルや `package.json` を参照してください。
+
+これらの素晴らしいオープンソースプロジェクトとその貢献者に感謝いたします。
+
 
 ---
 
 ClassConnectを快適にご利用いただけることを願っています！
+
+```
