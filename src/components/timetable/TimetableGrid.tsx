@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -309,17 +308,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     });
     setAnnouncementText(announcement?.text ?? '');
 
-    // Initialize modal subject selector state (`subjectIdOverrideModal`)
-    // This state is what `SubjectSelector` binds to.
-    // `null` for "科目未設定 (なし)"
-    // `subjectId` for a specific subject
-    // If `announcement.subjectIdOverride` is `null` (use fixed) or `undefined` (no announcement),
-    // then initialize with `baseFixedSubjectId` to show the fixed subject initially.
-    if (announcement?.subjectIdOverride === "") { // Explicitly "未設定"
+    if (announcement?.subjectIdOverride === "") { 
         setSubjectIdOverrideModal(null); 
-    } else if (announcement?.subjectIdOverride !== undefined && announcement.subjectIdOverride !== null) { // Specific override ID
+    } else if (announcement?.subjectIdOverride !== undefined && announcement.subjectIdOverride !== null) { 
         setSubjectIdOverrideModal(announcement.subjectIdOverride);
-    } else { // No daily override (announcement.subjectIdOverride is null or undefined), so use fixed
+    } else { 
         setSubjectIdOverrideModal(fixedSlot?.subjectId ?? null);
     }
     
@@ -344,22 +337,18 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const showOnCalendarToPersist = showOnCalendarModal;
     
     let finalSubjectIdOverrideForDb: string | null;
-    const modalSelection = subjectIdOverrideModal; // Value from SubjectSelector: subject ID or null for "科目未設定 (なし)"
-    const fixedSubjectForSlot = selectedSlot.baseFixedSubjectId; // ID or null
+    const modalSelection = subjectIdOverrideModal; 
+    const fixedSubjectForSlot = selectedSlot.baseFixedSubjectId; 
 
-    if (modalSelection === null) { // User selected "科目未設定 (なし)" in SubjectSelector
+    if (modalSelection === null) { 
         if (fixedSubjectForSlot === null) {
-            // Fixed was already "未設定", and user chose "未設定". No daily override needed.
             finalSubjectIdOverrideForDb = null;
         } else {
-            // Fixed had a subject, but user explicitly chose "科目未設定 (なし)".
-            finalSubjectIdOverrideForDb = ""; // Store "" for explicitly no subject for the day
+            finalSubjectIdOverrideForDb = ""; 
         }
     } else if (modalSelection === fixedSubjectForSlot) {
-        // User selected (or didn't change from) the subject that is already in the fixed timetable.
-        finalSubjectIdOverrideForDb = null; // No daily override needed, use fixed.
+        finalSubjectIdOverrideForDb = null; 
     } else {
-        // User selected a specific subject different from fixed, or fixed was "未設定" and user picked a subject.
         finalSubjectIdOverrideForDb = modalSelection;
     }
     
@@ -421,10 +410,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date: date,
         period: period,
         text: '',
-        subjectIdOverride: null, // Revert to fixed timetable's subject
+        subjectIdOverride: null, 
         showOnCalendar: false,
         itemType: 'announcement',
-        isManuallyCleared: false, 
+        isManuallyCleared: true, // Mark as manually cleared
       }, userIdForLog);
 
       toast({ title: "成功", description: `${date} ${period}限目の連絡・変更をクリアし、基本の時間割に戻しました。` });
@@ -568,7 +557,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   </div>
                 ))
               ];
-              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{skeletonCells}</div>;
+              return <div key={`skeleton-row-${period}`} className="flex border-b min-h-[100px] md:min-h-[120px] min-w-max">{skeletonCells.map(cell => cell)}</div>;
             })
           ) : (
             periodNumbers.map((period) => {
@@ -583,40 +572,43 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   let finalDisplaySubjectId: string | null = baseFixedSubjectId;
                   let displaySubjectName: string | null = null;
                   let displayTeacherName: string | null = null;
-                  let isSubjectChangedFromFixed = false;
-
+                  
                   if (announcement) {
-                    // If isManuallyCleared is true, we should use fixed values. This seems to be handled by default setting of finalDisplaySubjectId
                     if (announcement.isManuallyCleared) {
-                       // No specific action for subjectId, text will be empty and calendar false
+                       // Keep finalDisplaySubjectId as baseFixedSubjectId
                     } else if (announcement.subjectIdOverride === "") { 
-                      finalDisplaySubjectId = ""; // Indicates "未設定" (explicitly no subject)
+                      finalDisplaySubjectId = ""; 
                     } else if (announcement.subjectIdOverride !== null && announcement.subjectIdOverride !== undefined) {
-                      finalDisplaySubjectId = announcement.subjectIdOverride; // Specific override
+                      finalDisplaySubjectId = announcement.subjectIdOverride;
                     }
-                    // If announcement.subjectIdOverride is null, it implies using the fixed schedule's subject,
-                    // which is already the default for finalDisplaySubjectId.
                   }
                   
-                  // Determine if the displayed subject differs from the fixed timetable's subject
-                  isSubjectChangedFromFixed = finalDisplaySubjectId !== baseFixedSubjectId;
-                  // Special case: if fixed was "未設定" (null) and daily is also "未設定" (empty string), it's not a "change"
-                  if (finalDisplaySubjectId === "" && baseFixedSubjectId === null) {
-                      isSubjectChangedFromFixed = false;
+                  let isSubjectAlteredToday = false;
+                  if (announcement && announcement.subjectIdOverride !== null && announcement.subjectIdOverride !== undefined) {
+                    // An explicit override exists (either a subject ID or "" for unassigned)
+                    if (announcement.subjectIdOverride === "") { // Daily is "Unassigned"
+                      if (baseFixedSubjectId !== null) { // Fixed was NOT "Unassigned"
+                        isSubjectAlteredToday = true;
+                      }
+                    } else { // Daily is a specific subject
+                      if (announcement.subjectIdOverride !== baseFixedSubjectId) {
+                        isSubjectAlteredToday = true;
+                      }
+                    }
                   }
 
 
-                  if (finalDisplaySubjectId === "") { // Explicitly "未設定" for the day
+                  if (finalDisplaySubjectId === "") { 
                       displaySubjectName = "未設定";
-                  } else if (finalDisplaySubjectId !== null) { // Specific subject (either fixed or daily override)
+                  } else if (finalDisplaySubjectId !== null) { 
                       const subjectInfo = getSubjectById(finalDisplaySubjectId);
-                      displaySubjectName = subjectInfo?.name ?? null; // Fallback to null if ID is invalid
+                      displaySubjectName = subjectInfo?.name ?? null; 
                       displayTeacherName = subjectInfo?.teacherName ?? null;
-                  } else { // finalDisplaySubjectId is null (fixed is "未設定" and no daily override to a specific subject)
-                      displaySubjectName = null; // Will render as '未設定' if active day
+                  } else { 
+                      displaySubjectName = null; 
                   }
                   
-                  const announcementDisplayText = announcement?.isManuallyCleared ? '' : announcement?.text; // Don't show text if slot was manually cleared
+                  const announcementDisplayText = announcement?.isManuallyCleared ? '' : announcement?.text; 
                   const isToday = isSameDay(date, currentDate);
                   
                   const canEditThisSlot = (user || isAnonymous); 
@@ -636,7 +628,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                           <div className="mb-1 flex-shrink-0">
                             <div className={cn("text-sm truncate", displaySubjectName && isToday && dayCodeToDayOfWeekEnum(getDay(currentDate)) === dayOfWeek ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
                               {displaySubjectName ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
-                              {isSubjectChangedFromFixed && <span className="text-xs text-destructive ml-1">(変更)</span>}
+                              {isSubjectAlteredToday && <span className="text-xs ml-1">(変更)</span>}
                             </div>
                             {displayTeacherName && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={displayTeacherName}>
@@ -669,7 +661,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   );
                 })
               ];
-              return <div key={`row-${period}`} className="flex border-b min-w-max">{cells}</div>;
+              return <div key={`row-${period}`} className="flex border-b min-w-max">{cells.map(cell => cell)}</div>;
             })
           )}
         </CardContent>
@@ -700,8 +692,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 <SubjectSelector
                   id="subject-override"
                   subjects={subjects}
-                  selectedSubjectId={subjectIdOverrideModal} // This can be a subject ID or null (for "科目未設定")
-                  onValueChange={setSubjectIdOverrideModal} // Sets subjectIdOverrideModal to ID or null
+                  selectedSubjectId={subjectIdOverrideModal} 
+                  onValueChange={setSubjectIdOverrideModal} 
                   placeholder={`変更なし (${getSubjectById(selectedSlot?.baseFixedSubjectId ?? null)?.name ?? '未設定'})`}
                   disabled={isSaving || isLoadingSubjects || !canEditTimetableSlot}
                   className="col-span-3"
@@ -751,13 +743,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 </AlertDialog>
                  <Button variant="outline" size="sm" onClick={handleRevertToFixed} className="w-full sm:w-auto" 
                   disabled={isSaving || isOffline || !canEditTimetableSlot || (
-                    // Disable if no effective change or already at fixed state
                     (subjectIdOverrideModal === (selectedSlot?.baseFixedSubjectId ?? null)) &&
                     !announcementText && !showOnCalendarModal &&
                     (!selectedSlot?.announcement || (
                         selectedSlot.announcement.subjectIdOverride === null &&
                         !selectedSlot.announcement.text &&
-                        !selectedSlot.announcement.showOnCalendar
+                        !selectedSlot.announcement.showOnCalendar &&
+                        !selectedSlot.announcement.isManuallyCleared 
                     ))
                   )}>
                     <RotateCcw className="mr-1 w-4 h-4" /> 元の教科に戻す
@@ -801,4 +793,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-
