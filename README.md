@@ -1,132 +1,206 @@
-# ClassConnect
+# ClassConnect 利用ガイド
 
-ClassConnect is a streamlined information sharing application designed for classrooms, aiming to replace traditional morning and homeroom meetings. Built with Next.js, React, Firebase (Firestore), and Tailwind CSS, it provides a real-time, accessible platform for viewing timetables and daily announcements.
+ClassConnect（クラスコネクト）をご利用いただきありがとうございます。
+このガイドでは、ClassConnectの基本的な使い方と機能について説明します。
 
-## Features
+## 1. ClassConnectとは？
 
-- **Fixed Timetable Display:** View the weekly class schedule (Monday-Friday).
-- **Daily Announcements:** Teachers/admins can post updates (special items, tests, changes, etc.) for specific time slots for the current day.
-- **AI-Powered Announcement Summarization:** Option to generate a concise summary of daily general announcements.
-- **Timetable Customization:** Admins can adjust the number of periods per day via a settings page.
-- **Event Display:** Register and view non-regular events like school trips or festivals on a calendar.
-- **Real-time Updates:** Changes are reflected instantly for all users via Firestore's real-time capabilities.
-- **Dark/Light Mode:** Toggle between themes for user preference.
-- **Responsive Design:** Works on desktops, tablets, and mobile devices.
-- **Authentication:** Supports admin login (email/password) and anonymous access with role-based feature availability.
-- **Logging & Rollback:** Basic logging of administrative actions with a UI to view logs and rollback certain changes.
+ClassConnectは、クラスの時間割や日々の連絡事項を簡単に共有・確認できるウェブアプリケーションです。
+先生と生徒間の情報伝達をスムーズにし、教室運営をサポートします。
 
-## Tech Stack
+## 2. 主な機能
 
-- **Frontend:** Next.js (App Router), React (Hooks/Functional Components)
-- **Backend/Database:** Firebase (Firestore, Firebase Auth)
-- **AI Features:** Genkit with Google Gemini
-- **Styling:** Tailwind CSS, shadcn/ui
-- **State Management/Data Fetching:** Tanstack Query (@tanstack/react-query)
-- **Date Management:** date-fns
+*   **時間割表示:** 週間の時間割（月～日）をカレンダー形式で表示します。
+*   **お知らせ機能:**
+    *   **全体お知らせ:** その日1日全体に関するお知らせを掲載できます（Markdown形式対応）。AIによる要約機能もあり、お知らせ内容変更時には再生成が可能です。
+        <!-- ADMIN_SECTION_START -->
+        管理者はAI要約の削除や、内容が変更されていなくても任意のタイミングでの再生成が可能です。
+        <!-- ADMIN_SECTION_END -->
+    *   **コマごとの連絡:** 各授業時間（コマ）に対して、持ち物や小テストの連絡などを記録・表示できます。科目の変更も可能です。時間割の連絡事項はカレンダーにも表示する設定ができます。
+*   **カレンダー機能:** 登録された学校行事や、カレンダー表示がオンになっている時間割の連絡事項を月間カレンダーで確認できます。
+<!-- ADMIN_SECTION_START -->
+*   **管理者機能（要ログイン）:**
+    *   基本設定: 1日のコマ数を設定できます。
+    *   固定時間割設定: 基本となる週の固定時間割（月～金）を設定できます。
+    *   科目管理: 授業科目を追加・編集・削除できます。
+    *   変更履歴: アプリケーション内の主な操作履歴を確認し、一部操作を元に戻す（ロールバック）ことができます。ロールバック操作の取り消しも可能です。
+    *   AI要約の管理: 全体お知らせのAI要約を削除したり、再生成したりできます。
+    *   行事管理: 学校行事を追加・編集・削除できます。
+<!-- ADMIN_SECTION_END -->
 
-## Project Structure (Simplified MVC-like approach)
+## 3. 基本的な使い方
 
-- `src/app/`: Next.js App Router pages (Views/Routing)
-  - `api/`: API Route handlers
-- `src/components/`: Reusable React components (Views)
-  - `layout/`: Layout components (Header, MainLayout)
-  - `timetable/`: Timetable specific components (TimetableGrid)
-  - `ui/`: shadcn/ui components
-- `src/controllers/`: Business logic and data fetching/manipulation functions interacting with Firebase (Controllers)
-- `src/models/`: TypeScript interfaces defining data structures (Models)
-- `src/config/`: Configuration files (e.g., Firebase setup)
-- `src/lib/`: Utility functions
-- `src/hooks/`: Custom React hooks
-- `src/ai/`: Genkit flows and AI related logic
-- `public/`: Static assets
+### 3.1. 初回アクセスと利用モード
 
-## Setup and Installation
+最初にアクセスすると、利用方法を選択する画面が表示されます。
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd classconnect
-    ```
+*   **管理者としてログイン:** メールアドレスとパスワードでログインし、全ての機能を利用します。
+*   **ログインなしで利用する:** 匿名ユーザーとして、時間割の閲覧と、お知らせの作成・編集（全体・コマごと）が可能です。科目設定や履歴管理などの管理者機能は利用できません。
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
+一度選択すると、次回以降は自動的にそのモードで利用開始します。（ブラウザの設定が保存されます）
+モードを変更したい場合は、ヘッダーのボタンからログインまたはログアウトを行ってください。
 
-3.  **Configure Firebase & AI Services:**
-    - Create a Firebase project at [https://console.firebase.google.com/](https://console.firebase.google.com/).
-    - Enable **Firestore Database**. Start in **test mode** for initial development (remember to set up security rules later!).
-    - Enable **Firebase Authentication** and configure Email/Password sign-in method.
-    - Go to Project Settings > General > Your apps > Web app.
-    - Register a new web app and copy the `firebaseConfig` object.
-    - Create a file named `.env.local` in the root of the project.
-    - Copy the contents of `.env.local.example` (if available, otherwise create one) into `.env.local`.
-    - Replace the placeholder values in `.env.local` with your actual Firebase configuration values from the `firebaseConfig` object. **Prefix all Firebase environment variables with `NEXT_PUBLIC_`** to make them available on the client-side.
-    - **For AI Features (Gemini):**
-        - Obtain a Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-        - Add this key to your `.env.local` file as `GOOGLE_GENAI_API_KEY=YOUR_GEMINI_API_KEY`.
+### 3.2. 時間割の確認
 
-    Your `.env.local` should look something like this:
-    ```.env.local
-    NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_FIREBASE_API_KEY
-    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_FIREBASE_AUTH_DOMAIN
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_FIREBASE_PROJECT_ID
-    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=YOUR_FIREBASE_STORAGE_BUCKET
-    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=YOUR_FIREBASE_MESSAGING_SENDER_ID
-    NEXT_PUBLIC_FIREBASE_APP_ID=YOUR_FIREBASE_APP_ID
-    # NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=YOUR_MEASUREMENT_ID # Optional
+メインページで時間割が表示されます。
 
-    GOOGLE_GENAI_API_KEY=YOUR_GEMINI_API_KEY
-    ```
+*   **日付の移動:**
+    *   画面上部の日付表示の左右にある矢印ボタン（`<` `>`）で、1日単位で前後に移動できます。
+    *   日付表示部分をクリックするとカレンダーが表示され、特定の日付を選択できます。
+    *   「今日」ボタンで、現在の日付に戻ります。
+*   **週の移動:**
+    *   画面上部の「週」と書かれた部分の左右にある矢印ボタン（`<` `>`）で、1週間単位で前後に移動できます。
 
-4.  **Run the development server:**
-    ```bash
-    npm run dev
-    # or
-    yarn dev
-    ```
-    The application should now be running on [http://localhost:9002](http://localhost:9002) (or the specified port).
+### 3.3. お知らせの確認
 
-## Building for Production
+*   **全体お知らせ:** 時間割の上部に、その日の全体お知らせが表示されます。内容が長い場合はAIによる要約も表示されることがあります。
+*   **コマごとの連絡:** 時間割の各コマに、その授業に関する連絡事項や科目変更が表示されます。科目が基本の時間割から変更されている場合は、「(変更)」と表示されます。
 
-```bash
-npm run build
-```
-This command builds the application for production usage.
+### 3.4. お知らせの編集（ログインユーザーまたは匿名ユーザー）
 
-## Deploying
+*   **全体お知らせの編集:**
+    1.  全体お知らせ欄の右上にある「編集」ボタン（ペンのアイコン）をクリックします。
+    2.  テキストエリアにMarkdown形式でお知らせ内容を入力します。
+    3.  「保存」ボタンで内容を保存します。空欄で保存するとお知らせは削除されます。
+    4.  保存後、内容が変更された場合は、AI要約を再生成できます。（「AI要約」ボタンが表示されます）
+*   **コマごとの連絡・科目変更の編集:**
+    1.  時間割表の編集したいコマの右下にある「編集」ボタン（ペンのアイコン）をクリックします。
+    2.  ダイアログが表示されるので、必要に応じて「科目変更」で科目を変更し、「連絡内容」を入力します。また、「カレンダーに表示」のチェックボックスでカレンダーへの表示/非表示を切り替えられます。
+    3.  「保存」ボタンで内容を保存します。科目変更を行わず、連絡内容も空で、カレンダー表示がオフの場合、その時間の連絡・変更は削除されます。
 
-You can deploy the application to various platforms like Vercel (recommended for Next.js), Firebase Hosting, Netlify, etc.
+### 3.5. カレンダーの確認・行事の編集
 
-**Deploying to Vercel:**
+*   **カレンダー表示:** ヘッダーの「カレンダー」アイコンからアクセスできます。月間カレンダーが表示され、登録された行事や、カレンダー表示がオンになっている時間割の連絡事項を確認できます。
+*   **日付の移動:** カレンダー上部で月を移動できます。「今日」ボタンで当月カレンダーに戻ります。
+*   **詳細確認・時間割へ移動:** カレンダーの日付マスをクリックすると、その日の予定詳細（行事、時間割の連絡）が一覧表示されます。詳細モーダルから「この日の時間割を見る」ボタンで、該当日の時間割ページへ移動できます。
+<!-- ADMIN_SECTION_START -->
+*   **行事の追加/編集/削除 (管理者のみ):**
+    *   **追加:** カレンダー右上の「行事追加」ボタンから行事を登録できます。開始日、終了日（任意）、タイトル、詳細（任意）を設定できます。
+    *   **編集/削除:** 日付マスをクリックして表示される詳細モーダル内の各行事の編集・削除ボタンから操作します。
+<!-- ADMIN_SECTION_END -->
 
-1.  Push your code to a Git repository (GitHub, GitLab, Bitbucket).
-2.  Sign up or log in to [Vercel](https://vercel.com/).
-3.  Import your Git repository.
-4.  **Configure Environment Variables:**
-    - In your Vercel project settings, add all the environment variables defined in your `.env.local` file.
-    - This includes `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, etc., and also `GOOGLE_GENAI_API_KEY`.
-    - **Important:** Vercel does not automatically pick up `.env.local` for production builds; you must set them in the Vercel dashboard.
-5.  Ensure your `next.config.ts` **does not** have `output: 'export'` if you are using server-side features like API Routes (which Genkit relies on for AI summarization). Vercel's default Next.js deployment supports server-side rendering and API routes.
-6.  Deploy!
+<!-- ADMIN_SECTION_START -->
+## 4. 管理者向け機能（要ログイン）
 
-**Deploying to Firebase Hosting (with server-side features):**
+管理者としてログインすると、以下の追加機能が利用できます。これらの機能へは、ヘッダーの各アイコンからアクセスできます。
 
-Deploying a Next.js app with server-side features (like API Routes or Genkit flows) to Firebase Hosting typically requires integration with Cloud Functions for Firebase or Cloud Run. This is more complex than deploying a static site.
-- For simpler deployment of Next.js applications with server-side logic, Vercel is often preferred.
-- If you intend to use Firebase Hosting, you'll need to:
-    1. Initialize Firebase: `firebase init hosting`
-    2. Configure rewrites in `firebase.json` to direct requests to your Next.js server function.
-    3. Set up a Cloud Function to serve your Next.js app.
-    4. Build the app: `npm run build`.
-    5. Deploy: `firebase deploy`.
-    6. Set environment variables (Firebase config, Gemini API key) in the Cloud Functions environment.
+### 4.1. ヘッダーメニュー
 
-## Future Enhancements (Based on Request)
+*   **科目 (本のアイコン):** 科目管理ページへ移動します。
+*   **設定 (歯車のアイコン):** 基本設定・固定時間割設定ページへ移動します。
+*   **履歴 (時計のアイコン):** 変更履歴ページへ移動します。
+*   **カレンダー (カレンダーのアイコン):** クラスカレンダーページへ移動します。（一般ユーザーと同じ）
+*   **ヘルプ (「？」アイコン):** この利用ガイドを表示します。
+*   **ユーザー名:** 現在ログインしているユーザーのメールアドレスです。
+*   **ログアウト:** ログアウトします。
 
-- **More Event Types:** Expand announcement/event types with more icons and potentially custom fields.
-- **Notifications:** Implement push notifications for important announcements.
-- **Offline Support:** Explore strategies for offline data access (e.g., Firestore offline persistence, PWA features).
-- **PWA Conversion:** Enhance the app to be a Progressive Web App for better mobile experience and offline capabilities.
+### 4.2. 設定ページ (`/admin/settings`)
+
+*   **基本設定:**
+    *   **1日の時間数:** 1日の授業コマ数を1～12の間で設定します。
+    *   変更を保存すると、固定時間割の表示も更新されます。
+*   **固定時間割の設定:**
+    *   月曜日から金曜日までの、時限ごとに基本となる科目を設定します。
+    *   「科目未設定」を選択すると、そのコマは空きコマになります。
+    *   「固定時間割を保存」ボタンで変更を保存します。保存後、この固定時間割に基づいて将来（約2ヶ月先まで）の毎日の時間割が自動的に設定（上書き）されます。この際、手動で変更された連絡事項は保持されますが、科目は固定時間割で上書きされます。
+    *   **時間割を初期化:** 全ての固定時間割の科目を「未設定」に戻します。この操作後、「固定時間割を保存」を行うと、将来の時間割も未設定で上書きされます。
+    *   **将来の時間割を基本で上書き:** 現在保存されている固定時間割の内容で、将来（約2ヶ月先まで）の日付のすべての時間割（手動での科目変更や連絡事項を含む）を上書きします。
+
+### 4.3. 科目管理ページ (`/admin/subjects`)
+
+*   登録されている科目と担当教員の一覧が表示されます。
+*   **新規科目を追加:** 新しい科目を追加します。科目名と担当教員名を入力してください。
+*   **編集 (ペンのアイコン):** 既存の科目の名前や担当教員名を変更します。
+*   **削除 (ゴミ箱のアイコン):** 科目を削除します。
+    *   **注意:** 削除しようとしている科目が時間割で使用されている場合、確認ダイアログが表示されます。「削除する」を選択すると、その科目が割り当てられていた時間割のコマは「未設定」になり、関連する連絡事項の科目も「未設定」として扱われます。
+
+### 4.4. 変更履歴ページ (`/admin/logs`)
+
+*   アプリケーション内の主要な操作ログ（設定変更、科目変更、お知らせ更新など）が新しい順に表示されます。
+*   一部の操作は「元に戻す」ボタンでロールバック（取り消し）できます。
+    *   ロールバック操作自体もログとして記録されます。
+    *   一度ロールバックした操作をさらに「取り消す」（つまり元の操作を再適用する）ことも可能です。この場合、ボタンの表示は「取り消し」に変わります。
+    *   ロールバックの取り消しを行ったログ（元の操作が再適用されたログ）は、それ以上元に戻すことはできません。
+*   **注意:** 複雑な操作や依存関係のある変更のロールバックは、予期せぬ結果を招く可能性があります。慎重に行ってください。
+<!-- ADMIN_SECTION_END -->
+
+## 5. その他
+
+### 5.1. テーマ変更
+
+画面右上の月のアイコンまたは太陽のアイコンをクリックすると、ライトモードとダークモードを切り替えることができます。「System」を選択すると、お使いのOSの設定に追従します。
+
+### 5.2. オフライン時の動作
+
+インターネット接続がないオフライン状態でも、最後に読み込んだデータで時間割などを表示できる場合があります。
+ただし、オフライン中は以下の点にご注意ください。
+*   表示されているデータは最新ではない可能性があります。
+*   データの変更（お知らせの編集、設定変更など）は保存されません。
+*   画面上部にオフラインであることを示す警告が表示されることがあります。
+
+## 6. 利用規約
+
+本アプリケーション ClassConnect (以下「本ツール」といいます) を利用される前に、以下の利用規約をよくお読みください。本ツールを利用することで、本規約に同意したものとみなします。
+
+1.  **ツールの目的と免責事項:**
+    *   本ツールは、クラス内の情報共有を補助することを目的として提供されます。
+    *   本ツールの提供者は、本ツールの利用によって生じたいかなる損害（データの損失、業務の中断、その他の金銭的損害を含むがこれに限らない）についても、一切の責任を負いません。
+    *   本ツールは現状有姿で提供され、バグや障害がないこと、特定の目的に適合すること、第三者の権利を侵害しないことを保証するものではありません。
+
+2.  **データの取り扱いと責任:**
+    *   本ツールに入力されたデータ（時間割、お知らせ、科目情報など）は、基本的に誰でも閲覧・編集が可能です（管理者機能を除く）。データの正確性、機密性については利用者の責任において管理してください。
+    *   重要な情報や個人情報を含むデータの取り扱いには十分注意してください。
+
+3.  **禁止事項:**
+    *   本ツールの意図的な妨害行為（不正なデータの入力、システムの脆弱性を利用した攻撃など）。
+    *   本ツールおよびそのデータを、クラス運営の目的を著しく逸脱する形で、むやみに外部に公開または共有する行為。
+    *   法令または公序良俗に違反する行為。
+
+4.  **AI機能に関する注意:**
+    *   本ツールには、AI（人工知能）を利用した機能（お知らせの要約など）が含まれる場合があります。
+    *   AIによって生成された情報は、必ずしも正確または完全であるとは限りません。重要な判断を行う際は、必ず元の情報を確認し、ご自身の責任において利用してください。
+    *   AI機能の利用によって生じたいかなる結果についても、本ツールの提供者は責任を負いません。
+
+5.  **規約の変更:**
+    *   本ツールの提供者は、必要に応じて本規約を変更できるものとします。変更後の規約は、本ツール上で表示された時点から効力を生じるものとします。
+
+6.  **その他:**
+    *   本ツールの仕様は、予告なく変更されることがあります。
+
+## 7. 困ったときは
+
+*   **データが正しく表示されない、更新されない:**
+    *   インターネット接続を確認してください。
+    *   ブラウザを再読み込みしてみてください。
+    <!-- ADMIN_SECTION_START -->
+    *   それでも解決しない場合は、管理者にご連絡ください。
+    <!-- ADMIN_SECTION_END -->
+    <!-- ADMIN_SECTION_START_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->
+    <!-- ADMIN_SECTION_END_REPLACE_WITH_EMPTY_FOR_NON_ADMIN -->
+
+## 8. オープンソースライセンス (Open Source Licenses)
+
+本アプリケーション ClassConnect は、以下のオープンソースソフトウェアを利用して開発されています。これらのソフトウェアのライセンス条件は、各ソフトウェアの公式サイトまたは配布元で確認できます。
+
+*   **Next.js:** MIT License
+*   **React:** MIT License
+*   **Tailwind CSS:** MIT License
+*   **Firebase SDKs (firebase, firebase-admin):** Apache License 2.0
+*   **Genkit (および関連する @genkit-ai パッケージ):** Apache License 2.0
+*   **Shadcn/UI (Radix UI, Lucide Reactなどを含む):** MIT License
+*   **Tanstack Query:** MIT License
+*   **date-fns:** MIT License
+*   **Zod:** MIT License
+*   **React Hook Form:** MIT License
+*   **React Markdown:** MIT License
+*   **clsx:** MIT License
+*   **tailwind-merge:** MIT License
+
+上記以外にも、多数のオープンソースソフトウェアが依存関係として利用されています。各パッケージの詳細なライセンス情報は、プロジェクトの `node_modules` ディレクトリ内の各パッケージの `LICENSE` ファイルや `package.json` を参照してください。
+
+これらの素晴らしいオープンソースプロジェクトとその貢献者に感謝いたします。
+
+
+---
+
+ClassConnectを快適にご利用いただけることを願っています！
