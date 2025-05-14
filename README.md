@@ -93,7 +93,6 @@ ClassConnect は以下のような構成で開発・運用されています：
 * **Firebase Authentication**（ユーザー認証）
 * **Firebase Firestore**（データベース）
 * **Google Gemini API**（AIによる要約・応答生成）
-* **Firebase Hosting/Functions**（サーバーレス処理）
 
 ### 補助開発ツール・支援AI
 
