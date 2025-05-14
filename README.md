@@ -1,132 +1,100 @@
-# ClassConnect
 
-ClassConnect is a streamlined information sharing application designed for classrooms, aiming to replace traditional morning and homeroom meetings. Built with Next.js, React, Firebase (Firestore), and Tailwind CSS, it provides a real-time, accessible platform for viewing timetables and daily announcements.
 
-## Features
+# ClassConnect 利用ガイド
 
-- **Fixed Timetable Display:** View the weekly class schedule (Monday-Friday).
-- **Daily Announcements:** Teachers/admins can post updates (special items, tests, changes, etc.) for specific time slots for the current day.
-- **AI-Powered Announcement Summarization:** Option to generate a concise summary of daily general announcements.
-- **Timetable Customization:** Admins can adjust the number of periods per day via a settings page.
-- **Event Display:** Register and view non-regular events like school trips or festivals on a calendar.
-- **Real-time Updates:** Changes are reflected instantly for all users via Firestore's real-time capabilities.
-- **Dark/Light Mode:** Toggle between themes for user preference.
-- **Responsive Design:** Works on desktops, tablets, and mobile devices.
-- **Authentication:** Supports admin login (email/password) and anonymous access with role-based feature availability.
-- **Logging & Rollback:** Basic logging of administrative actions with a UI to view logs and rollback certain changes.
+ClassConnect（クラスコネクト）をご利用いただきありがとうございます。
 
-## Tech Stack
+## 1. ClassConnectとは？
 
-- **Frontend:** Next.js (App Router), React (Hooks/Functional Components)
-- **Backend/Database:** Firebase (Firestore, Firebase Auth)
-- **AI Features:** Genkit with Google Gemini
-- **Styling:** Tailwind CSS, shadcn/ui
-- **State Management/Data Fetching:** Tanstack Query (@tanstack/react-query)
-- **Date Management:** date-fns
+ClassConnectは、クラスの時間割や日々の連絡事項を簡単に共有・確認できるウェブアプリケーションです。
+先生と生徒間の情報伝達をスムーズにし、教室運営をサポートします。
 
-## Project Structure (Simplified MVC-like approach)
+---
 
-- `src/app/`: Next.js App Router pages (Views/Routing)
-  - `api/`: API Route handlers
-- `src/components/`: Reusable React components (Views)
-  - `layout/`: Layout components (Header, MainLayout)
-  - `timetable/`: Timetable specific components (TimetableGrid)
-  - `ui/`: shadcn/ui components
-- `src/controllers/`: Business logic and data fetching/manipulation functions interacting with Firebase (Controllers)
-- `src/models/`: TypeScript interfaces defining data structures (Models)
-- `src/config/`: Configuration files (e.g., Firebase setup)
-- `src/lib/`: Utility functions
-- `src/hooks/`: Custom React hooks
-- `src/ai/`: Genkit flows and AI related logic
-- `public/`: Static assets
+## 2. 利用規約
 
-## Setup and Installation
+本アプリケーション ClassConnect (以下「本ツール」といいます) を利用される前に、以下の利用規約をよくお読みください。本ツールを利用することで、本規約に同意したものとみなします。
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd classconnect
-    ```
+### 2.1 ツールの目的と免責事項
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
+* 本ツールは、クラス内の情報共有を補助することを目的として提供されます。
+* 本ツールの提供者は、本ツールの利用によって生じたいかなる損害（データの損失、業務の中断、その他の金銭的損害を含むがこれに限らない）についても、一切の責任を負いません。
+* 本ツールは現状有姿で提供され、バグや障害がないこと、特定の目的に適合すること、第三者の権利を侵害しないことを保証するものではありません。
 
-3.  **Configure Firebase & AI Services:**
-    - Create a Firebase project at [https://console.firebase.google.com/](https://console.firebase.google.com/).
-    - Enable **Firestore Database**. Start in **test mode** for initial development (remember to set up security rules later!).
-    - Enable **Firebase Authentication** and configure Email/Password sign-in method.
-    - Go to Project Settings > General > Your apps > Web app.
-    - Register a new web app and copy the `firebaseConfig` object.
-    - Create a file named `.env.local` in the root of the project.
-    - Copy the contents of `.env.local.example` (if available, otherwise create one) into `.env.local`.
-    - Replace the placeholder values in `.env.local` with your actual Firebase configuration values from the `firebaseConfig` object. **Prefix all Firebase environment variables with `NEXT_PUBLIC_`** to make them available on the client-side.
-    - **For AI Features (Gemini):**
-        - Obtain a Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-        - Add this key to your `.env.local` file as `GOOGLE_GENAI_API_KEY=YOUR_GEMINI_API_KEY`.
+### 2.2 データの取り扱いと責任
 
-    Your `.env.local` should look something like this:
-    ```.env.local
-    NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_FIREBASE_API_KEY
-    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_FIREBASE_AUTH_DOMAIN
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_FIREBASE_PROJECT_ID
-    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=YOUR_FIREBASE_STORAGE_BUCKET
-    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=YOUR_FIREBASE_MESSAGING_SENDER_ID
-    NEXT_PUBLIC_FIREBASE_APP_ID=YOUR_FIREBASE_APP_ID
-    # NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=YOUR_MEASUREMENT_ID # Optional
+* 本ツールに入力されたデータ（時間割、お知らせ、科目情報など）は、基本的に誰でも閲覧・編集が可能です（管理者機能を除く）。データの正確性、機密性については利用者の責任において管理してください。
+* 重要な情報や個人情報を含むデータの取り扱いには十分注意してください。
 
-    GOOGLE_GENAI_API_KEY=YOUR_GEMINI_API_KEY
-    ```
+### 2.3 禁止事項
 
-4.  **Run the development server:**
-    ```bash
-    npm run dev
-    # or
-    yarn dev
-    ```
-    The application should now be running on [http://localhost:9002](http://localhost:9002) (or the specified port).
+* 本ツールの意図的な妨害行為（不正なデータの入力、システムの脆弱性を利用した攻撃など）。
+* 本ツールおよびそのデータを、クラス運営の目的を著しく逸脱する形で、むやみに外部に公開または共有する行為。
+* 法令または公序良俗に違反する行為。
 
-## Building for Production
+### 2.4 AI機能に関する注意
 
-```bash
-npm run build
-```
-This command builds the application for production usage.
+* 本ツールには、AI（人工知能）を利用した機能（お知らせの要約など）が含まれる場合があります。
+* AIによって生成された情報は、必ずしも正確または完全であるとは限りません。重要な判断を行う際は、必ず元の情報を確認し、ご自身の責任において利用してください。
+* AI機能の利用によって生じたいかなる結果についても、本ツールの提供者は責任を負いません。
 
-## Deploying
+### 2.5 規約の変更
 
-You can deploy the application to various platforms like Vercel (recommended for Next.js), Firebase Hosting, Netlify, etc.
+* 本ツールの提供者は、必要に応じて本規約を変更できるものとします。変更後の規約は、本ツール上で表示された時点から効力を生じるものとします。
 
-**Deploying to Vercel:**
+### 2.6 その他
 
-1.  Push your code to a Git repository (GitHub, GitLab, Bitbucket).
-2.  Sign up or log in to [Vercel](https://vercel.com/).
-3.  Import your Git repository.
-4.  **Configure Environment Variables:**
-    - In your Vercel project settings, add all the environment variables defined in your `.env.local` file.
-    - This includes `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, etc., and also `GOOGLE_GENAI_API_KEY`.
-    - **Important:** Vercel does not automatically pick up `.env.local` for production builds; you must set them in the Vercel dashboard.
-5.  Ensure your `next.config.ts` **does not** have `output: 'export'` if you are using server-side features like API Routes (which Genkit relies on for AI summarization). Vercel's default Next.js deployment supports server-side rendering and API routes.
-6.  Deploy!
+* 本ツールの仕様は、予告なく変更されることがあります。
 
-**Deploying to Firebase Hosting (with server-side features):**
+---
 
-Deploying a Next.js app with server-side features (like API Routes or Genkit flows) to Firebase Hosting typically requires integration with Cloud Functions for Firebase or Cloud Run. This is more complex than deploying a static site.
-- For simpler deployment of Next.js applications with server-side logic, Vercel is often preferred.
-- If you intend to use Firebase Hosting, you'll need to:
-    1. Initialize Firebase: `firebase init hosting`
-    2. Configure rewrites in `firebase.json` to direct requests to your Next.js server function.
-    3. Set up a Cloud Function to serve your Next.js app.
-    4. Build the app: `npm run build`.
-    5. Deploy: `firebase deploy`.
-    6. Set environment variables (Firebase config, Gemini API key) in the Cloud Functions environment.
+## 3. 困ったときは
 
-## Future Enhancements (Based on Request)
+* **データが正しく表示されない、更新されない:**
 
-- **More Event Types:** Expand announcement/event types with more icons and potentially custom fields.
-- **Notifications:** Implement push notifications for important announcements.
-- **Offline Support:** Explore strategies for offline data access (e.g., Firestore offline persistence, PWA features).
-- **PWA Conversion:** Enhance the app to be a Progressive Web App for better mobile experience and offline capabilities.
+  * インターネット接続を確認してください。
+  * ブラウザを再読み込みしてみてください。
+  * それでも解決しない場合は、管理者にご連絡ください。
+
+---
+
+## 4. オープンソースライセンス (Open Source Licenses)
+
+本アプリケーション ClassConnect は、以下のオープンソースソフトウェアを利用して開発されています。これらのソフトウェアのライセンス条件は、各ソフトウェアの公式サイトまたは配布元で確認できます。
+
+* **Next.js:** MIT License
+* **React:** MIT License
+* **Tailwind CSS:** MIT License
+* **Firebase SDKs (firebase, firebase-admin):** Apache License 2.0
+* **Genkit（および @genkit-ai パッケージ）:** Apache License 2.0
+* **Shadcn/UI (Radix UI, Lucide Reactなどを含む):** MIT License
+* **Tanstack Query:** MIT License
+* **date-fns:** MIT License
+* **Zod:** MIT License
+* **React Hook Form:** MIT License
+* **React Markdown:** MIT License
+* **clsx:** MIT License
+* **tailwind-merge:** MIT License
+
+その他、多数の依存パッケージが含まれています。詳細は `node_modules` 配下の `LICENSE` ファイルや `package.json` をご確認ください。
+
+---
+
+## 5. システム構成と利用技術
+
+ClassConnect は以下のような構成で開発・運用されています：
+
+### デプロイ先
+
+* **Vercel**（Next.js アプリケーションホスティング）
+
+### バックエンド・データサービス
+
+* **Firebase Authentication**（ユーザー認証）
+* **Firebase Firestore**（データベース）
+* **Google Gemini API**（AIによる要約・応答生成）
+
+### 補助開発ツール・支援AI
+
+* **ChatGPT（OpenAI）**
+* **Firebase Studio**
