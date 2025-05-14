@@ -1,10 +1,11 @@
+
 "use client";
 
 import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { Settings, History, BookMarked, LogIn, LogOut, UserCircle, HelpCircle, CalendarDays } from 'lucide-react';
+import { Settings, History, BookMarked, LogIn, LogOut, UserCircle, HelpCircle, CalendarDays, MessageSquarePlus, ShieldQuestion } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext'; 
 import { Skeleton } from '@/components/ui/skeleton'; 
 import { useRouter } from 'next/navigation';
@@ -35,6 +36,15 @@ export function Header() {
     </Button>
   );
 
+  const ContactLinkButton = (
+    <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
+      <Link href="/contact" aria-label="お問い合わせ">
+        <MessageSquarePlus className="h-4 w-4" />
+        <span className="hidden sm:inline ml-1">お問い合わせ</span>
+      </Link>
+    </Button>
+  );
+
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -61,6 +71,7 @@ export function Header() {
                 <Skeleton className="h-8 w-8 sm:w-20" />
                 <Skeleton className="h-8 w-8 sm:w-20" />
                 <Skeleton className="h-8 w-8 sm:w-20" />
+                <Skeleton className="h-8 w-8 sm:w-20" />
              </div>
           ) : user && !isAnonymous ? ( // Logged in as admin
             <>
@@ -77,6 +88,12 @@ export function Header() {
                     <span className="hidden sm:inline ml-1">設定</span>
                   </Link>
                 </Button>
+                 <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
+                  <Link href="/admin/inquiries" aria-label="お問い合わせ管理">
+                    <ShieldQuestion className="h-4 w-4" />
+                    <span className="hidden sm:inline ml-1">問い合わせ</span>
+                  </Link>
+                </Button>
                 <Button variant="ghost" size="sm" className="px-2 sm:px-3" asChild>
                   <Link href="/admin/logs" aria-label="履歴">
                     <History className="h-4 w-4" />
@@ -84,6 +101,7 @@ export function Header() {
                   </Link>
                 </Button>
                 {CalendarLinkButton}
+                {ContactLinkButton}
                 {HelpLinkButton}
               </nav>
               <span className="text-sm text-muted-foreground hidden md:inline-block truncate max-w-xs" title={user.email ?? undefined}>
@@ -104,6 +122,7 @@ export function Header() {
                 </span>
              )}
               {CalendarLinkButton}
+              {ContactLinkButton}
               {HelpLinkButton}
              <Button variant="outline" size="sm" onClick={handleLoginClick}>
                 <LogIn className="h-4 w-4 sm:mr-1" />
