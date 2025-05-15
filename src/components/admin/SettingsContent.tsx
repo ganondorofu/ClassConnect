@@ -19,6 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { AlertCircle, WifiOff, Save, RefreshCw, RotateCcw } from 'lucide-react';
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
 import { useAuth } from '@/contexts/AuthContext';
+import { areSettingsEqual, areArraysOfObjectsEqual } from '@/lib/utils'; // Import helpers
 
 export default function SettingsContent() {
   const { toast } = useToast();
@@ -38,7 +39,7 @@ export default function SettingsContent() {
 
   useEffect(() => {
     const handleOnline = () => {
-      if (isOffline) {
+      if (isOffline) { // Only act if state was previously offline
         setIsOffline(false);
         queryClientHook.invalidateQueries({ queryKey: ['timetableSettings'] });
         queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
@@ -46,8 +47,9 @@ export default function SettingsContent() {
       }
     };
     const handleOffline = () => setIsOffline(true);
+
     if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
-      setIsOffline(!navigator.onLine);
+      setIsOffline(!navigator.onLine); // Initial check
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
       return () => {
@@ -56,7 +58,7 @@ export default function SettingsContent() {
       };
     }
     return () => {};
-  }, [isOffline, queryClientHook]);
+  }, [isOffline, queryClientHook]); // isOffline dependency helps re-evaluate if needed
 
   const handleQueryError = (queryKey: string) => (error: unknown) => {
     console.error(`Settings Query Error (${queryKey}):`, error);
@@ -78,15 +80,16 @@ export default function SettingsContent() {
   useEffect(() => {
     if (isOffline) return;
     const unsubscribe = onTimetableSettingsUpdate(
-      (settings) => {
-        setLiveSettings(settings);
-        if (settings?.numberOfPeriods !== undefined) setNumberOfPeriods(settings.numberOfPeriods);
-        if(isOffline) setIsOffline(false);
+      (newSettings) => {
+        setLiveSettings(prevSettings => areSettingsEqual(prevSettings, newSettings) ? prevSettings : newSettings);
+        if (newSettings?.numberOfPeriods !== undefined && numberOfPeriods !== newSettings.numberOfPeriods) {
+          setNumberOfPeriods(newSettings.numberOfPeriods);
+        }
       }, 
       (error) => { console.error("Realtime settings error:", error); setIsOffline(true); }
     );
     return () => unsubscribe();
-  }, [isOffline]);
+  }, [isOffline, numberOfPeriods]); // Added numberOfPeriods
 
   const settings = useMemo(() => liveSettings ?? initialSettings ?? DEFAULT_TIMETABLE_SETTINGS, [liveSettings, initialSettings]);
   
@@ -95,6 +98,7 @@ export default function SettingsContent() {
       setNumberOfPeriods(settings.numberOfPeriods);
     }
   }, [settings, numberOfPeriods]);
+
 
   const { data: fetchedFixedTimetable, isLoading: isLoadingFixed, error: errorFixed } = useQuery({
     queryKey: ['fixedTimetable'],
@@ -117,7 +121,9 @@ export default function SettingsContent() {
   useEffect(() => {
     if (isOffline) return;
     const unsubscribe = onSubjectsUpdate(
-      (subs) => { setLiveSubjects(subs); if(isOffline) setIsOffline(false); }, 
+      (newSubjects) => { 
+        setLiveSubjects(prevSubjects => areArraysOfObjectsEqual(prevSubjects, newSubjects) ? prevSubjects : newSubjects);
+      }, 
       (error) => { console.error("Realtime subjects error:", error); setIsOffline(true); }
     );
     return () => unsubscribe();
@@ -153,7 +159,7 @@ export default function SettingsContent() {
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      if (isOfflineError || !navigator.onLine) setIsOffline(true);
+      if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "設定の更新に失敗しました。" : `設定の更新に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -162,12 +168,12 @@ export default function SettingsContent() {
     mutationFn: (slots: FixedTimeSlot[]) => batchUpdateFixedTimetable(slots, userIdForLog),
     onSuccess: async () => {
       toast({ title: "成功", description: "固定時間割を更新しました。" });
-      setInitialFixedTimetableData([...editedFixedTimetable]);
+      setInitialFixedTimetableData([...editedFixedTimetable]); // Reflect saved state
       await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      if (isOfflineError || !navigator.onLine) setIsOffline(true);
+      if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の更新に失敗しました。" : `固定時間割の更新に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -177,7 +183,7 @@ export default function SettingsContent() {
     onSuccess: () => toast({ title: "適用開始", description: "固定時間割の将来への適用を開始しました。" }),
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      if (isOfflineError || !navigator.onLine) setIsOffline(true);
+      if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の適用に失敗しました。" : `固定時間割の適用に失敗しました: ${error.message}`, variant: "destructive" });
     },
   });
@@ -187,7 +193,8 @@ export default function SettingsContent() {
     onSuccess: async () => {
       toast({ title: "成功", description: "固定時間割を初期化しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
-      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
+      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] }); // Also invalidate daily as they might be reset
+      // Rebuild the UI grid based on current settings (now empty)
       const resetGrid: FixedTimeSlot[] = [];
       (settings.activeDays ?? ConfigurableWeekDays).forEach(day => { for (let period = 1; period <= settings.numberOfPeriods; period++) resetGrid.push({ id: `${day}_${period}`, day, period, subjectId: null }); });
       setEditedFixedTimetable(resetGrid);
@@ -195,7 +202,7 @@ export default function SettingsContent() {
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      if (isOfflineError || !navigator.onLine) setIsOffline(true);
+      if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "固定時間割の初期化に失敗しました。" : `固定時間割の初期化に失敗しました: ${error.message}`, variant: "destructive" });
     },
     onSettled: () => setIsResetting(false),
@@ -205,11 +212,11 @@ export default function SettingsContent() {
     mutationFn: () => resetFutureDailyAnnouncements(userIdForLog),
     onSuccess: async () => {
       toast({ title: "成功", description: "将来の時間割を基本時間割で上書きしました。" });
-      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
+      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] }); // Invalidate daily announcements
     },
     onError: (error: Error) => {
       const isOfflineError = error.message.includes("オフラインのため");
-      if (isOfflineError || !navigator.onLine) setIsOffline(true);
+      if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "将来の時間割の上書きに失敗しました。" : `将来の時間割の上書きに失敗しました: ${error.message}`, variant: "destructive" });
     },
     onSettled: () => setIsOverwritingFuture(false),
@@ -220,12 +227,13 @@ export default function SettingsContent() {
     const periods = parseInt(String(numberOfPeriods), 10);
     if (isNaN(periods) || periods < 1 || periods > 12) { toast({ title: "入力エラー", description: "1日の時間数は1から12の間で入力してください。", variant: "destructive" }); return; }
     if (settings && periods !== settings.numberOfPeriods) settingsMutation.mutate({ numberOfPeriods: periods });
-    else if (!settings) settingsMutation.mutate({ numberOfPeriods: periods });
+    else if (!settings) settingsMutation.mutate({ numberOfPeriods: periods }); // Should not happen if DEFAULT_SETTINGS is used
     else toast({ title: "情報", description: "基本設定に変更はありませんでした。" });
   };
 
   const handlePeriodsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+    // Allow empty string for user input, parse to number on save
     setNumberOfPeriods(value === '' ? '' : (isNaN(parseInt(value, 10)) ? value : parseInt(value, 10)));
   };
 
@@ -235,6 +243,7 @@ export default function SettingsContent() {
 
   const handleSaveFixedTimetable = () => {
     if (isOffline) { toast({ title: "オフライン", description: "固定時間割を保存できません。", variant: "destructive" }); return; }
+    // Filter out slots that might not have full data, though this should be rare with current setup
     fixedTimetableMutation.mutate(editedFixedTimetable.filter(slot => slot?.id && slot?.day && slot?.period !== undefined));
   };
   
@@ -268,62 +277,167 @@ export default function SettingsContent() {
 
 
   return (
-    <div>
+    <div> {/* Main wrapper div */}
       <h1 className="text-2xl font-semibold mb-6">設定</h1>
+
        {isOffline && (
         <Alert variant="destructive" className="mb-6">
           <WifiOff className="h-4 w-4" />
           <AlertTitle>オフライン</AlertTitle>
-          <AlertDescription>現在オフラインです。設定の表示や変更はできません。</AlertDescription>
+          <AlertDescription>
+            現在オフラインです。設定の表示や変更はできません。接続が回復するまでお待ちください。
+          </AlertDescription>
         </Alert>
       )}
+
+      {/* --- Basic Settings Card --- */}
       <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
-        <CardHeader><CardTitle>基本設定</CardTitle><CardDescription>クラスの1日の時間数を設定します。</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle>基本設定</CardTitle>
+          <CardDescription>クラスの1日の時間数を設定します。</CardDescription>
+        </CardHeader>
         <CardContent className="space-y-4">
-          {showLoadingSettings ? (<div className="space-y-2"><Skeleton className="h-6 w-1/4" /><Skeleton className="h-10 w-1/2" /></div>)
-            : showErrorSettings ? (<Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>エラー</AlertTitle><AlertDescription>基本設定の読み込みに失敗しました。</AlertDescription></Alert>)
-            : (<div className="space-y-2"><Label htmlFor="numberOfPeriods">1日の時間数</Label><Input id="numberOfPeriods" type="number" min="1" max="12" value={numberOfPeriods} onChange={handlePeriodsChange} className="w-24" disabled={settingsMutation.isPending || isOffline} /><p className="text-sm text-muted-foreground">時間割に表示する1日の時間数を1〜12の間で設定します。</p></div>)}
+          {showLoadingSettings ? (
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-1/4" />
+              <Skeleton className="h-10 w-1/2" />
+            </div>
+          ) : showErrorSettings ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>エラー</AlertTitle>
+              <AlertDescription>基本設定の読み込みに失敗しました。</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="numberOfPeriods">1日の時間数</Label>
+              <Input
+                id="numberOfPeriods"
+                type="number"
+                min="1"
+                max="12"
+                value={numberOfPeriods}
+                onChange={handlePeriodsChange}
+                className="w-24"
+                disabled={settingsMutation.isPending || isOffline}
+              />
+              <p className="text-sm text-muted-foreground">時間割に表示する1日の時間数を1〜12の間で設定します。</p>
+            </div>
+          )}
         </CardContent>
-        <CardFooter><Button onClick={handleSaveSettings} disabled={settingsMutation.isPending || showLoadingSettings || isOffline}><Save className="mr-2 h-4 w-4" />{settingsMutation.isPending ? '保存中...' : '基本設定を保存'}</Button></CardFooter>
+        <CardFooter>
+          <Button onClick={handleSaveSettings} disabled={settingsMutation.isPending || showLoadingSettings || isOffline}>
+            <Save className="mr-2 h-4 w-4" />
+            {settingsMutation.isPending ? '保存中...' : '基本設定を保存'}
+          </Button>
+        </CardFooter>
       </Card>
+
+      {/* --- Fixed Timetable Card --- */}
       <Card className={`${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
-        <CardHeader><CardTitle>固定時間割の設定</CardTitle><CardDescription>基本的な曜日ごとの時間割を設定します。保存後、自動的に将来の予定に適用されます。</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle>固定時間割の設定</CardTitle>
+          <CardDescription>基本的な曜日ごとの時間割を設定します。保存後、自動的に将来の予定に適用されます。</CardDescription>
+        </CardHeader>
         <CardContent>
-          {showLoadingSettings || showLoadingFixed || showLoadingSubjects ? (<div className="space-y-4">{[...Array(settings.numberOfPeriods || 5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>)
-            : showErrorSettings || showErrorFixed || showErrorSubjects ? (<Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>エラー</AlertTitle><AlertDescription>固定時間割または科目の読み込みに失敗しました。{showErrorSubjects ? ' 科目データを確認してください。' : ''}</AlertDescription></Alert>)
-            : editedFixedTimetable.length > 0 && subjects.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader><TableRow>{tableHeaderCells.map(cell => cell)}</TableRow></TableHeader>
-                  <TableBody>
-                    {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
-                      const cells = [<TableCell key={`period-cell-${period}`} className="font-medium text-center p-1 sm:p-2">{period}</TableCell>];
-                      (settings?.activeDays ?? ConfigurableWeekDays).forEach((day) => {
-                        const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
-                        cells.push(<TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2"><SubjectSelector subjects={subjects} selectedSubjectId={slot?.subjectId ?? null} onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)} placeholder="科目未設定" disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects} className="w-full text-xs sm:text-sm" /></TableCell>);
-                      });
-                      return <TableRow key={period}>{cells.map(cell => cell)}</TableRow>;
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : subjects.length === 0 && !isLoadingSubjects ? (
-                 <Alert variant="default"><AlertCircle className="h-4 w-4" /><AlertTitle>科目未登録</AlertTitle><AlertDescription>固定時間割を設定する前に、科目管理ページで科目を登録してください。</AlertDescription></Alert>
-            ) : (<p className="text-muted-foreground text-center py-4">時間割データがありません。</p>)}
+          {showLoadingSettings || showLoadingFixed || showLoadingSubjects ? (
+            <div className="space-y-4">
+              {[...Array(settings.numberOfPeriods || 5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : showErrorSettings || showErrorFixed || showErrorSubjects ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>エラー</AlertTitle>
+              <AlertDescription>固定時間割または科目の読み込みに失敗しました。{showErrorSubjects ? ' 科目データを確認してください。' : ''}</AlertDescription>
+            </Alert>
+          ) : editedFixedTimetable.length > 0 && subjects.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader><TableRow>{tableHeaderCells.map(cell => cell)}</TableRow></TableHeader>
+                <TableBody>
+                  {Array.from({ length: settings.numberOfPeriods }, (_, i) => i + 1).map((period) => {
+                    const cells = [<TableCell key={`period-cell-${period}`} className="font-medium text-center p-1 sm:p-2">{period}</TableCell>];
+                    (settings?.activeDays ?? ConfigurableWeekDays).forEach((day) => {
+                      const slot = editedFixedTimetable.find(s => s.day === day && s.period === period);
+                      cells.push(
+                        <TableCell key={`${day}-${period}-cell`} className="p-1 sm:p-2">
+                          <SubjectSelector
+                            subjects={subjects}
+                            selectedSubjectId={slot?.subjectId ?? null}
+                            onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)}
+                            placeholder="科目未設定"
+                            disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
+                            className="w-full text-xs sm:text-sm"
+                          />
+                        </TableCell>
+                      );
+                    });
+                    return <TableRow key={period}>{cells.map(cell => cell)}</TableRow>;
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          ) : subjects.length === 0 && !isLoadingSubjects ? (
+                 <Alert variant="default">
+                     <AlertCircle className="h-4 w-4" />
+                     <AlertTitle>科目未登録</AlertTitle>
+                     <AlertDescription>固定時間割を設定する前に、科目管理ページで科目を登録してください。</AlertDescription>
+                 </Alert>
+            ) : (
+            <p className="text-muted-foreground text-center py-4">時間割データがありません。</p>
+          )}
         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row justify-between items-center flex-wrap gap-2">
           <div className="flex gap-2 items-center">
-            <Button onClick={handleSaveFixedTimetable} disabled={!hasFixedTimetableChanged || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline} size="sm"><Save className="mr-2 h-4 w-4" />{fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}</Button>
-            {!hasFixedTimetableChanged && !fixedTimetableMutation.isPending && !showLoadingFixed && (<p className="text-sm text-muted-foreground self-center">変更はありません。</p>)}
+            <Button onClick={handleSaveFixedTimetable} disabled={!hasFixedTimetableChanged || fixedTimetableMutation.isPending || showLoadingFixed || showLoadingSubjects || isOffline} size="sm">
+              <Save className="mr-2 h-4 w-4" />
+              {fixedTimetableMutation.isPending ? '保存中...' : '固定時間割を保存'}
+            </Button>
+            {!hasFixedTimetableChanged && !fixedTimetableMutation.isPending && !showLoadingFixed && (
+              <p className="text-sm text-muted-foreground self-center">変更はありません。</p>
+            )}
           </div>
+
           <div className="flex gap-2 flex-wrap">
-            <AlertDialog>
-              <AlertDialogTrigger asChild><Button variant="destructive" disabled={resetTimetableMutation.isPending || showLoadingFixed || isOffline} size="sm"><RotateCcw className="mr-2 h-4 w-4" />{resetTimetableMutation.isPending ? '初期化中...' : '時間割を初期化'}</Button></AlertDialogTrigger>
-              <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>時間割を初期化しますか？</AlertDialogTitle><AlertDialogDescription>すべての固定時間割の科目が「未設定」に戻ります。将来の時間割も未設定で上書きされます。この操作は元に戻せません。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={handleResetTimetable} disabled={resetTimetableMutation.isPending || isOffline}>初期化する</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+             <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={resetTimetableMutation.isPending || showLoadingFixed || isOffline} size="sm">
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {resetTimetableMutation.isPending ? '初期化中...' : '時間割を初期化'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>時間割を初期化しますか？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    すべての固定時間割の科目が「未設定」に戻ります。将来の時間割も未設定で上書きされます。この操作は元に戻せません。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleResetTimetable} disabled={resetTimetableMutation.isPending || isOffline}>初期化する</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
             </AlertDialog>
             <AlertDialog>
-              <AlertDialogTrigger asChild><Button variant="outline" disabled={overwriteFutureMutation.isPending || fixedTimetableMutation.isPending || isResetting || isOffline} title="現在保存されている固定時間割で、将来の変更を含むすべての日付を上書きします" size="sm"><RefreshCw className="mr-2 h-4 w-4" />{overwriteFutureMutation.isPending ? '上書き中...' : '将来の時間割を基本で上書き'}</Button></AlertDialogTrigger>
-              <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>将来の時間割を上書きしますか？</AlertDialogTitle><AlertDialogDescription>現在保存されている固定時間割の内容で、将来の日付のすべての時間割（手動での変更を含む）を上書きします。この操作は元に戻せません。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>キャンセル</AlertDialogCancel><AlertDialogAction onClick={handleOverwriteFuture} disabled={overwriteFutureMutation.isPending || isOffline}>上書きする</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" disabled={overwriteFutureMutation.isPending || fixedTimetableMutation.isPending || isResetting || isOffline} title="現在保存されている固定時間割で、将来の変更を含むすべての日付を上書きします" size="sm">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {overwriteFutureMutation.isPending ? '上書き中...' : '将来の時間割を基本で上書き'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>将来の時間割を上書きしますか？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    現在保存されている固定時間割の内容で、将来の日付のすべての時間割（手動での変更を含む）を上書きします。この操作は元に戻せません。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleOverwriteFuture} disabled={overwriteFutureMutation.isPending || isOffline}>上書きする</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
             </AlertDialog>
           </div>
         </CardFooter>
