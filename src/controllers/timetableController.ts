@@ -27,6 +27,7 @@ import type {
   SchoolEvent,
 } from '@/models/timetable';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
+import type { Assignment } from '@/models/assignment'; // Import Assignment
 import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum } from '@/models/timetable';
 import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
 import { logAction } from '@/services/logService';
@@ -42,6 +43,7 @@ const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 
 const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
 const generalAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'generalAnnouncements');
 const eventsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'events');
+const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments'); // Assignments collection
 
 const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
   if (!timestampField) return undefined;
@@ -133,7 +135,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     await runTransaction(db, async (transaction) => {
       const settingsDoc = await transaction.get(docRef);
       const currentSettingsInTx = settingsDoc.exists() ? (settingsDoc.data() as TimetableSettings) : DEFAULT_TIMETABLE_SETTINGS;
-      const currentActiveDaysInTx = currentSettingsInTx.activeDays && Array.isArray(currentSettingsInTx.activeDays) && currentActiveDaysInTx.activeDays.length > 0 ? currentSettingsInTx.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
+      const currentActiveDaysInTx = currentSettingsInTx.activeDays && Array.isArray(currentSettingsInTx.activeDays) && currentSettingsInTx.activeDays.length > 0 ? currentSettingsInTx.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
       const newActiveDays = newSettingsData.activeDays && Array.isArray(newSettingsData.activeDays) && newSettingsData.activeDays.length > 0 ? newSettingsData.activeDays : DEFAULT_TIMETABLE_SETTINGS.activeDays;
       transaction.set(docRef, newSettingsData);
 
@@ -355,9 +357,6 @@ export const upsertDailyAnnouncement = async (
     } as DailyAnnouncement;
   }
 
-  // If isManuallyClearedToPersist is true OR if all other meaningful fields are empty/default,
-  // it's effectively a "clear" or an "empty save" which should result in a document representing this cleared state.
-  // An actual deletion would mean the fixed timetable applies, which is not what "clear" means here.
   let dataToSet: Partial<DailyAnnouncement>;
   let actionType: string;
 
@@ -366,15 +365,14 @@ export const upsertDailyAnnouncement = async (
           date,
           period,
           text: '', 
-          subjectIdOverride: null, 
+          subjectIdOverride: subjectIdOverrideToPersist, // Keep the base subject when clearing for "Revert"
           showOnCalendar: false,
-          isManuallyCleared: true, // Explicitly mark as cleared
+          isManuallyCleared: true, 
           itemType: 'announcement',
           updatedAt: Timestamp.now(),
       };
       actionType = 'clear_announcement_slot';
   } else {
-      // This is a regular content save.
       dataToSet = { 
           date, 
           period, 
@@ -382,7 +380,7 @@ export const upsertDailyAnnouncement = async (
           text: textToPersist, 
           showOnCalendar: showOnCalendarToPersist, 
           itemType: 'announcement',
-          isManuallyCleared: false, // When saving content, it's not manually cleared
+          isManuallyCleared: false, 
           updatedAt: Timestamp.now(),
       };
       actionType = 'upsert_announcement';
@@ -544,7 +542,7 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
   const announcementRef = doc(generalAnnouncementsCollectionRef, date);
   try {
     if (!process.env.GOOGLE_GENAI_API_KEY) {
-        throw new Error("AI機能のサーバー設定に問題があります。APIキーが設定されていません。");
+        throw new Error("AI機能は設定されていません。管理者に連絡してください。");
     }
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.content) {
@@ -797,15 +795,12 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
         if (fixedSlot.period > (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods)) continue;
         const existingAnn = existingAnnouncementsMap.get(fixedSlot.period);
         
-        // If slot was manually cleared by user, respect that and don't auto-populate
         if (existingAnn?.isManuallyCleared) {
             continue; 
         }
 
         const fixedSubjectIdOrNull = fixedSlot.subjectId ?? null;
         
-        // Only create/update if there's no announcement, OR if the announcement is just a subject override (no text, not on calendar)
-        // AND the subject override needs to be updated to match the fixed timetable.
         if (!existingAnn || 
             (!existingAnn.text && !existingAnn.showOnCalendar && (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull)
            ) {
@@ -817,7 +812,7 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
             text: '', 
             showOnCalendar: false, 
             itemType: 'announcement', 
-            isManuallyCleared: false // Not manually cleared when auto-applying
+            isManuallyCleared: false 
           };
           
           if (!existingAnn || (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull) {
@@ -878,12 +873,10 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
           text: '', 
           showOnCalendar: false, 
           itemType: 'announcement', 
-          isManuallyCleared: false // Resetting to fixed means it's no longer "manually cleared" in a way that blocks auto-updates
+          isManuallyCleared: false 
         };
         
         const existingDoc = existingAnnouncementsMap.get(period);
-        // Always overwrite when resetting, regardless of current content or manuallyCleared status.
-        // Check if the document needs to be written (either it doesn't exist and should, or it exists and is different)
         if (!existingDoc || 
             (existingDoc.text !== newAnnouncementData.text) || 
             ((existingDoc.subjectIdOverride ?? null) !== (newAnnouncementData.subjectIdOverride ?? null)) ||
@@ -923,7 +916,7 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
   }
 };
 
-type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
+type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' }) | (Assignment & { itemType: 'assignment' });
 
 export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<CalendarItemUnion[]> => {
   const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
@@ -931,6 +924,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
   const items: CalendarItemUnion[] = [];
 
   try {
+    // Fetch Events
     const eventsQuery = query(
       eventsCollectionRef,
       where('startDate', '<=', monthEndDate),
@@ -954,6 +948,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       }
     });
 
+    // Fetch DailyAnnouncements marked for calendar
     const announcementsQuery = query(
       dailyAnnouncementsCollectionRef,
       where('date', '>=', monthStartDate),
@@ -977,10 +972,38 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       };
       items.push(announcementItem);
     });
+
+    // Fetch Assignments
+    const assignmentsQuery = query(
+      assignmentsCollectionRef,
+      where('dueDate', '>=', monthStartDate),
+      where('dueDate', '<=', monthEndDate),
+      orderBy('dueDate')
+    );
+    const assignmentsSnapshot = await getDocs(assignmentsQuery);
+    assignmentsSnapshot.forEach(docSnap => {
+        const assignData = docSnap.data();
+        const assignment: Assignment = {
+            id: docSnap.id,
+            title: assignData.title,
+            description: assignData.description,
+            subjectId: assignData.subjectId,
+            customSubjectName: assignData.customSubjectName,
+            dueDate: assignData.dueDate,
+            duePeriod: assignData.duePeriod,
+            submissionMethod: assignData.submissionMethod,
+            targetAudience: assignData.targetAudience,
+            isCompleted: assignData.isCompleted,
+            createdAt: parseFirestoreTimestamp(assignData.createdAt) as Date,
+            updatedAt: parseFirestoreTimestamp(assignData.updatedAt) as Date,
+            itemType: 'assignment',
+        };
+        items.push(assignment);
+    });
     
     items.sort((a, b) => {
-        const dateAStr = a.itemType === 'event' ? (a as SchoolEvent).startDate : (a as DailyAnnouncement).date;
-        const dateBStr = b.itemType === 'event' ? (b as SchoolEvent).startDate : (b as DailyAnnouncement).date; // Corrected: b not a
+        const dateAStr = a.itemType === 'event' ? (a as SchoolEvent).startDate : (a.itemType === 'assignment' ? (a as Assignment).dueDate : (a as DailyAnnouncement).date);
+        const dateBStr = b.itemType === 'event' ? (b as SchoolEvent).startDate : (b.itemType === 'assignment' ? (b as Assignment).dueDate : (b as DailyAnnouncement).date);
         
         const dateA = parseISO(dateAStr);
         const dateB = parseISO(dateBStr);
@@ -992,11 +1015,21 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         if (timeA !== timeB) {
             return timeA - timeB;
         }
+        // Further sort by item type (Events, then Assignments, then Announcements)
+        const typeOrder = { event: 1, assignment: 2, announcement: 3 };
+        if (typeOrder[a.itemType] !== typeOrder[b.itemType]) {
+            return typeOrder[a.itemType] - typeOrder[b.itemType];
+        }
+        // If same type and date, sort announcements by period
         if (a.itemType === 'announcement' && b.itemType === 'announcement') {
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
-        if (a.itemType === 'event' && b.itemType === 'announcement') return -1; 
-        if (a.itemType === 'announcement' && b.itemType === 'event') return 1;  
+        // If same type and date, sort assignments by title (or creation time if titles are same)
+        if (a.itemType === 'assignment' && b.itemType === 'assignment') {
+            const titleCompare = (a as Assignment).title.localeCompare((b as Assignment).title, 'ja');
+            if (titleCompare !== 0) return titleCompare;
+            return (parseFirestoreTimestamp((a as Assignment).createdAt)?.getTime() ?? 0) - (parseFirestoreTimestamp((b as Assignment).createdAt)?.getTime() ?? 0);
+        }
         return 0;
     });
     return items;
@@ -1020,3 +1053,4 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+// Note: queryFnGetAssignments is now in assignmentController.ts
