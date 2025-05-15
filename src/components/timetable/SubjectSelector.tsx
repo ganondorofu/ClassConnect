@@ -5,10 +5,12 @@ import React from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Subject } from '@/models/subject';
 
+const SUBJECT_SELECTOR_NONE_VALUE = "___SUBJECT_SELECTOR_NONE___";
+
 interface SubjectSelectorProps {
   subjects: Subject[];
-  selectedSubjectId: string | null; // null now consistently means "科目未設定" (No Subject) is selected
-  onValueChange: (subjectId: string | null) => void; // Passes subject ID or null for "科目未設定"
+  selectedSubjectId: string | null; 
+  onValueChange: (subjectId: string | null) => void; 
   placeholder?: string; 
   disabled?: boolean;
   className?: string;
@@ -24,34 +26,22 @@ export function SubjectSelector({
 }: SubjectSelectorProps) {
 
   const handleValueChange = (value: string) => {
-    // "none" value from the "科目未設定 (なし)" option translates to null
-    onValueChange(value === "none" ? null : value);
+    onValueChange(value === SUBJECT_SELECTOR_NONE_VALUE ? null : value);
   };
   
-  // If selectedSubjectId is null, it means "科目未設定" is the active selection.
-  // The <Select> component's value should then be "none".
-  const selectValue = selectedSubjectId === null ? "none" : selectedSubjectId;
+  const selectValue = selectedSubjectId === null ? SUBJECT_SELECTOR_NONE_VALUE : selectedSubjectId;
 
   return (
     <Select
-      value={selectValue ?? "none"} 
+      value={selectValue ?? SUBJECT_SELECTOR_NONE_VALUE} 
       onValueChange={handleValueChange}
       disabled={disabled}
     >
       <SelectTrigger className={className}>
-        {/* 
-          The placeholder prop on SelectValue is displayed if the current `value` of the Select
-          does not match any of the `value` props of its `SelectItem` children.
-          When `selectedSubjectId` (and thus `selectValue`) is a valid subject ID or "none",
-          the corresponding SelectItem's content will be shown.
-          The placeholder text passed to this component is mainly for contexts where the parent
-          wants to show a more descriptive "empty" state, e.g., "No change (Fixed: Math)".
-        */}
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {/* This is the explicit "No Subject" option */}
-        <SelectItem value="none">
+        <SelectItem value={SUBJECT_SELECTOR_NONE_VALUE}>
           <span className="text-muted-foreground">科目未設定 (なし)</span>
         </SelectItem>
         {subjects.map((subject) => (
@@ -63,4 +53,3 @@ export function SubjectSelector({
     </Select>
   );
 }
-

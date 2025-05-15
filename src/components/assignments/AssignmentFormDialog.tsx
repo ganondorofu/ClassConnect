@@ -26,18 +26,22 @@ import { addAssignment, updateAssignment } from '@/controllers/assignmentControl
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
+const SUBJECT_NONE_VALUE = "___SUBJECT_NONE___";
+const SUBJECT_OTHER_VALUE = "__OTHER__";
+const PERIOD_NONE_VALUE = "___PERIOD_NONE___";
+
 const assignmentFormSchema = z.object({
   title: z.string().min(1, { message: "課題名は必須です。" }).max(100, { message: "課題名は100文字以内で入力してください。"}),
   description: z.string().min(1, { message: "内容は必須です。" }).max(2000, { message: "内容は2000文字以内で入力してください。"}),
-  subjectId: z.string().nullable().optional(), // Can be null (for "Other") or undefined (if not selected yet)
+  subjectId: z.string().nullable().optional(), 
   customSubjectName: z.string().max(50, {message: "科目名は50文字以内"}).optional().nullable(),
   dueDate: z.date({ required_error: "提出期限日は必須です。" }),
   duePeriod: z.enum(AssignmentDuePeriods).nullable().optional(),
   submissionMethod: z.string().max(100, {message: "提出方法は100文字以内"}).optional().nullable(),
   targetAudience: z.string().max(100, {message: "対象者は100文字以内"}).optional().nullable(),
 }).refine(data => {
-    if (data.subjectId === "__OTHER__" && (!data.customSubjectName || data.customSubjectName.trim() === "")) {
-        return false; // "Other" selected but custom name is empty
+    if (data.subjectId === SUBJECT_OTHER_VALUE && (!data.customSubjectName || data.customSubjectName.trim() === "")) {
+        return false; 
     }
     return true;
 }, {
@@ -53,7 +57,7 @@ interface AssignmentFormDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   subjects: Subject[];
   editingAssignment?: Assignment | null;
-  onFormSubmitSuccess: () => void; // Callback for successful submission
+  onFormSubmitSuccess: () => void; 
 }
 
 export default function AssignmentFormDialog({
@@ -72,10 +76,10 @@ export default function AssignmentFormDialog({
     defaultValues: {
       title: '',
       description: '',
-      subjectId: undefined,
+      subjectId: null, // Represents "指定なし"
       customSubjectName: '',
       dueDate: new Date(),
-      duePeriod: null,
+      duePeriod: null, // Represents "指定なし"
       submissionMethod: '',
       targetAudience: '',
     }
@@ -89,7 +93,7 @@ export default function AssignmentFormDialog({
         reset({
           title: editingAssignment.title,
           description: editingAssignment.description,
-          subjectId: editingAssignment.subjectId === null && editingAssignment.customSubjectName ? "__OTHER__" : editingAssignment.subjectId,
+          subjectId: editingAssignment.subjectId === null && editingAssignment.customSubjectName ? SUBJECT_OTHER_VALUE : editingAssignment.subjectId,
           customSubjectName: editingAssignment.customSubjectName ?? '',
           dueDate: editingAssignment.dueDate && isValid(parseISO(editingAssignment.dueDate)) ? parseISO(editingAssignment.dueDate) : new Date(),
           duePeriod: editingAssignment.duePeriod ?? null,
@@ -97,10 +101,10 @@ export default function AssignmentFormDialog({
           targetAudience: editingAssignment.targetAudience ?? '',
         });
       } else {
-        reset({ // Reset to defaults for new assignment
+        reset({ 
           title: '',
           description: '',
-          subjectId: undefined,
+          subjectId: null,
           customSubjectName: '',
           dueDate: new Date(),
           duePeriod: null,
@@ -118,8 +122,8 @@ export default function AssignmentFormDialog({
       const payload: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType' | 'isCompleted'> = {
         title: data.title,
         description: data.description,
-        subjectId: data.subjectId === "__OTHER__" ? null : data.subjectId,
-        customSubjectName: data.subjectId === "__OTHER__" ? data.customSubjectName : null,
+        subjectId: data.subjectId === SUBJECT_OTHER_VALUE ? null : data.subjectId,
+        customSubjectName: data.subjectId === SUBJECT_OTHER_VALUE ? data.customSubjectName : null,
         dueDate: format(data.dueDate, 'yyyy-MM-dd'),
         duePeriod: data.duePeriod || null,
         submissionMethod: data.submissionMethod || null,
@@ -133,7 +137,7 @@ export default function AssignmentFormDialog({
     },
     onSuccess: async () => {
       toast({ title: "成功", description: `課題を${editingAssignment ? '更新' : '追加'}しました。` });
-      onFormSubmitSuccess(); // Call the success callback
+      onFormSubmitSuccess(); 
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `課題の${editingAssignment ? '更新' : '追加'}に失敗: ${error.message}`, variant: "destructive" });
@@ -146,7 +150,7 @@ export default function AssignmentFormDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
-        if (!isSubmitting) onOpenChange(open); // Prevent closing while submitting
+        if (!isSubmitting) onOpenChange(open); 
     }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -172,17 +176,20 @@ export default function AssignmentFormDialog({
                     control={control}
                     render={({ field }) => (
                         <Select
-                            value={field.value ?? ""}
-                            onValueChange={field.onChange}
+                            value={field.value === null ? SUBJECT_NONE_VALUE : field.value || SUBJECT_NONE_VALUE}
+                            onValueChange={(val) => {
+                                if (val === SUBJECT_NONE_VALUE) field.onChange(null);
+                                else field.onChange(val);
+                            }}
                             disabled={isSubmitting}
                         >
                             <SelectTrigger className={errors.subjectId ? "border-destructive" : ""}>
                                 <SelectValue placeholder="科目を選択"/>
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="">指定なし (科目共通など)</SelectItem>
+                                <SelectItem value={SUBJECT_NONE_VALUE}>指定なし (科目共通など)</SelectItem>
                                 {subjects.map(s => <SelectItem key={s.id} value={s.id!}>{s.name}</SelectItem>)}
-                                <SelectItem value="__OTHER__">その他 (学校提出など)</SelectItem>
+                                <SelectItem value={SUBJECT_OTHER_VALUE}>その他 (学校提出など)</SelectItem>
                             </SelectContent>
                         </Select>
                     )}
@@ -192,7 +199,7 @@ export default function AssignmentFormDialog({
           </div>
 
           {/* Custom Subject Name (if "Other" is selected) */}
-          {watchedSubjectId === "__OTHER__" && (
+          {watchedSubjectId === SUBJECT_OTHER_VALUE && (
             <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
               <Label htmlFor="customSubjectName" className="text-right pt-2 col-span-1">科目名(自由入力)</Label>
               <div className="col-span-3">
@@ -240,12 +247,19 @@ export default function AssignmentFormDialog({
                     name="duePeriod"
                     control={control}
                     render={({ field }) => (
-                        <Select value={field.value ?? ""} onValueChange={field.onChange} disabled={isSubmitting}>
+                        <Select 
+                            value={field.value ?? PERIOD_NONE_VALUE} 
+                            onValueChange={(val) => {
+                                if (val === PERIOD_NONE_VALUE) field.onChange(null);
+                                else field.onChange(val as AssignmentDuePeriod);
+                            }} 
+                            disabled={isSubmitting}
+                        >
                             <SelectTrigger className={errors.duePeriod ? "border-destructive" : ""}>
                                 <SelectValue placeholder="時限を選択 (任意)"/>
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="">指定なし</SelectItem>
+                                <SelectItem value={PERIOD_NONE_VALUE}>指定なし</SelectItem>
                                 {AssignmentDuePeriods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                             </SelectContent>
                         </Select>
