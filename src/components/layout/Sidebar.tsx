@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
-  Home,
+  LayoutDashboard, // Changed from Home for '時間割表'
   Settings,
   History,
   BookMarked,
@@ -14,7 +14,6 @@ import {
   ShieldQuestion,
   ScrollText, // For Update Log
   ClipboardList, // For Assignments
-  LayoutDashboard, // For Dashboard (Home)
   X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,15 +26,16 @@ interface SidebarProps {
   toggleSidebar: () => void;
 }
 
-const commonLinks = [
-  { href: '/', label: 'ダッシュボード', icon: Home },
+// Common links excluding '更新ログ' initially
+const baseCommonLinks = [
+  { href: '/', label: '時間割表', icon: LayoutDashboard }, // Changed label and icon
   { href: '/calendar', label: 'カレンダー', icon: CalendarDays },
   { href: '/assignments', label: '課題一覧', icon: ClipboardList },
-  { href: '/updates', label: '更新ログ', icon: ScrollText },
   { href: '/contact', label: 'お問い合わせ', icon: MessageSquarePlus },
   { href: '/help', label: 'ヘルプ', icon: HelpCircle },
 ];
 
+// Admin specific links
 const adminLinks = [
   { href: '/admin/subjects', label: '科目管理', icon: BookMarked },
   { href: '/admin/settings', label: '時間割設定', icon: Settings },
@@ -43,11 +43,19 @@ const adminLinks = [
   { href: '/admin/logs', label: '変更履歴', icon: History },
 ];
 
+// Update Log link defined separately to easily place it at the end
+const updateLogLink = { href: '/updates', label: '更新ログ', icon: ScrollText };
+
 export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
   const { user, isAnonymous } = useAuth();
   const pathname = usePathname();
 
-  const linksToDisplay = user && !isAnonymous ? [...commonLinks, ...adminLinks] : commonLinks;
+  // Construct linksToDisplay: start with base common links, add admin links if applicable, then add update log link at the end.
+  let linksToDisplay = [...baseCommonLinks];
+  if (user && !isAnonymous) {
+    linksToDisplay.push(...adminLinks);
+  }
+  linksToDisplay.push(updateLogLink); // Ensures '更新ログ' is always last
 
   return (
     <>
@@ -67,7 +75,7 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
         )}
       >
         <div className="flex items-center justify-between border-b p-4">
-          <Link href="/" className="flex items-center space-x-2" onClick={isOpen && toggleSidebar}>
+          <Link href="/" className="flex items-center space-x-2" onClick={isOpen ? toggleSidebar : undefined}>
             <Image
               src="/logo.png"
               alt="ClassConnect Logo"
@@ -89,7 +97,7 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
               <li key={href}>
                 <Link
                   href={href}
-                  onClick={isOpen && toggleSidebar}
+                  onClick={isOpen ? toggleSidebar : undefined}
                   className={cn(
                     buttonVariants({ variant: 'ghost' }),
                     "w-full justify-start",
