@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
-  LayoutDashboard, // Changed from Home for '時間割表'
+  LayoutDashboard,
   Settings,
   History,
   BookMarked,
@@ -12,8 +12,8 @@ import {
   CalendarDays,
   MessageSquarePlus,
   ShieldQuestion,
-  ScrollText, // For Update Log
-  ClipboardList, // For Assignments
+  ScrollText,
+  ClipboardList,
   X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,16 +26,14 @@ interface SidebarProps {
   toggleSidebar: () => void;
 }
 
-// Common links excluding '更新ログ' initially
 const baseCommonLinks = [
-  { href: '/', label: '時間割表', icon: LayoutDashboard }, // Changed label and icon
+  { href: '/', label: '時間割表', icon: LayoutDashboard },
   { href: '/calendar', label: 'カレンダー', icon: CalendarDays },
   { href: '/assignments', label: '課題一覧', icon: ClipboardList },
   { href: '/contact', label: 'お問い合わせ', icon: MessageSquarePlus },
   { href: '/help', label: 'ヘルプ', icon: HelpCircle },
 ];
 
-// Admin specific links
 const adminLinks = [
   { href: '/admin/subjects', label: '科目管理', icon: BookMarked },
   { href: '/admin/settings', label: '時間割設定', icon: Settings },
@@ -43,34 +41,24 @@ const adminLinks = [
   { href: '/admin/logs', label: '変更履歴', icon: History },
 ];
 
-// Update Log link defined separately to easily place it at the end
 const updateLogLink = { href: '/updates', label: '更新ログ', icon: ScrollText };
 
 export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
   const { user, isAnonymous } = useAuth();
   const pathname = usePathname();
 
-  // Construct linksToDisplay: start with base common links, add admin links if applicable, then add update log link at the end.
   let linksToDisplay = [...baseCommonLinks];
   if (user && !isAnonymous) {
     linksToDisplay.push(...adminLinks);
   }
-  linksToDisplay.push(updateLogLink); // Ensures '更新ログ' is always last
+  linksToDisplay.push(updateLogLink);
 
   return (
     <>
-      {/* Overlay for mobile */}
-      {isOpen && (
-        <div
-          onClick={toggleSidebar}
-          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm md:hidden"
-          aria-hidden="true"
-        />
-      )}
-
+      {/* Sidebar itself acts as overlay */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 transform flex-col border-r bg-card text-card-foreground shadow-lg transition-transform duration-300 ease-in-out md:sticky md:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-full w-64 transform flex-col border-r bg-card text-card-foreground shadow-lg transition-transform duration-300 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -86,7 +74,7 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
             />
             <span className="font-bold">ClassConnect</span>
           </Link>
-          <Button variant="ghost" size="icon" onClick={toggleSidebar} className="md:hidden">
+          <Button variant="ghost" size="icon" onClick={toggleSidebar} className="md:hidden"> {/* Close button for mobile */}
             <X className="h-5 w-5" />
             <span className="sr-only">サイドバーを閉じる</span>
           </Button>
@@ -111,8 +99,6 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
             ))}
           </ul>
         </nav>
-        {/* Optional Footer Content */}
-        {/* <div className="mt-auto border-t p-4"> ... </div> */}
       </aside>
     </>
   );
