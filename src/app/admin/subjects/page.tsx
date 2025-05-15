@@ -19,6 +19,7 @@ import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects, addSubject, updateSubject, deleteSubject, onSubjectsUpdate } from '@/controllers/subjectController';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { areArraysOfObjectsEqual } from '@/lib/utils'; // Import helper
 
 const queryClient = new QueryClient();
 
@@ -32,12 +33,18 @@ function SubjectsPageContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectName, setSubjectName] = useState('');
-  const [teacherName, setTeacherName] = useState<string | null>(''); // Allow null or empty string
+  const [teacherName, setTeacherName] = useState<string | null>('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
+    const handleOnline = () => {
+      if (isOffline) {
+        setIsOffline(false);
+        queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
+      }
+    };
     const handleOffline = () => setIsOffline(true);
+
     if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
       setIsOffline(!navigator.onLine);
       window.addEventListener('online', handleOnline);
@@ -48,12 +55,14 @@ function SubjectsPageContent() {
       };
     }
     return () => {};
-  }, []);
+  }, [isOffline, queryClientHook]);
 
   const handleQueryError = (error: unknown) => {
     console.error("Subjects Query Error:", error);
     const isOfflineError = (error as any)?.code === 'unavailable';
-    setIsOffline(isOfflineError || !navigator.onLine);
+    if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        setIsOffline(true);
+    }
   };
 
   const { data: initialSubjects, isLoading, error } = useQuery({
@@ -68,8 +77,8 @@ function SubjectsPageContent() {
   useEffect(() => {
     if (isOffline) return;
     const unsubscribe = onSubjectsUpdate(
-      (subjects) => {
-        setLiveSubjects(subjects);
+      (newSubjects) => {
+        setLiveSubjects(prevSubjects => areArraysOfObjectsEqual(prevSubjects, newSubjects) ? prevSubjects : newSubjects);
       }, 
       (error) => {
         console.error("Realtime subjects error:", error);
@@ -84,7 +93,7 @@ function SubjectsPageContent() {
   const handleMutationError = (error: Error, action: string) => {
     console.error(`Failed to ${action} subject:`, error);
     const isOfflineError = error.message.includes("オフラインのため");
-    setIsOffline(isOfflineError || !navigator.onLine);
+    if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
     toast({
       title: isOfflineError ? "オフライン" : "エラー",
       description: isOfflineError ? `科目の${action}に失敗しました。接続を確認してください。` : `科目の${action}に失敗しました: ${error.message}`,
@@ -121,8 +130,8 @@ function SubjectsPageContent() {
     onSuccess: async (_, id) => {
       toast({ title: "成功", description: `科目を削除しました。関連する時間割のコマは「未設定」になります。` });
       await queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
-      await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] });
-      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
+      await queryClientHook.invalidateQueries({ queryKey: ['fixedTimetable'] }); // Invalidate fixed timetable
+      await queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] }); // Invalidate daily announcements
     },
     onError: (error: Error) => handleMutationError(error, "削除"),
   });
@@ -132,7 +141,7 @@ function SubjectsPageContent() {
 
   const handleSave = () => {
     if (isSaving || isOffline) return;
-    if (!subjectName.trim()) { // Teacher name is no longer required
+    if (!subjectName.trim()) {
       toast({ title: "入力エラー", description: "科目名は必須です。", variant: "destructive" });
       return;
     }
