@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 /**
@@ -107,7 +108,7 @@ export function getDayOfWeekName(day: DayOfWeek): string {
 // Default settings
 export const DEFAULT_TIMETABLE_SETTINGS: TimetableSettings = {
   numberOfPeriods: 7,
-  activeDays: [...ConfigurableWeekDays, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY], // Include Sat/Sun by default
+  activeDays: [...ConfigurableWeekDays, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY], 
 };
 
 // Helper to map date-fns getDay() (0=Sun, 1=Mon, ...) to DayOfWeek enum string
@@ -123,4 +124,3 @@ export const dayCodeToDayOfWeekEnum = (dayCode: number): DayOfWeek => {
     };
     return mapping[dayCode];
 };
-

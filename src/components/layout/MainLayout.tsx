@@ -1,23 +1,30 @@
 
-import React from 'react'; // Ensure React is imported
+"use client"; // MainLayout needs to be a client component to manage sidebar state
+
+import React, { useState } from 'react';
 import { Header } from './Header';
+import { Sidebar } from './Sidebar';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-// Ensure default export
 export default function MainLayout({ children }: MainLayoutProps) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
+  };
+
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
-      {/* Adjust padding for responsiveness */}
-      <main className="flex-1 container py-4 px-4 md:py-6 md:px-8">
-        {children}
-      </main>
-      {/* Footer can be added here if needed */}
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header toggleSidebar={toggleSidebar} />
+      <div className="flex flex-1">
+        <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
+        <main className="flex-1 container py-4 px-4 md:py-6 md:px-8 overflow-x-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
-
-    

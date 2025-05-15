@@ -10,12 +10,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, AlertCircle, WifiOff, CalendarDays as CalendarDaysIcon, PlusCircle, Edit, Trash2, FileText, ClipboardList } from 'lucide-react';
 import { format, addDays, subMonths, startOfMonth, endOfMonth, isSameDay, addMonths, startOfWeek, parseISO, endOfWeek, isValid as isValidDateFn } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { SchoolEvent, TimetableSettings } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
+import type { Assignment } from '@/models/assignment'; // Import Assignment
 import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetTimetableSettings, deleteSchoolEvent, queryFnGetSubjects } from '@/controllers/timetableController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -29,7 +30,7 @@ import type { Subject } from '@/models/subject';
 
 const queryClient = new QueryClient();
 
-type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' });
+type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' }) | (Assignment & { itemType: 'assignment' });
 const MAX_PREVIEW_ITEMS_IN_CELL = 2; 
 
 function CalendarPageContent() {
@@ -80,8 +81,8 @@ function CalendarPageContent() {
 
   const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<CalendarItemUnion[], Error>({
     queryKey: ['calendarItems', year, month],
-    queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
-    staleTime: 0, // Ensure fresh data is fetched after invalidation
+    queryFn: () => queryFnGetCalendarDisplayableItemsForMonth(year, month),
+    staleTime: 0, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
     refetchOnMount: true, 
@@ -91,19 +92,6 @@ function CalendarPageContent() {
   const combinedItems = useMemo(() => {
     return calendarItemsData ?? [];
   }, [calendarItemsData]);
-
-  useEffect(() => {
-    if (combinedItems) {
-      const relevantAnnouncements = combinedItems.filter(
-        item => item.itemType === 'announcement' && item.date && item.date.startsWith(format(currentMonthDate, 'yyyy-MM'))
-      );
-      if (relevantAnnouncements.length > 0) {
-        console.log('CalendarPage: Announcements for current month in combinedItems:', relevantAnnouncements.map(a => ({id: a.id, date:a.date, period:(a as DailyAnnouncement).period, showOnCalendar: a.showOnCalendar, text:(a as DailyAnnouncement).text?.substring(0,20) })) );
-      } else if (calendarItemsData) { // Only log if data was attempted to be loaded
-        console.log('CalendarPage: No announcements for current month in combinedItems, or combinedItems is empty for announcements this month.');
-      }
-    }
-  }, [combinedItems, currentMonthDate, calendarItemsData]);
   
   const { data: subjectsData } = useQuery<Subject[], Error>({
     queryKey: ['subjects'],
@@ -131,17 +119,16 @@ function CalendarPageContent() {
         return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
       } else if (item.itemType === 'announcement') { 
         return item.date === dateStr && item.showOnCalendar === true; 
+      } else if (item.itemType === 'assignment') {
+        return item.dueDate === dateStr;
       }
       return false; 
     }).sort((a, b) => { 
-        const isAEvent = a.itemType === 'event';
-        const isBEvent = b.itemType === 'event';
-        if (isAEvent && !isBEvent) return -1; 
-        if (!isAEvent && isBEvent) return 1;  
-        if (isAEvent && isBEvent) { 
-            return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
+        const typeOrder = { event: 1, assignment: 2, announcement: 3 };
+        if (typeOrder[a.itemType] !== typeOrder[b.itemType]) {
+            return typeOrder[a.itemType] - typeOrder[b.itemType];
         }
-        if (!isAEvent && !isBEvent) { 
+        if (a.itemType === 'announcement' && b.itemType === 'announcement') { 
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
         return 0;
@@ -158,23 +145,6 @@ function CalendarPageContent() {
       if(updatedItemsForModal.length === 0) {
         setIsDayDetailModalOpen(false); 
         setSelectedDayForModal(null); 
-      } else {
-        // This logic ensures the modal remains open if there are still items for the selected day
-        const newItemsForDay = combinedItems.filter(item => {
-          if (!selectedDayForModal) return false;
-          const selectedDateStr = format(selectedDayForModal, 'yyyy-MM-dd');
-          if (item.itemType === 'event') {
-             if ((item as SchoolEvent).id === variables) return false; 
-             return selectedDateStr >= item.startDate && selectedDateStr <= (item.endDate ?? item.startDate);
-           } else if (item.itemType === 'announcement') {
-             return item.date === selectedDateStr && item.showOnCalendar === true;
-           }
-           return false;
-        });
-        if (newItemsForDay.length === 0) {
-            setIsDayDetailModalOpen(false);
-            setSelectedDayForModal(null); 
-        }
       }
       refetchCalendarItems(); 
     },
@@ -203,15 +173,18 @@ function CalendarPageContent() {
          return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        } else if (item.itemType === 'announcement') {
          return item.date === dateStr && item.showOnCalendar === true;
+       } else if (item.itemType === 'assignment') {
+         return item.dueDate === dateStr;
        }
        return false;
     }).sort((a,b) => { 
-        const isAEvent = a.itemType === 'event';
-        const isBEvent = b.itemType === 'event';
-        if (isAEvent && !isBEvent) return -1; 
-        if (!isAEvent && isBEvent) return 1;  
-        if (isAEvent && isBEvent) return (a as SchoolEvent).title.localeCompare((b as SchoolEvent).title, 'ja');
-        if (!isAEvent && !isBEvent) return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        const typeOrder = { event: 1, assignment: 2, announcement: 3 };
+        if (typeOrder[a.itemType] !== typeOrder[b.itemType]) {
+            return typeOrder[a.itemType] - typeOrder[b.itemType];
+        }
+        if (a.itemType === 'announcement' && b.itemType === 'announcement') {
+            return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
+        }
         return 0;
     });
 
@@ -231,25 +204,33 @@ function CalendarPageContent() {
             {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => {
               let displayTitle: string;
               let styleClass: string;
+              let IconComponent: React.ElementType | null = null;
 
               if (item.itemType === 'event') {
                 displayTitle = item.title;
                 styleClass = 'bg-accent/30 text-accent-foreground/90 dark:bg-accent/50 dark:text-accent-foreground';
-              } else { 
+                IconComponent = CalendarDaysIcon;
+              } else if (item.itemType === 'assignment') {
+                displayTitle = (item as Assignment).title;
+                styleClass = 'bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300';
+                IconComponent = ClipboardList;
+              } else { // announcement
                 const announcement = item as DailyAnnouncement;
                 const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
                 const textPreview = announcement.text && announcement.text.length > 10 ? announcement.text.substring(0, 10) + "..." : announcement.text;
                 displayTitle = `P${announcement.period}: ${subjectName || textPreview || '連絡'}`;
                 styleClass = 'bg-primary/20 text-primary-foreground/80 dark:bg-primary/30 dark:text-primary/90';
+                IconComponent = FileText;
               }
               
               return (
                 <div
                   key={`${item.itemType}-${(item as any).id || index}-${dateStr}-cell`}
-                  className={cn("text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate", styleClass)}
+                  className={cn("text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass)}
                   title={displayTitle}
                 >
-                  {displayTitle}
+                  {IconComponent && <IconComponent className="w-3 h-3 shrink-0" />}
+                  <span>{displayTitle}</span>
                 </div>
               );
             })}
@@ -356,7 +337,7 @@ function CalendarPageContent() {
                 month={currentMonthDate}
                 onMonthChange={setCurrentMonthDate}
                 locale={ja}
-                weekStartsOn={0} // Sunday start
+                weekStartsOn={0} 
                 fixedWeeks 
                 className="w-full p-0 flex-1 flex flex-col [&_td]:h-auto [&_td>button]:min-h-[6rem] sm:[&_td>button]:min-h-[7rem] md:[&_td>button]:min-h-[8rem]"
                 classNames={{
@@ -419,7 +400,7 @@ function CalendarPageContent() {
               {selectedDayForModal ? format(selectedDayForModal, 'yyyy年M月d日 (E)', { locale: ja }) : '予定詳細'}
             </DialogTitle>
             <DialogDescription>
-              この日の行事や連絡事項の一覧です。
+              この日の行事や連絡事項、課題の一覧です。
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[280px] sm:h-[350px] w-full pr-3">
@@ -448,6 +429,13 @@ function CalendarPageContent() {
                            footer = <p className="text-xs text-muted-foreground mt-1">期間: {format(parseISO(eventItem.startDate), "M/d", {locale:ja})} ~ {format(parseISO(eventItem.endDate), "M/d", {locale:ja})}</p>;
                         }
                     }
+                  } else if (item.itemType === 'assignment') {
+                    const assignItem = item as Assignment;
+                    icon = <ClipboardList className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                    title = `課題: ${assignItem.title}`;
+                    content = assignItem.description;
+                    colorClass = 'text-purple-700 dark:text-purple-300';
+                    footer = <p className="text-xs text-muted-foreground mt-1">科目: {assignItem.subjectId ? subjectsMap.get(assignItem.subjectId) : assignItem.customSubjectName || 'その他'} | 時限: {assignItem.duePeriod || '指定なし'}</p>;
                   } else if (item.itemType === 'announcement' && item.showOnCalendar === true) {
                     const annItem = item as DailyAnnouncement;
                     icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
@@ -456,7 +444,7 @@ function CalendarPageContent() {
                     content = annItem.text;
                     colorClass = 'text-primary-foreground/80 dark:text-primary/80';
                   } else {
-                    return null; // Don't render if not event or not showOnCalendar announcement
+                    return null; 
                   }
 
                   return (
@@ -534,10 +522,6 @@ function CalendarPageContent() {
           }}
           onEventSaved={async () => {
             await refetchCalendarItems(); 
-             if(selectedDayForModal && isDayDetailModalOpen){
-                // This logic is complex and might need further refinement to correctly update modal state
-                // For now, refetching items will update the underlying data, subsequent clicks will show updated list.
-             }
           }}
           editingEvent={eventToEdit}
         />
@@ -554,4 +538,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
