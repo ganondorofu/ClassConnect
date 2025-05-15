@@ -21,9 +21,9 @@ import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit, Trash2, Filter, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Filter, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon, Info } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import AssignmentFormDialog from '@/components/assignments/AssignmentFormDialog'; // Create this component
+import AssignmentFormDialog from '@/components/assignments/AssignmentFormDialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -31,13 +31,17 @@ import { areArraysOfObjectsEqual } from '@/lib/utils';
 
 const queryClient = new QueryClient();
 
+const ALL_SUBJECTS_VALUE = "__ALL_SUBJECTS__";
+const OTHER_SUBJECT_VALUE = "__OTHER__";
+const ALL_PERIODS_VALUE = "__ALL_PERIODS__";
+
 function AssignmentsPageContent() {
   const [isOffline, setIsOffline] = useState(false);
   const queryClientHook = useQueryClient();
   const { toast } = useToast();
   const { user, isAnonymous } = useAuth();
 
-  const [filters, setFilters] = useState<GetAssignmentsFilters>({ isCompleted: false }); // Default to show active tasks
+  const [filters, setFilters] = useState<GetAssignmentsFilters>({ isCompleted: false });
   const [sort, setSort] = useState<GetAssignmentsSort>({ field: 'dueDate', direction: 'asc' });
   
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -70,7 +74,7 @@ function AssignmentsPageContent() {
   const { data: initialAssignments, isLoading, error: queryError, refetch } = useQuery<Assignment[], Error>({
     queryKey: ['assignments', filters, sort],
     queryFn: queryFnGetAssignments(filters, sort),
-    staleTime: 1000 * 60 * 1, // 1 minute
+    staleTime: 1000 * 60 * 1, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('assignments'),
   });
@@ -110,7 +114,7 @@ function AssignmentsPageContent() {
     onSuccess: async () => {
       toast({ title: "成功", description: "課題を削除しました。" });
       await queryClientHook.invalidateQueries({ queryKey: ['assignments'] });
-      await queryClientHook.invalidateQueries({ queryKey: ['calendarItems'] }); // Also update calendar
+      await queryClientHook.invalidateQueries({ queryKey: ['calendarItems'] });
     },
     onError: (err: Error) => {
       toast({ title: "削除失敗", description: err.message, variant: "destructive" });
@@ -123,7 +127,6 @@ function AssignmentsPageContent() {
       toggleAssignmentCompletion(assignmentId, completed, userIdForLog),
     onSuccess: async () => {
       toast({ title: "成功", description: "課題の完了状態を更新しました。" });
-      // Optimistic update handled by onAssignmentsUpdate, but can invalidate for robustness
       await queryClientHook.invalidateQueries({ queryKey: ['assignments'] }); 
     },
     onError: (err: Error) => {
@@ -214,14 +217,19 @@ function AssignmentsPageContent() {
             disabled={isOffline}
           />
           <Select
-            value={filters.subjectId === null ? "__OTHER__" : filters.subjectId || ""}
-            onValueChange={(value) => setFilters(prev => ({ ...prev, subjectId: value === "__OTHER__" ? null : (value || undefined) }))}
+            value={filters.subjectId === undefined ? ALL_SUBJECTS_VALUE : (filters.subjectId === null ? OTHER_SUBJECT_VALUE : filters.subjectId)}
+            onValueChange={(value) => setFilters(prev => ({ 
+              ...prev, 
+              subjectId: value === ALL_SUBJECTS_VALUE 
+                ? undefined 
+                : (value === OTHER_SUBJECT_VALUE ? null : value) 
+            }))}
             disabled={isOffline || !subjects}
           >
             <SelectTrigger><SelectValue placeholder="科目で絞り込み" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全ての科目</SelectItem>
-              <SelectItem value="__OTHER__">その他 (学校提出など)</SelectItem>
+              <SelectItem value={ALL_SUBJECTS_VALUE}>全ての科目</SelectItem>
+              <SelectItem value={OTHER_SUBJECT_VALUE}>その他 (学校提出など)</SelectItem>
               {subjects?.map(s => <SelectItem key={s.id} value={s.id!}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -250,13 +258,13 @@ function AssignmentsPageContent() {
             <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={filters.dueDateEnd ? parseISO(filters.dueDateEnd) : undefined} onSelect={(date) => setFilters(prev => ({ ...prev, dueDateEnd: date ? format(date, 'yyyy-MM-dd') : null }))} /></PopoverContent>
           </Popover>
            <Select
-            value={filters.duePeriod || ""}
-            onValueChange={(value) => setFilters(prev => ({ ...prev, duePeriod: value as AssignmentDuePeriod || null }))}
+            value={filters.duePeriod === null || filters.duePeriod === undefined ? ALL_PERIODS_VALUE : filters.duePeriod}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, duePeriod: value === ALL_PERIODS_VALUE ? null : (value as AssignmentDuePeriod) }))}
             disabled={isOffline}
           >
             <SelectTrigger><SelectValue placeholder="提出時限で絞り込み" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全ての時限</SelectItem>
+              <SelectItem value={ALL_PERIODS_VALUE}>全ての時限</SelectItem>
               {AssignmentDuePeriods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -317,7 +325,7 @@ function AssignmentsPageContent() {
                       <TableCell>{format(parseISO(assignment.dueDate), 'yyyy/MM/dd (E)', { locale: ja })}</TableCell>
                       <TableCell>{assignment.duePeriod || <span className="text-xs text-muted-foreground italic">指定なし</span>}</TableCell>
                       <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={assignment.description}>
-                        {assignment.description.substring(0,50)}{assignment.description.length > 50 && "..."}
+                        {assignment.description && assignment.description.length > 50 ? assignment.description.substring(0,50) + "..." : assignment.description}
                       </TableCell>
                       <TableCell className="text-right">
                         {canPerformActions && (
