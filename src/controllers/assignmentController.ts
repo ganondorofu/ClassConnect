@@ -15,8 +15,9 @@ import {
   getDoc,
   WriteBatch,
   writeBatch,
+  onSnapshot, // Added onSnapshot import
 } from 'firebase/firestore';
-import type { Assignment, AssignmentDuePeriod } from '@/models/assignment';
+import type { Assignment, AssignmentDuePeriod, GetAssignmentsFilters, GetAssignmentsSort } from '@/models/assignment';
 import { logAction } from '@/services/logService';
 import { parseISO, isValid, format } from 'date-fns';
 
@@ -148,20 +149,6 @@ export const toggleAssignmentCompletion = async (assignmentId: string, isComplet
 };
 
 
-export interface GetAssignmentsFilters {
-  subjectId?: string | null; // null for "Other"
-  dueDateStart?: string | null; // YYYY-MM-DD
-  dueDateEnd?: string | null; // YYYY-MM-DD
-  duePeriod?: AssignmentDuePeriod | null;
-  isCompleted?: boolean | null; // null for all, true for completed, false for incomplete
-  searchTerm?: string | null; // For title/description search
-}
-
-export interface GetAssignmentsSort {
-  field: 'dueDate' | 'title' | 'subjectId' | 'createdAt';
-  direction: 'asc' | 'desc';
-}
-
 export const getAssignments = async (
   filters?: GetAssignmentsFilters,
   sort?: GetAssignmentsSort
@@ -248,9 +235,11 @@ export const queryFnGetAssignments = (filters?: GetAssignmentsFilters, sort?: Ge
   () => getAssignments(filters, sort);
 
 
+type Unsubscribe = () => void;
+
 export const onAssignmentsUpdate = (
     callback: (assignments: Assignment[]) => void,
-    onError?: (error: Error) => void,
+    onError: (error: Error) => void,
     filters?: GetAssignmentsFilters, // Optional filters for the listener
     sort?: GetAssignmentsSort // Optional sort for the listener
 ): Unsubscribe => {
