@@ -16,7 +16,7 @@ import { ja } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import type { SchoolEvent, TimetableSettings } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
-import type { Assignment } from '@/models/assignment'; // Import Assignment
+import type { Assignment } from '@/models/assignment';
 import { queryFnGetCalendarDisplayableItemsForMonth, queryFnGetTimetableSettings, deleteSchoolEvent, queryFnGetSubjects } from '@/controllers/timetableController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,7 @@ import type { Subject } from '@/models/subject';
 const queryClient = new QueryClient();
 
 type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' }) | (Assignment & { itemType: 'assignment' });
-const MAX_PREVIEW_ITEMS_IN_CELL = 2; 
+const MAX_PREVIEW_ITEMS_IN_CELL = 3; // Increased slightly to allow more items
 
 function CalendarPageContent() {
   const [currentMonthDate, setCurrentMonthDate] = useState(startOfMonth(new Date()));
@@ -142,11 +142,11 @@ function CalendarPageContent() {
       await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
       
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
-      if(updatedItemsForModal.length === 0) {
+      if(updatedItemsForModal.length === 0 && isDayDetailModalOpen) { // Only close if it was open and now empty for that day
         setIsDayDetailModalOpen(false); 
         setSelectedDayForModal(null); 
       }
-      refetchCalendarItems(); 
+      // No explicit refetchCalendarItems() here, rely on invalidateQueries
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
@@ -168,7 +168,7 @@ function CalendarPageContent() {
 
   const renderDayContent = (day: Date, displayMonth: Date): React.ReactNode => {
     const dateStr = format(day, 'yyyy-MM-dd');
-    const itemsForDayInCell = combinedItems.filter(item => { // This line could error if combinedItems is not an array
+    const itemsForDayInCell = combinedItems.filter(item => {
        if (item.itemType === 'event') {
          return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        } else if (item.itemType === 'announcement') {
@@ -195,7 +195,7 @@ function CalendarPageContent() {
       <div className={cn("relative flex flex-col items-start p-1 h-full overflow-hidden w-full", isOutsideMonth && "opacity-50")}>
         <span className={cn(
             "absolute top-1 right-1 text-xs sm:text-sm", 
-            isToday && !isOutsideMonth && "font-bold text-primary border border-primary/50 rounded-full w-5 h-5 flex items-center justify-center bg-primary/10"
+            isToday && !isOutsideMonth && "font-bold text-primary border border-primary/30 rounded-full w-5 h-5 flex items-center justify-center bg-primary/5"
         )}>
             {format(day, 'd')}
         </span>
@@ -216,11 +216,18 @@ function CalendarPageContent() {
                 IconComponent = ClipboardList;
               } else { // announcement
                 const announcement = item as DailyAnnouncement;
-                const subjectName = announcement.subjectIdOverride ? subjectsMap.get(announcement.subjectIdOverride) : null;
-                const textPreview = announcement.text && announcement.text.length > 10 ? announcement.text.substring(0, 10) + "..." : announcement.text;
-                displayTitle = `P${announcement.period}: ${subjectName || textPreview || '連絡'}`;
-                styleClass = 'bg-primary/20 text-primary-foreground/80 dark:bg-primary/30 dark:text-primary/90';
-                IconComponent = FileText;
+                let subjectNamePreview = '';
+                if (announcement.subjectIdOverride && subjectsMap && subjectsMap.get(announcement.subjectIdOverride)) {
+                   subjectNamePreview = subjectsMap.get(announcement.subjectIdOverride)!;
+                }
+                let title = announcement.text || subjectNamePreview;
+                if (!title) { 
+                    title = `P${announcement.period}連絡`;
+                }
+                displayTitle = title;
+                // Use a distinct, visible style for announcements for debugging
+                styleClass = 'bg-sky-100 text-sky-700 border border-sky-300 dark:bg-sky-900 dark:text-sky-200 dark:border-sky-700';
+                IconComponent = FileText; // Temporarily re-add icon for visibility
               }
               
               return (
@@ -319,11 +326,9 @@ function CalendarPageContent() {
                 selected={selectedDayForModal ?? undefined} 
                 onSelect={(day) => {
                     if (day) {
-                        const currentOpen = isDayDetailModalOpen;
-                        const sameDayClicked = selectedDayForModal && isSameDay(day, selectedDayForModal);
-                        
-                        if (currentOpen && sameDayClicked) {
-                           // No change if modal is open and same day is clicked again
+                        const isAlreadySelected = selectedDayForModal && isSameDay(day, selectedDayForModal);
+                        if (isDayDetailModalOpen && isAlreadySelected) {
+                            // If modal is open and same day clicked, do nothing to prevent re-opening
                         } else {
                             handleDayClick(day);
                         }
@@ -365,10 +370,10 @@ function CalendarPageContent() {
                     "inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
                      buttonVariants({ variant: "ghost" }), 
-                    "hover:bg-transparent focus:bg-transparent" 
+                    "hover:bg-transparent focus:bg-transparent" // Removed hover:bg-accent focus:bg-accent
                   ),
-                  day_selected: "bg-primary/80 text-primary-foreground hover:bg-primary/80 focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "border border-primary/30", 
+                  day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
+                  day_today: "border border-primary/30 bg-primary/5", // Adjusted today's style
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -438,11 +443,20 @@ function CalendarPageContent() {
                     footer = <p className="text-xs text-muted-foreground mt-1">科目: {assignItem.subjectId ? subjectsMap.get(assignItem.subjectId) : assignItem.customSubjectName || 'その他'} | 時限: {assignItem.duePeriod || '指定なし'}</p>;
                   } else if (item.itemType === 'announcement' && item.showOnCalendar === true) {
                     const annItem = item as DailyAnnouncement;
-                    icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
+                    // Use a more distinct icon and style for announcements for debugging
+                    icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom text-sky-600 dark:text-sky-400" />;
                     const subjectName = annItem.subjectIdOverride ? subjectsMap.get(annItem.subjectIdOverride) : null;
-                    title = `P${annItem.period}限: ${subjectName || '連絡'}`;
-                    content = annItem.text;
-                    colorClass = 'text-primary-foreground/80 dark:text-primary/80';
+                    
+                    let annTitle = annItem.text || (subjectName ? `${subjectName}の連絡` : `P${annItem.period}限の連絡`);
+                    if (annItem.text && subjectName) {
+                        annTitle = `${subjectName}: ${annItem.text}`;
+                    } else if (!annItem.text && !subjectName) {
+                        annTitle = `P${annItem.period}限 連絡あり`;
+                    }
+                    title = annTitle;
+                    content = annItem.text ? undefined : (subjectName ? `${subjectName}に関する連絡事項があります。` : `連絡事項があります。詳細は時間割表を確認してください。`); // Display text only if primary title is not text itself
+                    colorClass = 'text-sky-700 dark:text-sky-300';
+
                   } else {
                     return null; 
                   }
@@ -483,9 +497,11 @@ function CalendarPageContent() {
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {content}
-                      </p>
+                      {content && (
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                            {content}
+                        </p>
+                      )}
                       {footer}
                     </li>
                   );
