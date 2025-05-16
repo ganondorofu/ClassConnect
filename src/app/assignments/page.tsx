@@ -332,8 +332,8 @@ function AssignmentsPageContent() {
                               <AlertDialogContent>
                                 <AlertDialogHeader><AlertDialogTitle>本当に課題「{assignment.title}」を削除しますか？</AlertDialogTitle><AlertDialogDescription>この操作は元に戻せません。</AlertDialogDescription></AlertDialogHeader>
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteMutation.mutate(assignment.id!)}>削除</AlertDialogAction>
+                                  <AlertDialogCancel disabled={deleteMutation.isPending}>キャンセル</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(assignment.id!)} disabled={deleteMutation.isPending}>削除</AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
@@ -426,4 +426,5 @@ export default function AssignmentsPage() {
     </QueryClientProvider>
   );
 }
+
 
