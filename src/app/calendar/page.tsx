@@ -31,7 +31,7 @@ import type { Subject } from '@/models/subject';
 const queryClient = new QueryClient();
 
 type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' }) | (Assignment & { itemType: 'assignment' });
-const MAX_PREVIEW_ITEMS_IN_CELL = 3; // Increased slightly to allow more items
+const MAX_PREVIEW_ITEMS_IN_CELL = 3; 
 
 function CalendarPageContent() {
   const [currentMonthDate, setCurrentMonthDate] = useState(startOfMonth(new Date()));
@@ -207,7 +207,7 @@ function CalendarPageContent() {
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
-          <div className="mt-4 space-y-0.5 w-full text-left">
+          <div className="mt-4 space-y-0.5 w-full text-left flex-grow overflow-y-auto min-w-0"> {/* Added min-w-0 */}
             {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => {
               let displayTitle: string;
               let styleClass: string;
@@ -230,11 +230,14 @@ function CalendarPageContent() {
                 let title = announcement.text || subjectNamePreview;
                 if (!title) { 
                     title = `P${announcement.period}連絡`;
+                } else if (subjectNamePreview && announcement.text) {
+                    title = `${subjectNamePreview}: ${announcement.text}`;
+                } else if (subjectNamePreview) {
+                    title = `${subjectNamePreview}の連絡`;
                 }
                 displayTitle = title;
-                // Use a distinct, visible style for announcements for debugging
                 styleClass = 'bg-sky-100 text-sky-700 border border-sky-300 dark:bg-sky-900 dark:text-sky-200 dark:border-sky-700';
-                IconComponent = FileText; // Temporarily re-add icon for visibility
+                IconComponent = FileText;
               }
               
               return (
@@ -244,7 +247,7 @@ function CalendarPageContent() {
                   title={displayTitle}
                 >
                   {IconComponent && <IconComponent className="w-3 h-3 shrink-0" />}
-                  <span>{displayTitle}</span>
+                  <span className="truncate">{displayTitle}</span>
                 </div>
               );
             })}
@@ -370,17 +373,17 @@ function CalendarPageContent() {
                   tbody: "flex-1 flex flex-col", 
                   row: "flex w-full flex-1", 
                   cell: cn( 
-                    "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0", 
+                    "flex-1 p-0 relative text-center text-sm h-full border-l border-t first:border-l-0 min-w-0", 
                     "[&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20"
                   ),
                   day: cn(
                     "inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                     "h-full w-full p-0 font-normal aria-selected:opacity-100 flex flex-col items-start justify-start rounded-none",
                      buttonVariants({ variant: "ghost" }), 
-                    "hover:bg-transparent focus:bg-transparent" // Removed hover:bg-accent focus:bg-accent
+                    "hover:bg-transparent focus:bg-transparent" 
                   ),
                   day_selected: "bg-primary/80 text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground", 
-                  day_today: "border border-primary/30 bg-primary/5", // Adjusted today's style
+                  day_today: "border border-primary/30 bg-primary/5", 
                   day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30", 
                   day_disabled: "text-muted-foreground opacity-50",
                   day_range_end: "day-range-end",
@@ -450,7 +453,6 @@ function CalendarPageContent() {
                     footer = <p className="text-xs text-muted-foreground mt-1">科目: {assignItem.subjectId ? subjectsMap.get(assignItem.subjectId) : assignItem.customSubjectName || 'その他'} | 時限: {assignItem.duePeriod || '指定なし'}</p>;
                   } else if (item.itemType === 'announcement' && item.showOnCalendar === true) {
                     const annItem = item as DailyAnnouncement;
-                    // Use a more distinct icon and style for announcements for debugging
                     icon = <FileText className="inline-block mr-1.5 h-4 w-4 align-text-bottom text-sky-600 dark:text-sky-400" />;
                     const subjectName = annItem.subjectIdOverride ? subjectsMap.get(annItem.subjectIdOverride) : null;
                     
@@ -461,7 +463,7 @@ function CalendarPageContent() {
                         annTitle = `P${annItem.period}限 連絡あり`;
                     }
                     title = annTitle;
-                    content = annItem.text ? undefined : (subjectName ? `${subjectName}に関する連絡事項があります。` : `連絡事項があります。詳細は時間割表を確認してください。`); // Display text only if primary title is not text itself
+                    content = annItem.text ? undefined : (subjectName ? `${subjectName}に関する連絡事項があります。` : `連絡事項があります。詳細は時間割表を確認してください。`); 
                     colorClass = 'text-sky-700 dark:text-sky-300';
 
                   } else {
