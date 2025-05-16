@@ -27,7 +27,7 @@ export function Header({ toggleSidebar, isSidebarOpen }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 max-w-screen-2xl items-center px-4 md:px-8">
-        <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-2">
+        <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-2 relative z-[60]"> {/* Ensure button is above sidebar (z-50) */}
           {isSidebarOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           <span className="sr-only">{isSidebarOpen ? "ナビゲーションを閉じる" : "ナビゲーションを開く"}</span>
         </Button>
