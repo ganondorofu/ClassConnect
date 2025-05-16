@@ -19,7 +19,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import Image from 'next/image';
+// import Image from 'next/image'; // Image component is no longer used
 
 interface SidebarProps {
   isOpen: boolean;
@@ -55,25 +55,23 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
 
   return (
     <>
-      {/* Sidebar itself acts as overlay */}
+      {/* Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[49] bg-black/30 backdrop-blur-sm md:hidden print:hidden"
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar itself acts as overlay on mobile, fixed on desktop */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-full w-64 transform flex-col border-r bg-card text-card-foreground shadow-lg transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 flex h-full w-64 transform flex-col border-r bg-card text-card-foreground shadow-lg transition-transform duration-300 ease-in-out print:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex items-center justify-between border-b p-4">
-          <Link href="/" className="flex items-center space-x-2" onClick={isOpen ? toggleSidebar : undefined}>
-            <Image
-              src="/logo.png"
-              alt="ClassConnect Logo"
-              width={28}
-              height={28}
-              className="text-primary"
-              data-ai-hint="logo education"
-            />
-            <span className="font-bold">ClassConnect</span>
-          </Link>
+        <div className="flex items-center justify-end border-b p-4 h-14"> {/* Adjusted height to match header, removed logo link, changed justify-between to justify-end */}
           <Button variant="ghost" size="icon" onClick={toggleSidebar} className="md:hidden"> {/* Close button for mobile */}
             <X className="h-5 w-5" />
             <span className="sr-only">サイドバーを閉じる</span>
@@ -103,3 +101,4 @@ export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
     </>
   );
 }
+
