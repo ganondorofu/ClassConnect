@@ -254,7 +254,7 @@ function CalendarPageContent() {
                   key={`${item.itemType}-${(item as any).id || index}-${dateStr}-cell`}
                   role="button"
                   tabIndex={0}
-                  className={cn("text-left text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass, "hover:ring-1 hover:ring-primary/50 focus:outline-none focus:ring-2 focus:ring-primary")}
+                  className={cn("text-left text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass, "focus:outline-none focus:ring-2 focus:ring-primary")}
                   title={displayTitle}
                   onClick={() => openItemFullViewModal(item)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openItemFullViewModal(item);}}
@@ -500,7 +500,7 @@ function CalendarPageContent() {
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={(e) => e.stopPropagation()} disabled={deleteEventMutation.isPending}>
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </AlertDialogTrigger>
@@ -512,7 +512,7 @@ function CalendarPageContent() {
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                                  <AlertDialogCancel disabled={deleteEventMutation.isPending}>キャンセル</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => deleteEventMutation.mutate((item as SchoolEvent).id!)} disabled={deleteEventMutation.isPending}>
                                     {deleteEventMutation.isPending ? '削除中...' : '削除'}
                                   </AlertDialogAction>
@@ -647,5 +647,6 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
 
 

@@ -160,7 +160,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     queryFn: () => queryFnGetAssignments({ 
       dueDateStart: format(weekStart, 'yyyy-MM-dd'), 
       dueDateEnd: format(weekEnd, 'yyyy-MM-dd'),
-      includePastDue: true // Always include past due for grid display, filtering is on assignments page
+      includePastDue: true 
     })(),
     staleTime: 1000 * 60 * 2, 
     enabled: !isOffline && (!!user || isAnonymous),
@@ -195,12 +195,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     let unsubEvents: Unsubscribe | undefined;
     let unsubSubjects: Unsubscribe | undefined;
     let unsubAnnouncementsList: Unsubscribe[] = [];
-    let unsubAssignments: Unsubscribe | undefined; 
     
     const setupListeners = () => {
         unsubSettings = onTimetableSettingsUpdate(
             (newSettings) => { 
-              setLiveSettings(prevSettings => areSettingsEqual(prevSettings, newSettings) ? prevSettings : newSettings); 
+              setLiveSettings(prev => areSettingsEqual(prev, newSettings) ? prev : newSettings); 
             }, 
             (error) => { console.error("RT Settings Error:", error); setIsOffline(true); }
         );
@@ -248,7 +247,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       unsubEvents?.();
       unsubSubjects?.();
       unsubAnnouncementsList.forEach(unsub => unsub?.());
-      unsubAssignments?.(); 
     };
   }, [isOffline, user, isAnonymous, weekStart, weekEnd, queryClientHook]);
 
@@ -474,7 +472,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     return DisplayedWeekDaysOrder.map(dayEnum => {
       const dateForDay = weekDays.find(d => dayCodeToDayOfWeekEnum(getDay(d)) === dayEnum);
       if (!dateForDay) { 
-        console.warn(`Date not found for DayOfWeekEnum: ${dayEnum}. Using temporary date.`);
         const tempDate = new Date(); 
         return { date: tempDate, dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false, assignmentsForDay: [] };
       }
@@ -606,7 +603,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   
                   const announcementDisplayText = announcement?.isManuallyCleared ? '' : announcement?.text; 
                   const isToday = isSameDay(date, currentDate);
-                  const isCurrentPeriod = isToday && dayCodeToDayOfWeekEnum(getDay(currentDate)) === dayOfWeek;
                   
                   const canEditThisSlot = (user || isAnonymous); 
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY;
@@ -796,3 +792,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+
