@@ -26,9 +26,9 @@ import { addAssignment, updateAssignment } from '@/controllers/assignmentControl
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
-const SUBJECT_NONE_VALUE = "___SUBJECT_NONE___";
+const SUBJECT_NONE_VALUE = "__SUBJECT_NONE__";
 const SUBJECT_OTHER_VALUE = "__OTHER__";
-const PERIOD_NONE_VALUE = "___PERIOD_NONE___";
+const PERIOD_NONE_VALUE = "__NO_PERIOD__";
 
 const assignmentFormSchema = z.object({
   title: z.string().min(1, { message: "課題名は必須です。" }).max(100, { message: "課題名は100文字以内で入力してください。"}),
@@ -119,13 +119,13 @@ export default function AssignmentFormDialog({
 
   const mutation = useMutation({
     mutationFn: (data: AssignmentFormData) => {
-      const payload: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType'> = { // Removed isCompleted
+      const payload: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType'> = {
         title: data.title,
         description: data.description,
-        subjectId: data.subjectId === SUBJECT_OTHER_VALUE ? null : data.subjectId,
+        subjectId: data.subjectId === SUBJECT_OTHER_VALUE || data.subjectId === SUBJECT_NONE_VALUE ? null : data.subjectId,
         customSubjectName: data.subjectId === SUBJECT_OTHER_VALUE ? data.customSubjectName : null,
         dueDate: format(data.dueDate, 'yyyy-MM-dd'),
-        duePeriod: data.duePeriod || null,
+        duePeriod: data.duePeriod === PERIOD_NONE_VALUE ? null : data.duePeriod,
         submissionMethod: data.submissionMethod || null,
         targetAudience: data.targetAudience || null,
       };
@@ -282,7 +282,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="submissionMethod" className="text-right pt-2 col-span-1">提出方法 (任意)</Label>
             <div className="col-span-3">
-              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Google Classroom, ノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isSubmitting} />
+              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Teamsで提出, 授業中にノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isSubmitting} />
               {errors.submissionMethod && <p className="text-xs text-destructive mt-1">{errors.submissionMethod.message}</p>}
             </div>
           </div>
@@ -291,7 +291,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="targetAudience" className="text-right pt-2 col-span-1">対象者 (任意)</Label>
             <div className="col-span-3">
-              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 〇〇委員" className={errors.targetAudience ? "border-destructive" : ""} disabled={isSubmitting} />
+              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 前半, 〇〇受講者" className={errors.targetAudience ? "border-destructive" : ""} disabled={isSubmitting} />
               {errors.targetAudience && <p className="text-xs text-destructive mt-1">{errors.targetAudience.message}</p>}
             </div>
           </div>
@@ -308,3 +308,4 @@ export default function AssignmentFormDialog({
     </Dialog>
   );
 }
+
