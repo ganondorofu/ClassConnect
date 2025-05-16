@@ -9,7 +9,7 @@ import { ja } from 'date-fns/locale';
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogClose
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,8 +21,8 @@ import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@
 import type { Subject } from '@/models/subject';
 import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum, AllDays } from '@/models/timetable';
 import type { DailyAnnouncement } from '@/models/announcement';
-import type { Assignment } from '@/models/assignment'; // Import Assignment model
-import { queryFnGetAssignments } from '@/controllers/assignmentController'; // Import assignments query
+import type { Assignment } from '@/models/assignment'; 
+import { queryFnGetAssignments } from '@/controllers/assignmentController'; 
 import {
   queryFnGetTimetableSettings,
   queryFnGetFixedTimetable,
@@ -81,7 +81,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const [liveDailyAnnouncements, setLiveDailyAnnouncements] = useState<Record<string, DailyAnnouncement[]>>({});
   const [liveSchoolEvents, setLiveSchoolEvents] = useState<SchoolEvent[] | undefined>(undefined);
   const [liveSubjects, setLiveSubjects] = useState<Subject[] | undefined>(undefined);
-  const [liveAssignments, setLiveAssignments] = useState<Assignment[] | undefined>(undefined); // State for live assignments
+  const [liveAssignments, setLiveAssignments] = useState<Assignment[] | undefined>(undefined);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 }); 
   const weekEnd = addDays(weekStart, 6); 
@@ -96,7 +96,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements', format(weekStart, 'yyyy-MM-dd')] });
         queryClientHook.invalidateQueries({ queryKey: ['schoolEvents'] });
         queryClientHook.invalidateQueries({ queryKey: ['subjects'] });
-        queryClientHook.invalidateQueries({ queryKey: ['assignmentsGrid'] }); // Invalidate assignments
+        queryClientHook.invalidateQueries({ queryKey: ['assignmentsGrid'] });
       }
     };
     const handleOffline = () => setIsOffline(true);
@@ -157,8 +157,12 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const { data: initialAssignmentsData, isLoading: isLoadingAssignmentsData, error: errorAssignmentsData } = useQuery<Assignment[], Error>({
     queryKey: ['assignmentsGrid', format(weekStart, 'yyyy-MM-dd'), format(weekEnd, 'yyyy-MM-dd')],
-    queryFn: () => queryFnGetAssignments({ dueDateStart: format(weekStart, 'yyyy-MM-dd'), dueDateEnd: format(weekEnd, 'yyyy-MM-dd') })(),
-    staleTime: 1000 * 60 * 2, // Fetch assignments for the week every 2 minutes
+    queryFn: () => queryFnGetAssignments({ 
+      dueDateStart: format(weekStart, 'yyyy-MM-dd'), 
+      dueDateEnd: format(weekEnd, 'yyyy-MM-dd'),
+      includePastDue: true // Always include past due for grid display, filtering is on assignments page
+    })(),
+    staleTime: 1000 * 60 * 2, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('assignmentsGrid'),
   });
@@ -618,8 +622,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       )}>
                       {cellIsInteractive ? (
                         <>
-                          <div className="flex-shrink-0"> {/* Removed mb-1 */}
-                            <div className={cn("text-sm truncate", displaySubjectName && isCurrentPeriod ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
+                          <div className="flex-shrink-0"> 
+                            <div className={cn("text-sm truncate", displaySubjectName && isToday ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
                               {displaySubjectName ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
                               {isSubjectAlteredToday && <span className="text-xs ml-1 text-destructive">(変更)</span>}
                             </div>
@@ -755,7 +759,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 </Button>
             </div>
             <div className="flex gap-2 w-full sm:w-auto justify-end">
-              <DialogClose asChild><Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={isSaving}>キャンセル</Button></DialogClose>
+               <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)} className="w-full sm:w-auto" disabled={isSaving}>キャンセル</Button> {/* Explicit close */}
               <Button type="button" onClick={handleSaveAnnouncement} className="w-full sm:w-auto" disabled={isSaving || isOffline || isLoadingSubjects || !canEditTimetableSlot}>
                 {isSaving ? '保存中...' : '保存'}
               </Button>
@@ -792,4 +796,3 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
-

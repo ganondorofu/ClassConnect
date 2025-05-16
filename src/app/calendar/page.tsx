@@ -149,11 +149,10 @@ function CalendarPageContent() {
       await queryClientHook.invalidateQueries({ queryKey: ['calendarItems', year, month] });
       
       const updatedItemsForModal = itemsForSelectedDay.filter(item => item.itemType !== 'event' || (item as SchoolEvent).id !== variables);
-      if(updatedItemsForModal.length === 0 && isDayDetailModalOpen) { // Only close if it was open and now empty for that day
+      if(updatedItemsForModal.length === 0 && isDayDetailModalOpen) { 
         setIsDayDetailModalOpen(false); 
         setSelectedDayForModal(null); 
       }
-      // No explicit refetchCalendarItems() here, rely on invalidateQueries
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `行事の削除に失敗しました: ${error.message}`, variant: "destructive" });
@@ -207,7 +206,7 @@ function CalendarPageContent() {
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
-          <div className="mt-5 space-y-0.5 w-full text-left flex-grow overflow-y-auto min-w-0"> {/* Changed mt-4 to mt-5 */}
+          <div className="mt-5 space-y-0.5 w-full text-left flex-grow overflow-y-auto min-w-0">
             {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => {
               let displayTitle: string;
               let styleClass: string;
@@ -221,7 +220,7 @@ function CalendarPageContent() {
                 displayTitle = (item as Assignment).title;
                 styleClass = 'bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300';
                 IconComponent = ClipboardList;
-              } else { // announcement
+              } else { 
                 const announcement = item as DailyAnnouncement;
                 let subjectNamePreview = '';
                 if (announcement.subjectIdOverride && subjectsMap && subjectsMap.get(announcement.subjectIdOverride)) {
@@ -234,6 +233,8 @@ function CalendarPageContent() {
                     title = `${subjectNamePreview}: ${announcement.text}`;
                 } else if (subjectNamePreview) {
                     title = `${subjectNamePreview}の連絡`;
+                } else {
+                    title = `P${announcement.period}限: ${title}`;
                 }
                 displayTitle = title;
                 styleClass = 'bg-sky-100 text-sky-700 border border-sky-300 dark:bg-sky-900 dark:text-sky-200 dark:border-sky-700';
@@ -338,7 +339,6 @@ function CalendarPageContent() {
                     if (day) {
                         const isAlreadySelected = selectedDayForModal && isSameDay(day, selectedDayForModal);
                         if (isDayDetailModalOpen && isAlreadySelected) {
-                            // If modal is open and same day clicked, do nothing to prevent re-opening
                         } else {
                             handleDayClick(day);
                         }
