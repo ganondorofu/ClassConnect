@@ -15,10 +15,11 @@ import {
   getDoc,
   WriteBatch,
   writeBatch,
-  onSnapshot, // Added onSnapshot import
+  onSnapshot,
 } from 'firebase/firestore';
 import type { Assignment, AssignmentDuePeriod, GetAssignmentsFilters, GetAssignmentsSort } from '@/models/assignment';
 import { logAction } from '@/services/logService';
+import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 import { parseISO, isValid, format } from 'date-fns';
 
 const CURRENT_CLASS_ID = 'defaultClass';
@@ -46,14 +47,15 @@ export const addAssignment = async (data: Omit<Assignment, 'id' | 'createdAt' | 
     const assignmentData: Omit<Assignment, 'id'> = {
       ...data,
       subjectId: data.subjectId || null,
-      dueDate: format(parseISO(data.dueDate), 'yyyy-MM-dd'), // Ensure correct format
+      dueDate: format(parseISO(data.dueDate), 'yyyy-MM-dd'), 
       isCompleted: false,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
       itemType: 'assignment',
     };
     const docRef = await addDoc(assignmentsCollectionRef, assignmentData);
-    await logAction('add_assignment', { after: { id: docRef.id, ...assignmentData } }, userId);
+    const afterState = { id: docRef.id, ...assignmentData };
+    await logAction('add_assignment', { after: prepareStateForLog(afterState) }, userId);
     return docRef.id;
   } catch (error) {
     console.error("Error adding assignment:", error);
@@ -80,13 +82,32 @@ export const updateAssignment = async (assignmentId: string, data: Partial<Omit<
     }
 
     const updateData = { ...data, updatedAt: Timestamp.now() };
-    if (updateData.dueDate) {
+    if (updateData.dueDate && typeof updateData.dueDate === 'string') {
         updateData.dueDate = format(parseISO(updateData.dueDate), 'yyyy-MM-dd');
+    } else if (updateData.dueDate instanceof Date) {
+        updateData.dueDate = format(updateData.dueDate, 'yyyy-MM-dd');
     }
 
+
     await updateDoc(docRef, updateData);
-    const afterState = { ...beforeState, ...updateData, id: assignmentId, updatedAt: new Date() } as Assignment;
-    await logAction('update_assignment', { before: beforeState, after: afterState, assignmentId }, userId);
+    
+    const newSnap = await getDoc(docRef);
+    let afterState: Assignment | null = null;
+    if (newSnap.exists()) {
+        const newData = newSnap.data();
+        afterState = {
+            id: newSnap.id, ...newData,
+            createdAt: parseAssignmentTimestamp(newData.createdAt),
+            updatedAt: parseAssignmentTimestamp(newData.updatedAt),
+            itemType: 'assignment',
+        } as Assignment;
+    }
+    
+    await logAction('update_assignment', { 
+        before: prepareStateForLog(beforeState), 
+        after: prepareStateForLog(afterState), 
+        assignmentId 
+    }, userId);
   } catch (error) {
     console.error("Error updating assignment:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -111,7 +132,7 @@ export const deleteAssignment = async (assignmentId: string, userId: string): Pr
       } as Assignment;
     }
     await deleteDoc(docRef);
-    await logAction('delete_assignment', { before: beforeState, assignmentId }, userId);
+    await logAction('delete_assignment', { before: prepareStateForLog(beforeState), assignmentId }, userId);
   } catch (error) {
     console.error("Error deleting assignment:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -137,8 +158,23 @@ export const toggleAssignmentCompletion = async (assignmentId: string, isComplet
         }
 
         await updateDoc(docRef, { isCompleted, updatedAt: Timestamp.now() });
-        const afterState = { ...beforeState, isCompleted, id: assignmentId, updatedAt: new Date() } as Assignment;
-        await logAction('toggle_assignment_completion', { before: beforeState, after: afterState, assignmentId }, userId);
+        
+        const newSnap = await getDoc(docRef);
+        let afterState: Assignment | null = null;
+        if (newSnap.exists()){
+            const newData = newSnap.data();
+            afterState = {
+                 id: newSnap.id, ...newData,
+                createdAt: parseAssignmentTimestamp(newData.createdAt),
+                updatedAt: parseAssignmentTimestamp(newData.updatedAt),
+                itemType: 'assignment',
+            } as Assignment;
+        }
+        await logAction('toggle_assignment_completion', { 
+            before: prepareStateForLog(beforeState), 
+            after: prepareStateForLog(afterState), 
+            assignmentId 
+        }, userId);
     } catch (error) {
         console.error("Error toggling assignment completion:", error);
         if ((error as FirestoreError).code === 'unavailable') {
@@ -165,19 +201,18 @@ export const getAssignments = async (
     if (filters.dueDateEnd) {
       q = query(q, where('dueDate', '<=', filters.dueDateEnd));
     }
-    if (filters.duePeriod !== undefined) { // Note: duePeriod can be null
+    if (filters.duePeriod !== undefined) { 
       q = query(q, where('duePeriod', '==', filters.duePeriod));
     }
     if (filters.isCompleted !== undefined && filters.isCompleted !== null) {
       q = query(q, where('isCompleted', '==', filters.isCompleted));
     }
-    // searchTerm would typically require client-side filtering or a more complex backend search solution
   }
 
   const sortBy = sort?.field || 'dueDate';
   const sortDirection = sort?.direction || 'asc';
   q = query(q, orderBy(sortBy, sortDirection));
-  if (sortBy !== 'dueDate') { // Add secondary sort for consistency
+  if (sortBy !== 'dueDate') { 
     q = query(q, orderBy('dueDate', 'asc'));
   }
 
@@ -203,7 +238,6 @@ export const getAssignments = async (
       } as Assignment;
     });
 
-    // Client-side filtering for searchTerm if provided (Firestore doesn't support partial text search well)
     if (filters?.searchTerm) {
       const term = filters.searchTerm.toLowerCase();
       assignments = assignments.filter(
@@ -222,10 +256,8 @@ export const getAssignments = async (
     if ((error as FirestoreError).code === 'unavailable') {
       return [];
     }
-    // Check for specific index errors if possible, though often generic
     if ((error as FirestoreError).code === 'failed-precondition') {
         console.error("Firestore query for assignments might require an index. Error:", (error as FirestoreError).message);
-        // Provide a more user-friendly message or specific index details if known
     }
     throw error;
   }
@@ -240,12 +272,11 @@ type Unsubscribe = () => void;
 export const onAssignmentsUpdate = (
     callback: (assignments: Assignment[]) => void,
     onError: (error: Error) => void,
-    filters?: GetAssignmentsFilters, // Optional filters for the listener
-    sort?: GetAssignmentsSort // Optional sort for the listener
+    filters?: GetAssignmentsFilters, 
+    sort?: GetAssignmentsSort 
 ): Unsubscribe => {
     let q = query(assignmentsCollectionRef);
 
-    // Apply filters similar to getAssignments
     if (filters) {
         if (filters.subjectId !== undefined) {
             q = query(q, where('subjectId', '==', filters.subjectId));
@@ -292,7 +323,6 @@ export const onAssignmentsUpdate = (
             } as Assignment;
         });
         
-        // Client-side filtering for searchTerm if provided for the listener
         if (filters?.searchTerm) {
             const term = filters.searchTerm.toLowerCase();
             assignments = assignments.filter(
@@ -312,3 +342,4 @@ export const onAssignmentsUpdate = (
         }
     });
 };
+

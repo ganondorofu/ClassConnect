@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -7,6 +8,7 @@
 import { db } from '@/config/firebase';
 import { collection, doc, setDoc, Timestamp, FirestoreError, getDoc, writeBatch } from 'firebase/firestore';
 import type { Subject } from '@/models/subject'; // Import Subject type
+import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 
 // --- Firestore Collection Reference ---
 const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
@@ -27,58 +29,20 @@ export interface LogEntry {
   };
 }
 
-// Helper to prepare state for logging (converts timestamps to ISO strings)
-// Also ensures undefined values are replaced with null
-const prepareStateForLog = (state: any): any => {
-  if (state === undefined || state === null) return null;
-  return JSON.parse(JSON.stringify(state, (key, value) =>
-    value === undefined ? null : value
-  ), (key, value) => {
-    if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined && !(value instanceof Timestamp)) {
-      try {
-        return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
-      } catch (e) {
-        console.warn(`Could not convert object to ISOString for logging, value: ${JSON.stringify(value)}`);
-        return value;
-      }
-    }
-    if (value instanceof Timestamp) return value.toDate().toISOString();
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
-      return value;
-    }
-    return value;
-  });
-};
-
-
 /**
  * Logs an action performed by a user (or system).
  */
 export const logAction = async (
   actionType: string,
-  details: object,
+  details: object, // This details object must now be pre-processed to be plain
   userId: string = 'anonymous'
 ): Promise<string | null> => {
-  let cleanDetailsForFirestore: any;
-  try {
-    const stringifiedDetails = JSON.stringify(prepareStateForLog(details));
-    const parsedDetails = JSON.parse(stringifiedDetails);
-
-    cleanDetailsForFirestore = JSON.parse(JSON.stringify(parsedDetails, (key, value) => {
-        return value === undefined ? null : value;
-    }));
-
-  } catch (e) {
-    console.error("Error preparing log details for Firestore:", e, details);
-    cleanDetailsForFirestore = { error_in_detail_serialization: true, original_action_type: actionType };
-  }
-
+  // Details should already be plain by the time it gets here
   const logEntry: Omit<LogEntry, 'id'> = {
       action: actionType,
-      timestamp: Timestamp.now(),
+      timestamp: Timestamp.now(), // Server timestamp for the log itself
       userId: userId,
-      details: cleanDetailsForFirestore ?? {},
+      details: details ?? {}, // Use the pre-processed details
   };
 
   try {
@@ -112,7 +76,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
         logEntry = {
             id: logSnap.id,
             action: rawData.action,
-            timestamp: rawData.timestamp,
+            timestamp: rawData.timestamp, // This will be a Firestore Timestamp
             userId: rawData.userId,
             details: rawData.details || {},
         } as LogEntry;
@@ -130,7 +94,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
              if (!originalLogSnap.exists()) {
                  throw new Error(`Original log entry (ID: ${originalLogId}) for rollback action (Log ID: ${logId}) not found.`);
              }
-             const originalLogData = originalLogSnap.data() as LogEntry;
+             const originalLogData = originalLogSnap.data() as LogEntry; // Cast to LogEntry
              const originalActionToReapply = originalLogData.action;
              const originalDetailsToReapply = originalLogData.details || {};
              await performActionBasedOnLog(originalActionToReapply, originalDetailsToReapply.after, originalDetailsToReapply.before, userId, `reapply_after_rollback_${logId}`);
@@ -176,20 +140,33 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
                     }
                 }
             });
-             // Ensure updatedAt is always a Firestore Timestamp for consistency
             if (firestoreData.updatedAt && !(firestoreData.updatedAt instanceof Timestamp)) {
                  try {
                     const parsedUpdatedAt = new Date(firestoreData.updatedAt);
                     if (!isNaN(parsedUpdatedAt.getTime())) {
                         firestoreData.updatedAt = Timestamp.fromDate(parsedUpdatedAt);
                     } else {
-                         firestoreData.updatedAt = Timestamp.now(); // Fallback if parsing fails
+                         firestoreData.updatedAt = Timestamp.now(); 
                     }
                  } catch {
-                    firestoreData.updatedAt = Timestamp.now(); // Fallback on any error
+                    firestoreData.updatedAt = Timestamp.now(); 
                  }
-            } else if (!firestoreData.updatedAt) {
+            } else if (!firestoreData.updatedAt && action !== 'delete_subject') { // Subjects don't have updatedAt
                  firestoreData.updatedAt = Timestamp.now();
+            }
+             if (firestoreData.createdAt && !(firestoreData.createdAt instanceof Timestamp) && action !== 'delete_subject') {
+                 try {
+                    const parsedCreatedAt = new Date(firestoreData.createdAt);
+                     if (!isNaN(parsedCreatedAt.getTime())) {
+                        firestoreData.createdAt = Timestamp.fromDate(parsedCreatedAt);
+                    } else {
+                         firestoreData.createdAt = Timestamp.now(); 
+                    }
+                 } catch {
+                     firestoreData.createdAt = Timestamp.now(); 
+                 }
+            } else if (!firestoreData.createdAt && action !== 'delete_subject') {
+                  firestoreData.createdAt = Timestamp.now();
             }
             return firestoreData;
         };
@@ -233,10 +210,10 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
 
              let dataToRestore: Partial<Subject> | any = {};
              if (action === 'delete_subject') {
-                if (!before.name || !before.teacherName) {
-                    throw new Error(`Cannot restore subject (Log ID: ${logId}) without name and teacherName in 'before' state.`);
+                if (!before.name) { // teacherName is optional
+                    throw new Error(`Cannot restore subject (Log ID: ${logId}) without name in 'before' state.`);
                 }
-                dataToRestore = { name: before.name, teacherName: before.teacherName };
+                dataToRestore = { name: before.name, teacherName: before.teacherName ?? null };
              } else {
                 dataToRestore = { ...before };
                 delete dataToRestore.id;
@@ -274,15 +251,15 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
 
         await batch.commit();
         console.log(`Rollback successful for Log ID: ${logId}, Action: ${action}`);
-        await logAction('rollback_action', rollbackDetails, userId);
+        await logAction('rollback_action', prepareStateForLog(rollbackDetails), userId);
 
     } catch (error) {
         console.error(`Rollback failed for Log ID: ${logId}:`, error);
-        await logAction('rollback_action_failed', {
+        await logAction('rollback_action_failed', prepareStateForLog({
              originalLogId: logId,
              originalAction: logEntry?.action,
              error: String(error),
-        }, userId);
+        }), userId);
         throw error;
     }
 };
@@ -302,7 +279,7 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
         const firestoreData = { ...data };
         Object.keys(firestoreData).forEach(key => {
             if (firestoreData[key] === undefined) {
-                firestoreData[key] = null; // Convert undefined to null
+                firestoreData[key] = null; 
             }
             if (typeof firestoreData[key] === 'string') {
                 const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -322,20 +299,33 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
                 }
             }
         });
-        // Ensure updatedAt is always a Firestore Timestamp for consistency
         if (firestoreData.updatedAt && !(firestoreData.updatedAt instanceof Timestamp)) {
             try {
                 const parsedUpdatedAt = new Date(firestoreData.updatedAt);
                 if (!isNaN(parsedUpdatedAt.getTime())) {
                     firestoreData.updatedAt = Timestamp.fromDate(parsedUpdatedAt);
                 } else {
-                    firestoreData.updatedAt = Timestamp.now(); // Fallback if parsing fails
+                    firestoreData.updatedAt = Timestamp.now(); 
                 }
             } catch {
-                firestoreData.updatedAt = Timestamp.now(); // Fallback on any error
+                firestoreData.updatedAt = Timestamp.now(); 
             }
-        } else if (!firestoreData.updatedAt) {
+        } else if (!firestoreData.updatedAt && action !== 'delete_subject') {
             firestoreData.updatedAt = Timestamp.now();
+        }
+         if (firestoreData.createdAt && !(firestoreData.createdAt instanceof Timestamp) && action !== 'delete_subject') {
+             try {
+                const parsedCreatedAt = new Date(firestoreData.createdAt);
+                 if (!isNaN(parsedCreatedAt.getTime())) {
+                    firestoreData.createdAt = Timestamp.fromDate(parsedCreatedAt);
+                } else {
+                     firestoreData.createdAt = Timestamp.now(); 
+                }
+             } catch {
+                 firestoreData.createdAt = Timestamp.now(); 
+             }
+        } else if (!firestoreData.createdAt && action !== 'delete_subject') {
+              firestoreData.createdAt = Timestamp.now();
         }
         return firestoreData;
     };
@@ -345,14 +335,14 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
         if (!docId || !targetState) throw new Error(`Cannot determine document ID/data to re-add for action ${action} (${context})`);
         const docRef = doc(db, collectionPath, docId);
         const dataToRestore = { ...targetState };
-        delete dataToRestore.id; // ID is part of the ref path
+        delete dataToRestore.id; 
         batch.set(docRef, prepareDataForFirestore(dataToRestore));
 
     } else if (action.startsWith('update_') || action.startsWith('upsert_')) {
          const docId = targetState?.id ?? previousState?.id ?? (action.includes('settings') ? 'timetable' : (action.includes('general_announcement') ? targetState?.date ?? previousState?.date : null));
          if (!docId) throw new Error(`Cannot determine document ID to re-update for action ${action} (${context})`);
          const docRef = doc(db, collectionPath, docId);
-        if (targetState === null || Object.keys(targetState).length === 0) { // Handles if target was deletion
+        if (targetState === null || Object.keys(targetState).length === 0) { 
             batch.delete(docRef);
         } else {
              const dataToRestore = { ...targetState };
@@ -387,7 +377,7 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
 
 
 function getCollectionPathForAction(action: string): string | null {
-    if (action.includes('subject')) {
+    if (action.includes('subject') && !action.includes('override')) { // ensure not matching 'subjectIdOverride' from announcements
         return `classes/${CURRENT_CLASS_ID}/subjects`;
     }
     if (action.includes('event')) {
@@ -396,7 +386,7 @@ function getCollectionPathForAction(action: string): string | null {
     if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable' || action === 'update_fixed_slot') {
         return `classes/${CURRENT_CLASS_ID}/fixedTimetable`;
     }
-    if (action.includes('announcement') && !action.includes('general')) {
+    if (action.includes('announcement') && !action.includes('general_announcement') && !action.includes('future_daily_announcements')) {
         return `classes/${CURRENT_CLASS_ID}/dailyAnnouncements`;
     }
      if (action.includes('general_announcement')) {
@@ -404,6 +394,12 @@ function getCollectionPathForAction(action: string): string | null {
     }
     if (action.includes('settings')) {
          return `classes/${CURRENT_CLASS_ID}/settings`;
+    }
+    if (action.includes('inquiry')) {
+        return `classes/${CURRENT_CLASS_ID}/inquiries`;
+    }
+    if (action.includes('assignment')) {
+        return `classes/${CURRENT_CLASS_ID}/assignments`;
     }
     console.warn(`Could not determine collection path for action: ${action}`);
     return null;
