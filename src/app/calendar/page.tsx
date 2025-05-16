@@ -47,6 +47,9 @@ function CalendarPageContent() {
   const [isEventFormModalOpen, setIsEventFormModalOpen] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<SchoolEvent | null>(null);
 
+  const [selectedItemForFullView, setSelectedItemForFullView] = useState<CalendarItemUnion | null>(null);
+  const [isItemFullViewModalOpen, setIsItemFullViewModalOpen] = useState(false);
+
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -82,7 +85,7 @@ function CalendarPageContent() {
   const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<CalendarItemUnion[], Error>({
     queryKey: ['calendarItems', year, month],
     queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
-    staleTime: 0, 
+    staleTime: 1000 * 60 * 1, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
     refetchOnMount: true, 
@@ -115,6 +118,11 @@ function CalendarPageContent() {
   const handleDayClick = (day: Date) => {
     setSelectedDayForModal(day);
     setIsDayDetailModalOpen(true);
+  };
+
+  const openItemFullViewModal = (item: CalendarItemUnion) => {
+    setSelectedItemForFullView(item);
+    setIsItemFullViewModalOpen(true);
   };
 
   const itemsForSelectedDay = useMemo(() => {
@@ -242,14 +250,15 @@ function CalendarPageContent() {
               }
               
               return (
-                <div
+                <button
                   key={`${item.itemType}-${(item as any).id || index}-${dateStr}-cell`}
-                  className={cn("text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass)}
+                  className={cn("text-left text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass, "hover:ring-1 hover:ring-primary/50 focus:outline-none focus:ring-2 focus:ring-primary")}
                   title={displayTitle}
+                  onClick={() => openItemFullViewModal(item)}
                 >
                   {IconComponent && <IconComponent className="w-3 h-3 shrink-0" />}
                   <span className="truncate">{displayTitle}</span>
-                </div>
+                </button>
               );
             })}
             {itemsForDayInCell.length > MAX_PREVIEW_ITEMS_IN_CELL && (
@@ -345,7 +354,7 @@ function CalendarPageContent() {
                     } else {
                        if (isDayDetailModalOpen) {
                            setIsDayDetailModalOpen(false);
-                           setSelectedDayForModal(null);
+                           setSelectedDayForModal(null); 
                        }
                     }
                 }}
@@ -429,13 +438,13 @@ function CalendarPageContent() {
               <ul className="space-y-3 p-1">
                 {itemsForSelectedDay.map((item, index) => {
                   const isAdmin = user && !isAnonymous;
-                  let title, content, icon, footer, colorClass;
+                  let title, content, icon, footer, colorClass, itemDescription;
 
                   if (item.itemType === 'event') {
                     const eventItem = item as SchoolEvent;
                     icon = <CalendarDaysIcon className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
                     title = `${eventItem.title}`;
-                    content = eventItem.description ?? '';
+                    itemDescription = eventItem.description ?? '';
                     colorClass = 'text-accent-foreground/90 dark:text-accent-foreground/80';
                     if (eventItem.startDate && eventItem.endDate && eventItem.startDate !== eventItem.endDate) {
                         const startDateValid = isValidDateFn(parseISO(eventItem.startDate));
@@ -448,7 +457,7 @@ function CalendarPageContent() {
                     const assignItem = item as Assignment;
                     icon = <ClipboardList className="inline-block mr-1.5 h-4 w-4 align-text-bottom" />;
                     title = `課題: ${assignItem.title}`;
-                    content = assignItem.description;
+                    itemDescription = assignItem.description;
                     colorClass = 'text-purple-700 dark:text-purple-300';
                     footer = <p className="text-xs text-muted-foreground mt-1">科目: {assignItem.subjectId ? subjectsMap.get(assignItem.subjectId) : assignItem.customSubjectName || 'その他'} | 時限: {assignItem.duePeriod || '指定なし'}</p>;
                   } else if (item.itemType === 'announcement' && item.showOnCalendar === true) {
@@ -463,7 +472,7 @@ function CalendarPageContent() {
                         annTitle = `P${annItem.period}限 連絡あり`;
                     }
                     title = annTitle;
-                    content = annItem.text ? undefined : (subjectName ? `${subjectName}に関する連絡事項があります。` : `連絡事項があります。詳細は時間割表を確認してください。`); 
+                    itemDescription = annItem.text ? undefined : (subjectName ? `${subjectName}に関する連絡事項があります。` : `連絡事項があります。詳細は時間割表を確認してください。`); 
                     colorClass = 'text-sky-700 dark:text-sky-300';
 
                   } else {
@@ -472,19 +481,23 @@ function CalendarPageContent() {
 
                   return (
                     <li key={`${item.itemType}-${(item as any).id || index}-modal`} 
-                        className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow">
+                        className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => openItemFullViewModal(item)}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openItemFullViewModal(item);}}
+                    >
                       <div className="flex justify-between items-start">
                         <p className={cn("font-semibold text-sm mb-1", colorClass)}>
                           {icon}{title}
                         </p>
                         {isAdmin && item.itemType === 'event' && ( 
                           <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleOpenEditEventModal(item as SchoolEvent)}>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); handleOpenEditEventModal(item as SchoolEvent);}}>
                               <Edit className="h-3 w-3" />
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive">
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={(e) => e.stopPropagation()}>
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </AlertDialogTrigger>
@@ -506,9 +519,9 @@ function CalendarPageContent() {
                           </div>
                         )}
                       </div>
-                      {content && (
-                        <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                            {content}
+                      {itemDescription && (
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed truncate max-h-10">
+                            {itemDescription}
                         </p>
                       )}
                       {footer}
@@ -538,6 +551,74 @@ function CalendarPageContent() {
         </DialogContent>
       </Dialog>
 
+      {/* Item Full View Modal */}
+      <Dialog open={isItemFullViewModalOpen} onOpenChange={setIsItemFullViewModalOpen}>
+        <DialogContent className="sm:max-w-md md:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>予定詳細</DialogTitle>
+            {selectedItemForFullView && (
+                 <DialogDescription>
+                    {selectedItemForFullView.itemType === 'event' ? (selectedItemForFullView as SchoolEvent).title : 
+                     selectedItemForFullView.itemType === 'assignment' ? `課題: ${(selectedItemForFullView as Assignment).title}` :
+                     selectedItemForFullView.itemType === 'announcement' ? 
+                        `${(selectedItemForFullView as DailyAnnouncement).subjectIdOverride ? subjectsMap.get((selectedItemForFullView as DailyAnnouncement).subjectIdOverride!) || '' : ''} P${(selectedItemForFullView as DailyAnnouncement).period}連絡` 
+                        : '詳細'}
+                 </DialogDescription>
+            )}
+          </DialogHeader>
+          {selectedItemForFullView && (
+            <ScrollArea className="h-[400px] w-full my-4 pr-3">
+                <div className="space-y-3 text-sm">
+                    {selectedItemForFullView.itemType === 'event' && (
+                        <>
+                            <div><h4 className="font-semibold mb-0.5">行事名:</h4><p className="text-muted-foreground">{(selectedItemForFullView as SchoolEvent).title}</p></div>
+                            <div><h4 className="font-semibold mb-0.5">開始日:</h4><p className="text-muted-foreground">{format(parseISO((selectedItemForFullView as SchoolEvent).startDate), 'yyyy年M月d日 (E)', { locale: ja })}</p></div>
+                            {(selectedItemForFullView as SchoolEvent).endDate && (selectedItemForFullView as SchoolEvent).endDate !== (selectedItemForFullView as SchoolEvent).startDate && (
+                                <div><h4 className="font-semibold mb-0.5">終了日:</h4><p className="text-muted-foreground">{format(parseISO((selectedItemForFullView as SchoolEvent).endDate!), 'yyyy年M月d日 (E)', { locale: ja })}</p></div>
+                            )}
+                            {(selectedItemForFullView as SchoolEvent).description && (
+                                <div><h4 className="font-semibold mb-0.5">詳細:</h4><p className="text-muted-foreground whitespace-pre-wrap bg-muted/50 p-2 rounded-md">{(selectedItemForFullView as SchoolEvent).description}</p></div>
+                            )}
+                        </>
+                    )}
+                    {selectedItemForFullView.itemType === 'announcement' && (
+                        <>
+                            <div><h4 className="font-semibold mb-0.5">日付:</h4><p className="text-muted-foreground">{format(parseISO((selectedItemForFullView as DailyAnnouncement).date), 'yyyy年M月d日 (E)', { locale: ja })} - {(selectedItemForFullView as DailyAnnouncement).period}限</p></div>
+                            {(selectedItemForFullView as DailyAnnouncement).subjectIdOverride && subjectsMap.get((selectedItemForFullView as DailyAnnouncement).subjectIdOverride!) && (
+                                <div><h4 className="font-semibold mb-0.5">変更後の科目:</h4><p className="text-muted-foreground">{subjectsMap.get((selectedItemForFullView as DailyAnnouncement).subjectIdOverride!)}</p></div>
+                            )}
+                            {(selectedItemForFullView as DailyAnnouncement).text && (
+                                <div><h4 className="font-semibold mb-0.5">連絡内容:</h4><p className="text-muted-foreground whitespace-pre-wrap bg-muted/50 p-2 rounded-md">{(selectedItemForFullView as DailyAnnouncement).text}</p></div>
+                            )}
+                        </>
+                    )}
+                    {selectedItemForFullView.itemType === 'assignment' && (
+                        <>
+                            <div><h4 className="font-semibold mb-0.5">課題名:</h4><p className="text-muted-foreground">{(selectedItemForFullView as Assignment).title}</p></div>
+                            <div><h4 className="font-semibold mb-0.5">科目:</h4><p className="text-muted-foreground">{(selectedItemForFullView as Assignment).subjectId ? subjectsMap.get((selectedItemForFullView as Assignment).subjectId!) : ((selectedItemForFullView as Assignment).customSubjectName || 'その他')}</p></div>
+                            <div><h4 className="font-semibold mb-0.5">提出期限:</h4><p className="text-muted-foreground">{format(parseISO((selectedItemForFullView as Assignment).dueDate), 'yyyy年M月d日 (E)', { locale: ja })}</p></div>
+                            {(selectedItemForFullView as Assignment).duePeriod && (
+                                <div><h4 className="font-semibold mb-0.5">提出時限:</h4><p className="text-muted-foreground">{(selectedItemForFullView as Assignment).duePeriod}</p></div>
+                            )}
+                            <div><h4 className="font-semibold mb-0.5">内容:</h4><p className="text-muted-foreground whitespace-pre-wrap bg-muted/50 p-2 rounded-md">{(selectedItemForFullView as Assignment).description}</p></div>
+                            {(selectedItemForFullView as Assignment).submissionMethod && (
+                                <div><h4 className="font-semibold mb-0.5">提出方法:</h4><p className="text-muted-foreground">{(selectedItemForFullView as Assignment).submissionMethod}</p></div>
+                            )}
+                            {(selectedItemForFullView as Assignment).targetAudience && (
+                                <div><h4 className="font-semibold mb-0.5">対象者:</h4><p className="text-muted-foreground">{(selectedItemForFullView as Assignment).targetAudience}</p></div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </ScrollArea>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsItemFullViewModalOpen(false)}>閉じる</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       {user && !isAnonymous && (
         <EventFormDialog
           isOpen={isEventFormModalOpen}
@@ -563,3 +644,5 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
+
