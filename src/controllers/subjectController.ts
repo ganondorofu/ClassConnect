@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import type { Subject } from '@/models/subject';
 import { logAction } from '@/services/logService';
+import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 
 const CURRENT_CLASS_ID = 'defaultClass'; 
 const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
@@ -56,7 +57,7 @@ export const addSubject = async (name: string, teacherName: string | null, userI
     const newSubjectWithId = { id: docRef.id, ...dataToSet };
     await logAction('add_subject', {
         before: null,
-        after: newSubjectWithId
+        after: prepareStateForLog(newSubjectWithId)
     }, userId);
     return docRef.id;
   } catch (error) {
@@ -93,8 +94,8 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
     await setDoc(docRef, dataToSet, { merge: true });
     const afterState = { id, ...dataToSet };
     await logAction('update_subject', {
-        before: beforeState,
-        after: afterState
+        before: prepareStateForLog(beforeState),
+        after: prepareStateForLog(afterState)
      }, userId);
   } catch (error) {
     console.error("Error updating subject:", error);
@@ -143,7 +144,7 @@ export const deleteSubject = async (id: string, userId: string = 'system_delete_
     await batch.commit();
 
     await logAction('delete_subject', {
-      before: beforeState,
+      before: prepareStateForLog(beforeState),
       after: null,
       meta: { referencesUpdatedCount }
     }, userId);
@@ -179,3 +180,4 @@ export const onSubjectsUpdate = (
 };
 
 export const queryFnGetSubjects = () => getSubjects();
+

@@ -15,26 +15,25 @@ import {
 } from 'firebase/firestore';
 import type { Inquiry, InquiryStatus } from '@/models/inquiry';
 import { logAction } from '@/services/logService';
+import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 
 const CURRENT_CLASS_ID = 'defaultClass';
 const inquiriesCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'inquiries');
 
-// Helper to parse Firestore Timestamps
 const parseInquiryTimestamp = (timestampField: any): Date | Timestamp => {
-  if (!timestampField) return new Date(); // Default to now if undefined
+  if (!timestampField) return new Date(); 
   if (timestampField instanceof Timestamp) return timestampField;
   if (typeof timestampField.toDate === 'function') return timestampField.toDate();
   if (timestampField instanceof Date) return timestampField;
-  // Attempt to parse from seconds/nanoseconds if it's a plain object
   if (typeof timestampField === 'object' && timestampField.seconds !== undefined && timestampField.nanoseconds !== undefined) {
     try {
       return new Timestamp(timestampField.seconds, timestampField.nanoseconds).toDate();
     } catch (e) {
       console.warn("Failed to parse plain object as Timestamp for inquiry:", timestampField, e);
-      return new Date(); // Fallback
+      return new Date(); 
     }
   }
-  return new Date(); // Fallback for other unexpected types
+  return new Date(); 
 };
 
 
@@ -48,7 +47,11 @@ export const addInquiry = async (data: Omit<Inquiry, 'id' | 'createdAt' | 'statu
       updatedAt: serverTimestamp(),
     };
     const docRef = await addDoc(inquiriesCollectionRef, inquiryData);
-    await logAction('add_inquiry', { after: { id: docRef.id, ...inquiryData } }, 'anonymous_inquiry_submission');
+    // For logging, we can't get serverTimestamp value client-side easily before logging.
+    // We'll log what we have, or re-fetch if exact timestamp is critical for log.
+    // For simplicity, log the data sent, acknowledging serverTimestamp will be different.
+    const afterState = { id: docRef.id, ...data, status: 'new', createdAt: new Date(), updatedAt: new Date() }; // Approximate
+    await logAction('add_inquiry', { after: prepareStateForLog(afterState) }, 'anonymous_inquiry_submission');
     return docRef.id;
   } catch (error) {
     console.error("Error adding inquiry:", error);
@@ -104,10 +107,14 @@ export const updateInquiryStatus = async (inquiryId: string, status: InquiryStat
     }
 
     await updateDoc(docRef, { status, updatedAt: serverTimestamp() });
-
-    // For logging, approximate 'after' state. Actual timestamp is server-side.
+    
+    // For logging, approximate 'after' state.
     const afterState = { ...beforeState, status, updatedAt: new Date() } as Inquiry;
-    await logAction('update_inquiry_status', { before: beforeState, after: afterState, inquiryId }, userId);
+    await logAction('update_inquiry_status', { 
+        before: prepareStateForLog(beforeState), 
+        after: prepareStateForLog(afterState), 
+        inquiryId 
+    }, userId);
   } catch (error) {
     console.error("Error updating inquiry status:", error);
     if ((error as FirestoreError).code === 'unavailable') {
@@ -116,3 +123,4 @@ export const updateInquiryStatus = async (inquiryId: string, status: InquiryStat
     throw error;
   }
 };
+

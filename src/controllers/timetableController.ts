@@ -27,10 +27,11 @@ import type {
   SchoolEvent,
 } from '@/models/timetable';
 import type { DailyAnnouncement, DailyGeneralAnnouncement } from '@/models/announcement';
-import type { Assignment } from '@/models/assignment'; // Import Assignment
+import type { Assignment } from '@/models/assignment'; 
 import { DEFAULT_TIMETABLE_SETTINGS, DayOfWeek as DayOfWeekEnum, getDayOfWeekName, AllDays, DisplayedWeekDaysOrder, dayCodeToDayOfWeekEnum } from '@/models/timetable';
 import { format, addDays, startOfDay, getDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
 import { logAction } from '@/services/logService';
+import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
 import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
 
@@ -43,10 +44,11 @@ const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 
 const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
 const generalAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'generalAnnouncements');
 const eventsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'events');
-const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments'); // Assignments collection
+const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments'); 
 
 const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
   if (!timestampField) return undefined;
+  if (timestampField instanceof Timestamp) return timestampField.toDate();
   if (typeof timestampField.toDate === 'function') { 
     return timestampField.toDate();
   }
@@ -69,29 +71,6 @@ const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
   return undefined;
 };
 
-
-const prepareStateForLog = (state: any): any => {
-  if (state === undefined || state === null) return null;
-  return JSON.parse(JSON.stringify(state, (key, value) =>
-    value === undefined ? null : value
-  ), (key, value) => {
-    if (value && typeof value === 'object' && value.seconds !== undefined && value.nanoseconds !== undefined && !(value instanceof Timestamp)) {
-      try {
-        return new Timestamp(value.seconds, value.nanoseconds).toDate().toISOString();
-      } catch (e) {
-        console.warn(`Could not convert object to ISOString, value: ${JSON.stringify(value)}`);
-        return value; 
-      }
-    }
-    if (value instanceof Timestamp) return value.toDate().toISOString();
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
-      return value;
-    }
-    return value;
-  });
-};
-
 export const getTimetableSettings = async (): Promise<TimetableSettings> => {
   const docRef = doc(settingsCollectionRef, 'timetable');
   try {
@@ -105,7 +84,7 @@ export const getTimetableSettings = async (): Promise<TimetableSettings> => {
       } as TimetableSettings;
     } else {
       await setDoc(docRef, DEFAULT_TIMETABLE_SETTINGS);
-      await logAction('initialize_settings', { before: null, after: DEFAULT_TIMETABLE_SETTINGS }, 'system_init_settings');
+      await logAction('initialize_settings', { before: null, after: prepareStateForLog(DEFAULT_TIMETABLE_SETTINGS) }, 'system_init_settings');
       return DEFAULT_TIMETABLE_SETTINGS;
     }
   } catch (error) {
@@ -365,7 +344,7 @@ export const upsertDailyAnnouncement = async (
           date,
           period,
           text: '', 
-          subjectIdOverride: subjectIdOverrideToPersist, // Keep the base subject when clearing for "Revert"
+          subjectIdOverride: subjectIdOverrideToPersist, 
           showOnCalendar: false,
           isManuallyCleared: true, 
           itemType: 'announcement',
@@ -602,10 +581,10 @@ export const deleteAiSummary = async (date: string, userId: string): Promise<voi
       aiSummaryLastGeneratedAt: null,
     });
 
-    await logAction('delete_ai_summary', {
+    await logAction('delete_ai_summary', prepareStateForLog({
       date,
       deletedSummaryPreview: oldSummary ? oldSummary.substring(0, 50) + '...' : 'N/A',
-    }, userId);
+    }), userId);
 
   } catch (error) {
     console.error(`Error deleting AI summary for ${date}:`, error);
@@ -826,11 +805,11 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
     }
     if (operationsCount > 0) {
       await batch.commit();
-      await logAction('apply_fixed_timetable_future', { meta: { operationsCount, daysAffected: datesAffected.length, daysAppliedRange: FUTURE_DAYS_TO_APPLY } }, userId);
+      await logAction('apply_fixed_timetable_future', { meta: prepareStateForLog({ operationsCount, daysAffected: datesAffected.length, daysAppliedRange: FUTURE_DAYS_TO_APPLY }) }, userId);
     }
   } catch (error) {
     console.error("Error applying fixed timetable to future dates:", error);
-    await logAction('apply_fixed_timetable_future_error', { meta: { error: String(error) } }, userId);
+    await logAction('apply_fixed_timetable_future_error', { meta: prepareStateForLog({ error: String(error) }) }, userId);
     if ((error as FirestoreError).code === 'unavailable') console.warn("Client is offline. Cannot apply fixed timetable to future.");
     else if ((error as FirestoreError).code === 'failed-precondition') console.error("Firestore index required for applying fixed timetable to future.");
   }
@@ -864,7 +843,7 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
         const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${period}`);
         const fixedSlot = fixedSlotsForDay.find(fs => fs.period === period);
         const existingAnnForLog = existingAnnouncementsMap.get(period);
-        if (existingAnnForLog) beforeStates[dateStr].push(prepareStateForLog(existingAnnForLog)); else beforeStates[dateStr].push(null);
+        if (existingAnnForLog) beforeStates[dateStr].push(existingAnnForLog); else beforeStates[dateStr].push(null);
         
         const newAnnouncementData: Omit<DailyAnnouncement, 'id'|'updatedAt'> = { 
           date: dateStr, 
@@ -892,11 +871,11 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
     }
     if (operationsCount > 0) {
       await batch.commit();
-      await logAction('reset_future_daily_announcements', { meta: { operationsCount, daysAffected: datesAffected.length, daysAppliedRange: FUTURE_DAYS_TO_APPLY }, before: prepareStateForLog(beforeStates) }, userId);
+      await logAction('reset_future_daily_announcements', { meta: prepareStateForLog({ operationsCount, daysAffected: datesAffected.length, daysAppliedRange: FUTURE_DAYS_TO_APPLY }), before: prepareStateForLog(beforeStates) }, userId);
     }
   } catch (error) {
     console.error("Error resetting future daily announcements:", error);
-    await logAction('reset_future_daily_announcements_error', { meta: { error: String(error) } }, userId);
+    await logAction('reset_future_daily_announcements_error', { meta: prepareStateForLog({ error: String(error) }) }, userId);
     if ((error as FirestoreError).code === 'unavailable') console.warn("Client is offline. Cannot reset future daily announcements.");
     else if ((error as FirestoreError).code === 'failed-precondition') console.error("Firestore index required for resetting future daily announcements.");
   }
@@ -924,7 +903,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
   const items: CalendarItemUnion[] = [];
 
   try {
-    // Fetch Events
     const eventsQuery = query(
       eventsCollectionRef,
       where('startDate', '<=', monthEndDate),
@@ -948,7 +926,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       }
     });
 
-    // Fetch DailyAnnouncements marked for calendar
     const announcementsQuery = query(
       dailyAnnouncementsCollectionRef,
       where('date', '>=', monthStartDate),
@@ -973,7 +950,6 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       items.push(announcementItem);
     });
 
-    // Fetch Assignments
     const assignmentsQuery = query(
       assignmentsCollectionRef,
       where('dueDate', '>=', monthStartDate),
@@ -1015,16 +991,13 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         if (timeA !== timeB) {
             return timeA - timeB;
         }
-        // Further sort by item type (Events, then Assignments, then Announcements)
         const typeOrder = { event: 1, assignment: 2, announcement: 3 };
         if (typeOrder[a.itemType] !== typeOrder[b.itemType]) {
             return typeOrder[a.itemType] - typeOrder[b.itemType];
         }
-        // If same type and date, sort announcements by period
         if (a.itemType === 'announcement' && b.itemType === 'announcement') {
             return (a as DailyAnnouncement).period - (b as DailyAnnouncement).period;
         }
-        // If same type and date, sort assignments by title (or creation time if titles are same)
         if (a.itemType === 'assignment' && b.itemType === 'assignment') {
             const titleCompare = (a as Assignment).title.localeCompare((b as Assignment).title, 'ja');
             if (titleCompare !== 0) return titleCompare;
@@ -1053,4 +1026,4 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
-// Note: queryFnGetAssignments is now in assignmentController.ts
+
