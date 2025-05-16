@@ -90,7 +90,7 @@ function CalendarPageContent() {
   });
   
   const combinedItems = useMemo(() => {
-    return calendarItemsData ?? [];
+    return Array.isArray(calendarItemsData) ? calendarItemsData : [];
   }, [calendarItemsData]);
   
   const { data: subjectsData } = useQuery<Subject[], Error>({
@@ -168,7 +168,7 @@ function CalendarPageContent() {
 
   const renderDayContent = (day: Date, displayMonth: Date): React.ReactNode => {
     const dateStr = format(day, 'yyyy-MM-dd');
-    const itemsForDayInCell = combinedItems.filter(item => {
+    const itemsForDayInCell = combinedItems.filter(item => { // This line could error if combinedItems is not an array
        if (item.itemType === 'event') {
          return dateStr >= item.startDate && dateStr <= (item.endDate ?? item.startDate);
        } else if (item.itemType === 'announcement') {
@@ -538,3 +538,4 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
