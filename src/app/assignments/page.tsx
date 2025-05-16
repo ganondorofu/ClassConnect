@@ -21,7 +21,9 @@ import { format, parseISO, startOfDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit, Trash2, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon, Info } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { PlusCircle, Edit, Trash2, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon, Info, Eye } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import AssignmentFormDialog from '@/components/assignments/AssignmentFormDialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,11 +43,13 @@ function AssignmentsPageContent() {
   const { toast } = useToast();
   const { user, isAnonymous } = useAuth();
 
-  const [filters, setFilters] = useState<GetAssignmentsFilters>({ includePastDue: false }); // Default to not including past due
+  const [filters, setFilters] = useState<GetAssignmentsFilters>({ includePastDue: false });
   const [sort, setSort] = useState<GetAssignmentsSort>({ field: 'dueDate', direction: 'asc' });
   
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
+  const [selectedAssignmentForDetails, setSelectedAssignmentForDetails] = useState<Assignment | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const [liveAssignments, setLiveAssignments] = useState<Assignment[] | undefined>(undefined);
 
@@ -126,6 +130,11 @@ function AssignmentsPageContent() {
     setEditingAssignment(assignment || null);
     setIsFormModalOpen(true);
   };
+
+  const handleViewDetails = (assignment: Assignment) => {
+    setSelectedAssignmentForDetails(assignment);
+    setIsDetailModalOpen(true);
+  };
   
   const handleSort = (field: GetAssignmentsSort['field']) => {
     setSort(prevSort => ({
@@ -141,7 +150,6 @@ function AssignmentsPageContent() {
 
   const renderTableHeaders = () => (
     <TableRow>
-      {/* Removed "完了" column */}
       <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('title')}>
         <div className="flex items-center gap-1">課題名 <SortIndicator field="title" /></div>
       </TableHead>
@@ -257,7 +265,7 @@ function AssignmentsPageContent() {
               {AssignmentDuePeriods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
-          <div className="flex items-center space-x-2 col-span-1 sm:col-span-2 md:col-span-1"> {/* Adjusted span for better layout */}
+          <div className="flex items-center space-x-2 col-span-1 sm:col-span-2 md:col-span-1">
             <Checkbox
               id="includePastDueFilter"
               checked={filters.includePastDue === true}
@@ -292,12 +300,21 @@ function AssignmentsPageContent() {
                     const isPastDue = assignment.dueDate < todayString;
                     return (
                     <TableRow key={assignment.id} className={isPastDue ? "bg-muted/30 dark:bg-muted/20 opacity-70" : ""}>
-                      {/* Removed completion checkbox cell */}
-                      <TableCell className={`font-medium ${isPastDue ? "text-muted-foreground" : ""}`}>{assignment.title}</TableCell>
+                      <TableCell 
+                        className={cn("font-medium cursor-pointer hover:underline", isPastDue ? "text-muted-foreground" : "")}
+                        onClick={() => handleViewDetails(assignment)}
+                        title={assignment.title}
+                      >
+                        {assignment.title}
+                      </TableCell>
                       <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{assignment.subjectId ? subjectsMap.get(assignment.subjectId) : (assignment.customSubjectName || 'その他')}</TableCell>
                       <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{format(parseISO(assignment.dueDate), 'yyyy/MM/dd (E)', { locale: ja })}</TableCell>
                       <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{assignment.duePeriod || <span className="text-xs text-muted-foreground italic">指定なし</span>}</TableCell>
-                      <TableCell className={`max-w-xs truncate text-sm ${isPastDue ? "text-muted-foreground/80" : "text-muted-foreground"}`} title={assignment.description}>
+                      <TableCell 
+                        className={cn("max-w-xs truncate text-sm cursor-pointer hover:underline", isPastDue ? "text-muted-foreground/80" : "text-muted-foreground")} 
+                        title={assignment.description}
+                        onClick={() => handleViewDetails(assignment)}
+                      >
                         {assignment.description && assignment.description.length > 50 ? assignment.description.substring(0,50) + "..." : assignment.description}
                       </TableCell>
                       <TableCell className="text-right">
@@ -345,6 +362,59 @@ function AssignmentsPageContent() {
           }}
         />
       )}
+
+      <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
+        <DialogContent className="sm:max-w-md md:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>課題詳細</DialogTitle>
+            {selectedAssignmentForDetails && (
+                 <DialogDescription>
+                    課題名: {selectedAssignmentForDetails.title}
+                 </DialogDescription>
+            )}
+          </DialogHeader>
+          {selectedAssignmentForDetails && (
+            <ScrollArea className="h-[400px] w-full my-4 pr-3">
+                <div className="space-y-3 text-sm">
+                    <div>
+                        <h4 className="font-semibold mb-0.5">科目:</h4>
+                        <p className="text-muted-foreground">{selectedAssignmentForDetails.subjectId ? subjectsMap.get(selectedAssignmentForDetails.subjectId) : (selectedAssignmentForDetails.customSubjectName || 'その他')}</p>
+                    </div>
+                    <div>
+                        <h4 className="font-semibold mb-0.5">提出期限:</h4>
+                        <p className="text-muted-foreground">{format(parseISO(selectedAssignmentForDetails.dueDate), 'yyyy年M月d日 (E)', { locale: ja })}</p>
+                    </div>
+                    {selectedAssignmentForDetails.duePeriod && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">提出時限:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetails.duePeriod}</p>
+                        </div>
+                    )}
+                    <div>
+                        <h4 className="font-semibold mb-0.5">内容:</h4>
+                        <p className="text-muted-foreground whitespace-pre-wrap bg-muted/50 p-2 rounded-md">{selectedAssignmentForDetails.description}</p>
+                    </div>
+                    {selectedAssignmentForDetails.submissionMethod && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">提出方法:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetails.submissionMethod}</p>
+                        </div>
+                    )}
+                    {selectedAssignmentForDetails.targetAudience && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">対象者:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetails.targetAudience}</p>
+                        </div>
+                    )}
+                </div>
+            </ScrollArea>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>閉じる</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </MainLayout>
   );
 }
@@ -356,3 +426,4 @@ export default function AssignmentsPage() {
     </QueryClientProvider>
   );
 }
+
