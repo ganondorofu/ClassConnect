@@ -250,15 +250,18 @@ function CalendarPageContent() {
               }
               
               return (
-                <button
+                <div
                   key={`${item.itemType}-${(item as any).id || index}-${dateStr}-cell`}
+                  role="button"
+                  tabIndex={0}
                   className={cn("text-left text-[10px] sm:text-xs px-1 py-0.5 rounded-sm w-full truncate flex items-center gap-1", styleClass, "hover:ring-1 hover:ring-primary/50 focus:outline-none focus:ring-2 focus:ring-primary")}
                   title={displayTitle}
                   onClick={() => openItemFullViewModal(item)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openItemFullViewModal(item);}}
                 >
                   {IconComponent && <IconComponent className="w-3 h-3 shrink-0" />}
                   <span className="truncate">{displayTitle}</span>
-                </button>
+                </div>
               );
             })}
             {itemsForDayInCell.length > MAX_PREVIEW_ITEMS_IN_CELL && (
