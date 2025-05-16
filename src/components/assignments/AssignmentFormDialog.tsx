@@ -150,7 +150,7 @@ export default function AssignmentFormDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
-        if (!isSubmitting) onOpenChange(open); 
+        if (!isSubmitting && !mutation.isPending) onOpenChange(open); 
     }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -162,7 +162,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="title" className="text-right pt-2 col-span-1">課題名</Label>
             <div className="col-span-3">
-              <Input id="title" {...register("title")} className={errors.title ? "border-destructive" : ""} disabled={isSubmitting} />
+              <Input id="title" {...register("title")} className={errors.title ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
               {errors.title && <p className="text-xs text-destructive mt-1">{errors.title.message}</p>}
             </div>
           </div>
@@ -181,7 +181,7 @@ export default function AssignmentFormDialog({
                                 if (val === SUBJECT_NONE_VALUE) field.onChange(null);
                                 else field.onChange(val);
                             }}
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || mutation.isPending}
                         >
                             <SelectTrigger className={errors.subjectId ? "border-destructive" : ""}>
                                 <SelectValue placeholder="科目を選択"/>
@@ -203,7 +203,7 @@ export default function AssignmentFormDialog({
             <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
               <Label htmlFor="customSubjectName" className="text-right pt-2 col-span-1">科目名(自由入力)</Label>
               <div className="col-span-3">
-                <Input id="customSubjectName" {...register("customSubjectName")} className={errors.customSubjectName ? "border-destructive" : ""} disabled={isSubmitting} placeholder="例: ポートフォリオ" />
+                <Input id="customSubjectName" {...register("customSubjectName")} className={errors.customSubjectName ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} placeholder="例: ポートフォリオ" />
                 {errors.customSubjectName && <p className="text-xs text-destructive mt-1">{errors.customSubjectName.message}</p>}
               </div>
             </div>
@@ -223,14 +223,14 @@ export default function AssignmentFormDialog({
                             <Button
                                 variant={"outline"}
                                 className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.dueDate && "border-destructive")}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || mutation.isPending}
                             >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {field.value ? format(field.value, "yyyy/MM/dd") : <span>日付を選択</span>}
                             </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
-                            <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={ja} disabled={isSubmitting}/>
+                            <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={ja} disabled={isSubmitting || mutation.isPending}/>
                             </PopoverContent>
                         </Popover>
                     )}
@@ -253,7 +253,7 @@ export default function AssignmentFormDialog({
                                 if (val === PERIOD_NONE_VALUE) field.onChange(null);
                                 else field.onChange(val as AssignmentDuePeriod);
                             }} 
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || mutation.isPending}
                         >
                             <SelectTrigger className={errors.duePeriod ? "border-destructive" : ""}>
                                 <SelectValue placeholder="時限を選択 (任意)"/>
@@ -273,7 +273,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="description" className="text-right pt-2 col-span-1">内容</Label>
             <div className="col-span-3">
-              <Textarea id="description" {...register("description")} placeholder="課題の詳細、範囲、注意点など" className={`min-h-[100px] ${errors.description ? "border-destructive" : ""}`} disabled={isSubmitting} />
+              <Textarea id="description" {...register("description")} placeholder="課題の詳細、範囲、注意点など" className={`min-h-[100px] ${errors.description ? "border-destructive" : ""}`} disabled={isSubmitting || mutation.isPending} />
               {errors.description && <p className="text-xs text-destructive mt-1">{errors.description.message}</p>}
             </div>
           </div>
@@ -282,7 +282,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="submissionMethod" className="text-right pt-2 col-span-1">提出方法 (任意)</Label>
             <div className="col-span-3">
-              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Teamsで提出, 授業中にノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isSubmitting} />
+              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Teamsで提出, 授業中にノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
               {errors.submissionMethod && <p className="text-xs text-destructive mt-1">{errors.submissionMethod.message}</p>}
             </div>
           </div>
@@ -291,16 +291,16 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="targetAudience" className="text-right pt-2 col-span-1">対象者 (任意)</Label>
             <div className="col-span-3">
-              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 前半, 〇〇受講者" className={errors.targetAudience ? "border-destructive" : ""} disabled={isSubmitting} />
+              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 前半, 〇〇受講者" className={errors.targetAudience ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
               {errors.targetAudience && <p className="text-xs text-destructive mt-1">{errors.targetAudience.message}</p>}
             </div>
           </div>
 
           <DialogFooter className="pt-4">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isSubmitting}>キャンセル</Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isSubmitting || mutation.isPending}>キャンセル</Button>
+            <Button type="submit" disabled={isSubmitting || mutation.isPending}>
               <Save className="mr-2 h-4 w-4" />
-              {isSubmitting ? "保存中..." : (editingAssignment ? "更新" : "追加")}
+              {isSubmitting || mutation.isPending ? "保存中..." : (editingAssignment ? "更新" : "追加")}
             </Button>
           </DialogFooter>
         </form>
@@ -308,4 +308,3 @@ export default function AssignmentFormDialog({
     </Dialog>
   );
 }
-
