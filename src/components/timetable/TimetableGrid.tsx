@@ -191,7 +191,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     let unsubEvents: Unsubscribe | undefined;
     let unsubSubjects: Unsubscribe | undefined;
     let unsubAnnouncementsList: Unsubscribe[] = [];
-    let unsubAssignments: Unsubscribe | undefined; // For assignments
+    let unsubAssignments: Unsubscribe | undefined; 
     
     const setupListeners = () => {
         unsubSettings = onTimetableSettingsUpdate(
@@ -219,21 +219,6 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             (error) => { console.error("RT Subjects Error:", error); setIsOffline(true); }
         );
         
-        unsubAssignments = queryFnGetAssignments({ 
-          dueDateStart: format(weekStart, 'yyyy-MM-dd'), 
-          dueDateEnd: format(weekEnd, 'yyyy-MM-dd') 
-        }); // Assuming onAssignmentsUpdate exists and works similarly or refetch
-        // For now, let's assume liveAssignments will be updated by refetching or a direct listener if available.
-        // If using onAssignmentsUpdate from assignmentController:
-        // unsubAssignments = onAssignmentsUpdate(
-        //   (newAssignments) => {
-        //     setLiveAssignments(prev => areArraysOfObjectsEqual(prev, newAssignments, ['createdAt', 'updatedAt']) ? prev : newAssignments);
-        //   },
-        //   (err) => { console.error("RT Assignments Error:", err); setIsOffline(true); },
-        //   { dueDateStart: format(weekStart, 'yyyy-MM-dd'), dueDateEnd: format(weekEnd, 'yyyy-MM-dd') }
-        // );
-
-
         if (weekDays.length > 0) {
           unsubAnnouncementsList = weekDays.map(day => {
             const dateStr = format(day, 'yyyy-MM-dd');
@@ -259,7 +244,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       unsubEvents?.();
       unsubSubjects?.();
       unsubAnnouncementsList.forEach(unsub => unsub?.());
-      unsubAssignments?.(); // Cleanup assignments listener
+      unsubAssignments?.(); 
     };
   }, [isOffline, user, isAnonymous, weekStart, weekEnd, queryClientHook]);
 
@@ -269,7 +254,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const schoolEvents = useMemo(() => liveSchoolEvents !== undefined ? liveSchoolEvents : initialSchoolEvents ?? [], [liveSchoolEvents, initialSchoolEvents]);
   const subjects = useMemo(() => liveSubjects !== undefined ? liveSubjects : initialSubjects ?? [], [liveSubjects, initialSubjects]);
   const subjectsMap = useMemo(() => new Map(subjects.map(s => [s.id, s])), [subjects]);
-  const assignmentsForWeek = useMemo(() => liveAssignments !== undefined ? liveAssignments : initialAssignmentsData ?? [], [liveAssignments, initialAssignmentsData]); // Assignments for the current week
+  const assignmentsForWeek = useMemo(() => liveAssignments !== undefined ? liveAssignments : initialAssignmentsData ?? [], [liveAssignments, initialAssignmentsData]);
 
   const dailyAnnouncements = useMemo(() => {
       const combined = { ...(initialDailyAnnouncementsData ?? {}), ...liveDailyAnnouncements };
@@ -286,8 +271,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     const dateStr = format(date, 'yyyy-MM-dd');
     return assignmentsForWeek.filter(assignment => {
       if (assignment.dueDate !== dateStr) return false;
-      if (period === undefined) return true; // For day header, return all for the day
-      // For slot, check if duePeriod matches or is not set (general for the day)
+      if (period === undefined) return true; 
       return !assignment.duePeriod || assignment.duePeriod === `${period}限` || (period === 1 && assignment.duePeriod === "朝ST+1");
     });
   }, [assignmentsForWeek]);
@@ -492,7 +476,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       }
       const isConfigActive = activeDaysSetting.includes(dayEnum);
       const eventsForDay = getEventsForDay(dateForDay);
-      const assignmentsForDay = getAssignmentsForSlot(dateForDay, undefined); // Get all assignments for the day header
+      const assignmentsForDay = getAssignmentsForSlot(dateForDay, undefined); 
       const isWeekend = dayEnum === DayOfWeekEnum.SATURDAY || dayEnum === DayOfWeekEnum.SUNDAY;
       
       return { date: dateForDay, dayOfWeek: dayEnum, isWeekend, isConfigActive, hasEvents: eventsForDay.length > 0, assignmentsForDay };
@@ -502,7 +486,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const headers = [
     <div key="header-time" className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20 whitespace-nowrap`}>時間</div>,
-    ...displayDays.map(({ date, dayOfWeek, isWeekend, assignmentsForDay }) => { // Added assignmentsForDay
+    ...displayDays.map(({ date, dayOfWeek, isWeekend, assignmentsForDay }) => { 
       const dateStr = format(date, 'yyyy-MM-dd');
       const eventsForDay = getEventsForDay(date);
       return (
@@ -522,15 +506,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
               <span>{event.title}</span>
             </Button>
           ))}
-          {/* Display assignments in header */}
-          {assignmentsForDay.filter(a => !a.duePeriod).map(assignment => ( // Only show day-wide assignments
+          {assignmentsForDay.filter(a => !a.duePeriod).map(assignment => ( 
             <Button
               key={`assignment-header-btn-${assignment.id}-${dateStr}`}
               variant="ghost"
               size="sm"
               className="mt-1 p-1 w-full h-auto justify-start bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 rounded text-xs truncate flex items-center gap-1 hover:bg-purple-500/30 dark:hover:bg-purple-500/40"
               title={assignment.title}
-              // onClick={() => handleAssignmentClick(assignment)} // Potentially open assignment detail modal
             >
               <ClipboardList className="w-3 h-3 shrink-0" />
               <span>{assignment.title}</span>
@@ -572,7 +554,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </Alert>
         )}
         <CardContent className="p-0 overflow-x-auto">
-          <div className="flex sticky top-0 bg-card z-20 border-b min-w-max">{headers.map(header => header)}</div>
+          <div className="flex sticky top-0 bg-card z-10 border-b min-w-max">{headers.map(header => header)}</div>
           {isLoadingCombined ? (
             periodNumbers.map((period) => {
               const skeletonCells = [
@@ -594,7 +576,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const fixedSlot = getFixedSlot(dayOfWeek, period);
                   const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
                   const announcement = getDailyAnnouncement(dateStr, period);
-                  const assignmentsForThisSlot = getAssignmentsForSlot(date, period); // Get assignments for this specific slot
+                  const assignmentsForThisSlot = getAssignmentsForSlot(date, period); 
                   
                   let displaySubjectId: string | null = baseFixedSubjectId;
                   if (announcement && !announcement.isManuallyCleared) {
@@ -611,8 +593,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const displaySubjectName = subjectInfo?.name ?? null;
                   const displayTeacherName = subjectInfo?.teacherName ?? null;
                   
-                  const isSubjectAlteredToday = 
-                    announcement !== undefined &&
+                  const isSubjectAlteredToday = announcement !== undefined &&
                     !announcement.isManuallyCleared && 
                     (
                       (announcement.subjectIdOverride === "" && baseFixedSubjectId !== null) || 
@@ -630,14 +611,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   return (
                     <div key={`${dateStr}-${period}-cell`} className={cn(
                         DAY_CELL_WIDTH, "flex-1",
-                        "p-1 sm:p-2 border-r relative flex flex-col justify-start bg-card min-h-[80px] sm:min-h-[100px] md:min-h-[110px]", // Ensure minimum height
+                        "p-1 sm:p-2 border-r relative flex flex-col justify-start bg-card min-h-[80px] sm:min-h-[100px] md:min-h-[110px] gap-0.5", 
                         isToday && "bg-primary/5 dark:bg-primary/10",
                          (isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) && !isConfigActive && !hasEvents && "bg-muted/30 dark:bg-muted/20", 
                         !isConfigActive && !(isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) && !hasEvents && "bg-muted/10 dark:bg-muted/5" 
                       )}>
                       {cellIsInteractive ? (
                         <>
-                          <div className="mb-1 flex-shrink-0">
+                          <div className="flex-shrink-0"> {/* Removed mb-1 */}
                             <div className={cn("text-sm truncate", displaySubjectName && isCurrentPeriod ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY ? '未設定' : '')}>
                               {displaySubjectName ?? ((isConfigActive || isWeekend || dayOfWeek === DayOfWeekEnum.SATURDAY || dayOfWeek === DayOfWeekEnum.SUNDAY) ? '未設定' : '')}
                               {isSubjectAlteredToday && <span className="text-xs ml-1 text-destructive">(変更)</span>}
@@ -648,15 +629,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               </div>
                             )}
                           </div>
-                          <div className="text-xs flex-grow mb-1 break-words overflow-y-auto space-y-1 max-h-[50px] sm:max-h-[60px]">
+                          <div className="text-xs flex-grow break-words overflow-y-auto space-y-0.5 max-h-[40px] xs:max-h-[50px] sm:max-h-[60px]"> 
                             {announcementDisplayText && (
                               <div className="p-1 rounded bg-card border border-dashed border-accent/50 dark:border-accent/30">
-                                <p className="text-foreground whitespace-pre-wrap">{announcementDisplayText}</p>
+                                <p className="text-foreground whitespace-pre-wrap break-all">{announcementDisplayText}</p> 
                               </div>
                             )}
-                            {/* Display assignments in cell */}
                             {assignmentsForThisSlot.map(assignment => (
-                              <div key={`assignment-cell-${assignment.id}`} className="p-1 rounded bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 text-xs truncate" title={assignment.title}>
+                              <div key={`assignment-cell-${assignment.id}`} className="p-1 rounded bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 text-xs truncate w-full" title={assignment.title}> 
                                 <ClipboardList className="w-3 h-3 inline-block mr-1" />
                                 {assignment.title} ({assignment.duePeriod || '終日'})
                               </div>
@@ -812,3 +792,4 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     </div>
   );
 }
+
