@@ -81,7 +81,7 @@ function CalendarPageContent() {
 
   const { data: calendarItemsData, isLoading: isLoadingItems, error: errorItems, refetch: refetchCalendarItems } = useQuery<CalendarItemUnion[], Error>({
     queryKey: ['calendarItems', year, month],
-    queryFn: () => queryFnGetCalendarDisplayableItemsForMonth(year, month),
+    queryFn: queryFnGetCalendarDisplayableItemsForMonth(year, month),
     staleTime: 0, 
     enabled: !isOffline && (!!user || isAnonymous),
     onError: handleQueryError('calendarItems'),
@@ -92,6 +92,13 @@ function CalendarPageContent() {
   const combinedItems = useMemo(() => {
     return Array.isArray(calendarItemsData) ? calendarItemsData : [];
   }, [calendarItemsData]);
+
+  useEffect(() => {
+    console.log('[CalendarPage] isLoadingItems:', isLoadingItems);
+    console.log('[CalendarPage] errorItems:', errorItems);
+    console.log('[CalendarPage] calendarItemsData:', calendarItemsData);
+    console.log('[CalendarPage] combinedItems length:', combinedItems.length);
+  }, [isLoadingItems, errorItems, calendarItemsData, combinedItems]);
   
   const { data: subjectsData } = useQuery<Subject[], Error>({
     queryKey: ['subjects'],
@@ -554,4 +561,5 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
+
 
