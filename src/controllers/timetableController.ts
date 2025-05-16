@@ -898,17 +898,21 @@ export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
 type CalendarItemUnion = (SchoolEvent & { itemType: 'event' }) | (DailyAnnouncement & { itemType: 'announcement' }) | (Assignment & { itemType: 'assignment' });
 
 export const getCalendarDisplayableItemsForMonth = async (year: number, month: number): Promise<CalendarItemUnion[]> => {
+  console.log(`[CalendarDebug] Fetching items for ${year}-${month}`);
   const monthStartDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
   const monthEndDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
+  console.log(`[CalendarDebug] Date range: ${monthStartDate} to ${monthEndDate}`);
   const items: CalendarItemUnion[] = [];
 
   try {
+    // Fetch Events
     const eventsQuery = query(
       eventsCollectionRef,
-      where('startDate', '<=', monthEndDate),
+      where('startDate', '<=', monthEndDate), // Events starting before or during the month
       orderBy('startDate')
     );
     const eventsSnapshot = await getDocs(eventsQuery);
+    let fetchedEventsCount = 0;
     eventsSnapshot.forEach(docSnap => {
       const eventData = docSnap.data();
       const event: SchoolEvent = { 
@@ -921,11 +925,15 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         createdAt: parseFirestoreTimestamp(eventData.createdAt),
         updatedAt: parseFirestoreTimestamp(eventData.updatedAt),
       };
+      // Further filter: events ending on or after the month starts
       if ((event.endDate ?? event.startDate) >= monthStartDate) {
         items.push(event);
+        fetchedEventsCount++;
       }
     });
+    console.log(`[CalendarDebug] Fetched ${eventsSnapshot.docs.length} raw events, added ${fetchedEventsCount} to calendar items.`);
 
+    // Fetch Announcements
     const announcementsQuery = query(
       dailyAnnouncementsCollectionRef,
       where('date', '>=', monthStartDate),
@@ -934,6 +942,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       orderBy('date'),
     );
     const announcementsSnapshot = await getDocs(announcementsQuery);
+    let fetchedAnnouncementsCount = 0;
     announcementsSnapshot.forEach(docSnap => {
       const annData = docSnap.data();
       const announcementItem: DailyAnnouncement = {
@@ -942,14 +951,17 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         period: annData.period,
         subjectIdOverride: annData.subjectIdOverride ?? null,
         text: annData.text ?? '',
-        showOnCalendar: annData.showOnCalendar ?? false,
+        showOnCalendar: annData.showOnCalendar ?? false, // Ensure this is boolean
         updatedAt: parseFirestoreTimestamp(annData.updatedAt) ?? new Date(),
         itemType: 'announcement',
         isManuallyCleared: annData.isManuallyCleared ?? false,
       };
       items.push(announcementItem);
+      fetchedAnnouncementsCount++;
     });
+    console.log(`[CalendarDebug] Fetched ${fetchedAnnouncementsCount} announcements with showOnCalendar=true.`);
 
+    // Fetch Assignments
     const assignmentsQuery = query(
       assignmentsCollectionRef,
       where('dueDate', '>=', monthStartDate),
@@ -957,6 +969,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
       orderBy('dueDate')
     );
     const assignmentsSnapshot = await getDocs(assignmentsQuery);
+    let fetchedAssignmentsCount = 0;
     assignmentsSnapshot.forEach(docSnap => {
         const assignData = docSnap.data();
         const assignment: Assignment = {
@@ -975,7 +988,9 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
             itemType: 'assignment',
         };
         items.push(assignment);
+        fetchedAssignmentsCount++;
     });
+    console.log(`[CalendarDebug] Fetched ${fetchedAssignmentsCount} assignments.`);
     
     items.sort((a, b) => {
         const dateAStr = a.itemType === 'event' ? (a as SchoolEvent).startDate : (a.itemType === 'assignment' ? (a as Assignment).dueDate : (a as DailyAnnouncement).date);
@@ -1005,13 +1020,14 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
         }
         return 0;
     });
+    console.log(`[CalendarDebug] Total combined and sorted items for calendar: ${items.length}`);
     return items;
 
   } catch (error) {
-    console.error(`Error fetching calendar items for ${year}-${month}:`, error);
+    console.error(`[CalendarDebug] Error fetching calendar items for ${year}-${month}:`, error);
     if ((error as FirestoreError).code === 'unavailable') return [];
     if ((error as FirestoreError).code === 'failed-precondition') {
-      console.error("Firestore query requires an index. Check Firebase console. Error:", (error as FirestoreError).message);
+      console.error("[CalendarDebug] Firestore query requires an index. Check Firebase console. Error:", (error as FirestoreError).message);
       throw new Error(`Firestore クエリに必要なインデックスがありません。Firebaseコンソールを確認してください。`);
     }
     throw error;
@@ -1026,4 +1042,5 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+
 
