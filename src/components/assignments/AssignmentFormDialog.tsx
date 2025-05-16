@@ -1,13 +1,13 @@
 
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format, parseISO, isValid } from 'date-fns';
+import { format, parseISO, isValid, getDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,10 @@ import type { Subject } from '@/models/subject';
 import { addAssignment, updateAssignment } from '@/controllers/assignmentController';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
+import { DEFAULT_TIMETABLE_SETTINGS, dayCodeToDayOfWeekEnum } from '@/models/timetable';
+import type { DailyAnnouncement } from '@/models/announcement';
+import { queryFnGetTimetableSettings, queryFnGetFixedTimetable, queryFnGetDailyAnnouncements } from '@/controllers/timetableController';
 
 const SUBJECT_NONE_VALUE = "__SUBJECT_NONE__";
 const SUBJECT_OTHER_VALUE = "__OTHER__";
@@ -33,15 +37,15 @@ const PERIOD_NONE_VALUE = "__NO_PERIOD__";
 const assignmentFormSchema = z.object({
   title: z.string().min(1, { message: "課題名は必須です。" }).max(100, { message: "課題名は100文字以内で入力してください。"}),
   description: z.string().min(1, { message: "内容は必須です。" }).max(2000, { message: "内容は2000文字以内で入力してください。"}),
-  subjectId: z.string().nullable().optional(), 
+  subjectId: z.string().nullable().optional(),
   customSubjectName: z.string().max(50, {message: "科目名は50文字以内"}).optional().nullable(),
   dueDate: z.date({ required_error: "提出期限日は必須です。" }),
-  duePeriod: z.enum(AssignmentDuePeriods).nullable().optional(),
+  duePeriod: z.string().nullable().optional(), // Changed to string to allow custom value for period + subject
   submissionMethod: z.string().max(100, {message: "提出方法は100文字以内"}).optional().nullable(),
   targetAudience: z.string().max(100, {message: "対象者は100文字以内"}).optional().nullable(),
 }).refine(data => {
     if (data.subjectId === SUBJECT_OTHER_VALUE && (!data.customSubjectName || data.customSubjectName.trim() === "")) {
-        return false; 
+        return false;
     }
     return true;
 }, {
@@ -57,7 +61,7 @@ interface AssignmentFormDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   subjects: Subject[];
   editingAssignment?: Assignment | null;
-  onFormSubmitSuccess: () => void; 
+  onFormSubmitSuccess: () => void;
 }
 
 export default function AssignmentFormDialog({
@@ -69,23 +73,41 @@ export default function AssignmentFormDialog({
 }: AssignmentFormDialogProps) {
   const { toast } = useToast();
   const { user, isAnonymous } = useAuth();
-  const queryClient = useQueryClient();
+  const queryClientHook = useQueryClient();
 
-  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<AssignmentFormData>({
+  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors, isSubmitting: isFormSubmitting } } = useForm<AssignmentFormData>({
     resolver: zodResolver(assignmentFormSchema),
     defaultValues: {
       title: '',
       description: '',
-      subjectId: null, 
+      subjectId: null,
       customSubjectName: '',
       dueDate: new Date(),
-      duePeriod: null, 
+      duePeriod: null,
       submissionMethod: '',
       targetAudience: '',
     }
   });
 
   const watchedSubjectId = watch("subjectId");
+  const watchedDueDate = watch("dueDate");
+
+  const [subjectsForPeriodsDisplay, setSubjectsForPeriodsDisplay] = useState<Record<number, string | null>>({});
+
+  const { data: settingsData } = useQuery<TimetableSettings, Error>({
+    queryKey: ['timetableSettings'],
+    queryFn: queryFnGetTimetableSettings,
+    staleTime: Infinity,
+  });
+  const settings = settingsData ?? DEFAULT_TIMETABLE_SETTINGS;
+
+  const { data: fixedTimetableData } = useQuery<FixedTimeSlot[], Error>({
+    queryKey: ['fixedTimetable'],
+    queryFn: queryFnGetFixedTimetable,
+    staleTime: Infinity,
+  });
+
+  const subjectsMap = useMemo(() => new Map(subjects.map(s => [s.id, s.name])), [subjects]);
 
   useEffect(() => {
     if (isOpen) {
@@ -101,7 +123,7 @@ export default function AssignmentFormDialog({
           targetAudience: editingAssignment.targetAudience ?? '',
         });
       } else {
-        reset({ 
+        reset({
           title: '',
           description: '',
           subjectId: null,
@@ -115,6 +137,53 @@ export default function AssignmentFormDialog({
     }
   }, [isOpen, editingAssignment, reset]);
 
+  useEffect(() => {
+    const fetchAndSetPeriodSubjects = async () => {
+      if (!watchedDueDate || !isValid(watchedDueDate) || !settings || !fixedTimetableData || !subjectsMap) {
+        setSubjectsForPeriodsDisplay({});
+        return;
+      }
+
+      const dateStr = format(watchedDueDate, 'yyyy-MM-dd');
+      const dayOfWeek = dayCodeToDayOfWeekEnum(getDay(watchedDueDate));
+      let dailyAnnouncements: DailyAnnouncement[] = [];
+      try {
+        dailyAnnouncements = await queryClientHook.fetchQuery({
+          queryKey: ['dailyAnnouncements', dateStr],
+          queryFn: queryFnGetDailyAnnouncements(dateStr),
+        });
+      } catch (e) {
+        console.error("Failed to fetch daily announcements for due date subjects", e);
+      }
+      
+      const announcementsMap = new Map(dailyAnnouncements.map(ann => [ann.period, ann]));
+      const periodSubjects: Record<number, string | null> = {};
+
+      for (let i = 1; i <= settings.numberOfPeriods; i++) {
+        const fixedSlot = fixedTimetableData.find(slot => slot.day === dayOfWeek && slot.period === i);
+        const announcement = announcementsMap.get(i);
+        let finalSubjectId: string | null = fixedSlot?.subjectId ?? null;
+
+        if (announcement && !announcement.isManuallyCleared) {
+          if (announcement.subjectIdOverride === "") { // Explicitly cleared
+            finalSubjectId = null;
+          } else if (announcement.subjectIdOverride !== null && announcement.subjectIdOverride !== undefined) {
+            finalSubjectId = announcement.subjectIdOverride;
+          }
+        } else if (announcement && announcement.isManuallyCleared) {
+            finalSubjectId = fixedSlot?.subjectId ?? null;
+        }
+        periodSubjects[i] = finalSubjectId ? (subjectsMap.get(finalSubjectId) ?? '不明な科目') : null;
+      }
+      setSubjectsForPeriodsDisplay(periodSubjects);
+    };
+
+    if (isOpen) {
+      fetchAndSetPeriodSubjects();
+    }
+  }, [watchedDueDate, settings, fixedTimetableData, subjectsMap, queryClientHook, isOpen]);
+
+
   const userIdForLog = user?.uid ?? (isAnonymous ? 'anonymous_assignment_form' : 'system_assignment_form');
 
   const mutation = useMutation({
@@ -125,7 +194,7 @@ export default function AssignmentFormDialog({
         subjectId: data.subjectId === SUBJECT_OTHER_VALUE || data.subjectId === SUBJECT_NONE_VALUE ? null : data.subjectId,
         customSubjectName: data.subjectId === SUBJECT_OTHER_VALUE ? data.customSubjectName : null,
         dueDate: format(data.dueDate, 'yyyy-MM-dd'),
-        duePeriod: data.duePeriod === PERIOD_NONE_VALUE ? null : data.duePeriod,
+        duePeriod: data.duePeriod === PERIOD_NONE_VALUE ? null : data.duePeriod as AssignmentDuePeriod,
         submissionMethod: data.submissionMethod || null,
         targetAudience: data.targetAudience || null,
       };
@@ -137,7 +206,7 @@ export default function AssignmentFormDialog({
     },
     onSuccess: async () => {
       toast({ title: "成功", description: `課題を${editingAssignment ? '更新' : '追加'}しました。` });
-      onFormSubmitSuccess(); 
+      onFormSubmitSuccess();
     },
     onError: (error: Error) => {
       toast({ title: "エラー", description: `課題の${editingAssignment ? '更新' : '追加'}に失敗: ${error.message}`, variant: "destructive" });
@@ -148,9 +217,11 @@ export default function AssignmentFormDialog({
     mutation.mutate(data);
   };
 
+  const isProcessing = isFormSubmitting || mutation.isPending;
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
-        if (!isSubmitting && !mutation.isPending) onOpenChange(open); 
+        if (!isProcessing) onOpenChange(open);
     }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -162,7 +233,7 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="title" className="text-right pt-2 col-span-1">課題名</Label>
             <div className="col-span-3">
-              <Input id="title" {...register("title")} className={errors.title ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
+              <Input id="title" {...register("title")} className={errors.title ? "border-destructive" : ""} disabled={isProcessing} />
               {errors.title && <p className="text-xs text-destructive mt-1">{errors.title.message}</p>}
             </div>
           </div>
@@ -181,7 +252,7 @@ export default function AssignmentFormDialog({
                                 if (val === SUBJECT_NONE_VALUE) field.onChange(null);
                                 else field.onChange(val);
                             }}
-                            disabled={isSubmitting || mutation.isPending}
+                            disabled={isProcessing}
                         >
                             <SelectTrigger className={errors.subjectId ? "border-destructive" : ""}>
                                 <SelectValue placeholder="科目を選択"/>
@@ -203,7 +274,7 @@ export default function AssignmentFormDialog({
             <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
               <Label htmlFor="customSubjectName" className="text-right pt-2 col-span-1">科目名(自由入力)</Label>
               <div className="col-span-3">
-                <Input id="customSubjectName" {...register("customSubjectName")} className={errors.customSubjectName ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} placeholder="例: ポートフォリオ" />
+                <Input id="customSubjectName" {...register("customSubjectName")} className={errors.customSubjectName ? "border-destructive" : ""} disabled={isProcessing} placeholder="例: ポートフォリオ" />
                 {errors.customSubjectName && <p className="text-xs text-destructive mt-1">{errors.customSubjectName.message}</p>}
               </div>
             </div>
@@ -223,14 +294,14 @@ export default function AssignmentFormDialog({
                             <Button
                                 variant={"outline"}
                                 className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.dueDate && "border-destructive")}
-                                disabled={isSubmitting || mutation.isPending}
+                                disabled={isProcessing}
                             >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {field.value ? format(field.value, "yyyy/MM/dd") : <span>日付を選択</span>}
                             </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
-                            <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={ja} disabled={isSubmitting || mutation.isPending}/>
+                            <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={ja} disabled={isProcessing}/>
                             </PopoverContent>
                         </Popover>
                     )}
@@ -247,20 +318,35 @@ export default function AssignmentFormDialog({
                     name="duePeriod"
                     control={control}
                     render={({ field }) => (
-                        <Select 
-                            value={field.value ?? PERIOD_NONE_VALUE} 
+                        <Select
+                            value={field.value ?? PERIOD_NONE_VALUE}
                             onValueChange={(val) => {
                                 if (val === PERIOD_NONE_VALUE) field.onChange(null);
                                 else field.onChange(val as AssignmentDuePeriod);
-                            }} 
-                            disabled={isSubmitting || mutation.isPending}
+                            }}
+                            disabled={isProcessing}
                         >
                             <SelectTrigger className={errors.duePeriod ? "border-destructive" : ""}>
                                 <SelectValue placeholder="時限を選択 (任意)"/>
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value={PERIOD_NONE_VALUE}>指定なし</SelectItem>
-                                {AssignmentDuePeriods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                                {AssignmentDuePeriods.map((p, index) => {
+                                    const periodNumber = parseInt(p.match(/\d+/)?.[0] ?? '0');
+                                    const subjectNameForPeriod = periodNumber > 0 && subjectsForPeriodsDisplay[periodNumber]
+                                        ? subjectsForPeriodsDisplay[periodNumber]
+                                        : (p === "朝ST+1" && subjectsForPeriodsDisplay[1] ? subjectsForPeriodsDisplay[1] : null); // For "朝ST+1", check 1st period's subject
+                                    
+                                    const displayLabel = subjectNameForPeriod
+                                        ? `${p} (${subjectNameForPeriod})`
+                                        : p;
+
+                                    return (
+                                        <SelectItem key={p} value={p}>
+                                            {displayLabel}
+                                        </SelectItem>
+                                    );
+                                })}
                             </SelectContent>
                         </Select>
                     )}
@@ -273,16 +359,16 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="description" className="text-right pt-2 col-span-1">内容</Label>
             <div className="col-span-3">
-              <Textarea id="description" {...register("description")} placeholder="課題の詳細、範囲、注意点など" className={`min-h-[100px] ${errors.description ? "border-destructive" : ""}`} disabled={isSubmitting || mutation.isPending} />
+              <Textarea id="description" {...register("description")} placeholder="課題の詳細、範囲、注意点など" className={`min-h-[100px] ${errors.description ? "border-destructive" : ""}`} disabled={isProcessing} />
               {errors.description && <p className="text-xs text-destructive mt-1">{errors.description.message}</p>}
             </div>
           </div>
-          
+
           {/* Submission Method (Optional) */}
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="submissionMethod" className="text-right pt-2 col-span-1">提出方法 (任意)</Label>
             <div className="col-span-3">
-              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Teamsで提出, 授業中にノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
+              <Input id="submissionMethod" {...register("submissionMethod")} placeholder="例: Teamsで提出, 授業中にノート提出" className={errors.submissionMethod ? "border-destructive" : ""} disabled={isProcessing} />
               {errors.submissionMethod && <p className="text-xs text-destructive mt-1">{errors.submissionMethod.message}</p>}
             </div>
           </div>
@@ -291,16 +377,16 @@ export default function AssignmentFormDialog({
           <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
             <Label htmlFor="targetAudience" className="text-right pt-2 col-span-1">対象者 (任意)</Label>
             <div className="col-span-3">
-              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 前半, 〇〇受講者" className={errors.targetAudience ? "border-destructive" : ""} disabled={isSubmitting || mutation.isPending} />
+              <Input id="targetAudience" {...register("targetAudience")} placeholder="例: 全員, 前半, 〇〇受講者" className={errors.targetAudience ? "border-destructive" : ""} disabled={isProcessing} />
               {errors.targetAudience && <p className="text-xs text-destructive mt-1">{errors.targetAudience.message}</p>}
             </div>
           </div>
 
           <DialogFooter className="pt-4">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isSubmitting || mutation.isPending}>キャンセル</Button>
-            <Button type="submit" disabled={isSubmitting || mutation.isPending}>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={isProcessing}>キャンセル</Button>
+            <Button type="submit" disabled={isProcessing}>
               <Save className="mr-2 h-4 w-4" />
-              {isSubmitting || mutation.isPending ? "保存中..." : (editingAssignment ? "更新" : "追加")}
+              {isProcessing ? "保存中..." : (editingAssignment ? "更新" : "追加")}
             </Button>
           </DialogFooter>
         </form>
@@ -308,3 +394,4 @@ export default function AssignmentFormDialog({
     </Dialog>
   );
 }
+
