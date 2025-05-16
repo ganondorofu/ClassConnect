@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { LogIn, LogOut, UserCircle, Menu as MenuIcon } from 'lucide-react';
+import { LogIn, LogOut, UserCircle, Menu as MenuIcon, X as XIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
@@ -13,9 +13,10 @@ import type { Dispatch, SetStateAction } from 'react';
 
 interface HeaderProps {
   toggleSidebar: () => void;
+  isSidebarOpen: boolean;
 }
 
-export function Header({ toggleSidebar }: HeaderProps) {
+export function Header({ toggleSidebar, isSidebarOpen }: HeaderProps) {
   const { user, loading, logout, isAnonymous } = useAuth();
   const router = useRouter();
 
@@ -26,9 +27,9 @@ export function Header({ toggleSidebar }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 max-w-screen-2xl items-center px-4 md:px-8">
-        <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-2"> {/* Removed md:hidden */}
-          <MenuIcon className="h-5 w-5" />
-          <span className="sr-only">ナビゲーションを開く</span>
+        <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-2">
+          {isSidebarOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
+          <span className="sr-only">{isSidebarOpen ? "ナビゲーションを閉じる" : "ナビゲーションを開く"}</span>
         </Button>
         <div className="mr-4 flex items-center">
           <Link href="/" className="flex items-center space-x-2">
