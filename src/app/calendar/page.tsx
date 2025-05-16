@@ -207,7 +207,7 @@ function CalendarPageContent() {
             {format(day, 'd')}
         </span>
         {itemsForDayInCell.length > 0 && (
-          <div className="mt-4 space-y-0.5 w-full text-left flex-grow overflow-y-auto min-w-0"> {/* Added min-w-0 */}
+          <div className="mt-5 space-y-0.5 w-full text-left flex-grow overflow-y-auto min-w-0"> {/* Changed mt-4 to mt-5 */}
             {itemsForDayInCell.slice(0, MAX_PREVIEW_ITEMS_IN_CELL).map((item, index) => {
               let displayTitle: string;
               let styleClass: string;
@@ -563,5 +563,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
-
