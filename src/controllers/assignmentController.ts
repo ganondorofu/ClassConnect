@@ -13,14 +13,12 @@ import {
   Timestamp,
   FirestoreError,
   getDoc,
-  WriteBatch,
-  writeBatch,
   onSnapshot,
 } from 'firebase/firestore';
-import type { Assignment, AssignmentDuePeriod, GetAssignmentsFilters, GetAssignmentsSort } from '@/models/assignment';
+import type { Assignment, GetAssignmentsFilters, GetAssignmentsSort } from '@/models/assignment';
 import { logAction } from '@/services/logService';
-import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
-import { parseISO, isValid, format } from 'date-fns';
+import { prepareStateForLog } from '@/lib/logUtils';
+import { parseISO, isValid, format, startOfDay } from 'date-fns';
 
 const CURRENT_CLASS_ID = 'defaultClass';
 const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments');
@@ -42,13 +40,12 @@ const parseAssignmentTimestamp = (timestampField: any): Date => {
   return new Date();
 };
 
-export const addAssignment = async (data: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType' | 'isCompleted'>, userId: string): Promise<string> => {
+export const addAssignment = async (data: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType'>, userId: string): Promise<string> => {
   try {
     const assignmentData: Omit<Assignment, 'id'> = {
       ...data,
       subjectId: data.subjectId || null,
-      dueDate: format(parseISO(data.dueDate), 'yyyy-MM-dd'), 
-      isCompleted: false,
+      dueDate: format(parseISO(data.dueDate), 'yyyy-MM-dd'),
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
       itemType: 'assignment',
@@ -87,7 +84,6 @@ export const updateAssignment = async (assignmentId: string, data: Partial<Omit<
     } else if (updateData.dueDate instanceof Date) {
         updateData.dueDate = format(updateData.dueDate, 'yyyy-MM-dd');
     }
-
 
     await updateDoc(docRef, updateData);
     
@@ -142,54 +138,12 @@ export const deleteAssignment = async (assignmentId: string, userId: string): Pr
   }
 };
 
-export const toggleAssignmentCompletion = async (assignmentId: string, isCompleted: boolean, userId: string): Promise<void> => {
-    const docRef = doc(assignmentsCollectionRef, assignmentId);
-    try {
-        const oldSnap = await getDoc(docRef);
-        let beforeState: Assignment | null = null;
-        if (oldSnap.exists()) {
-            const oldData = oldSnap.data();
-            beforeState = {
-                id: oldSnap.id, ...oldData,
-                createdAt: parseAssignmentTimestamp(oldData.createdAt),
-                updatedAt: parseAssignmentTimestamp(oldData.updatedAt),
-                itemType: 'assignment',
-            } as Assignment;
-        }
-
-        await updateDoc(docRef, { isCompleted, updatedAt: Timestamp.now() });
-        
-        const newSnap = await getDoc(docRef);
-        let afterState: Assignment | null = null;
-        if (newSnap.exists()){
-            const newData = newSnap.data();
-            afterState = {
-                 id: newSnap.id, ...newData,
-                createdAt: parseAssignmentTimestamp(newData.createdAt),
-                updatedAt: parseAssignmentTimestamp(newData.updatedAt),
-                itemType: 'assignment',
-            } as Assignment;
-        }
-        await logAction('toggle_assignment_completion', { 
-            before: prepareStateForLog(beforeState), 
-            after: prepareStateForLog(afterState), 
-            assignmentId 
-        }, userId);
-    } catch (error) {
-        console.error("Error toggling assignment completion:", error);
-        if ((error as FirestoreError).code === 'unavailable') {
-            throw new Error("オフラインのため課題の完了状態を変更できませんでした。");
-        }
-        throw error;
-    }
-};
-
-
 export const getAssignments = async (
   filters?: GetAssignmentsFilters,
   sort?: GetAssignmentsSort
 ): Promise<Assignment[]> => {
   let q = query(assignmentsCollectionRef);
+  const todayString = format(startOfDay(new Date()), 'yyyy-MM-dd');
 
   if (filters) {
     if (filters.subjectId !== undefined) {
@@ -204,10 +158,15 @@ export const getAssignments = async (
     if (filters.duePeriod !== undefined) { 
       q = query(q, where('duePeriod', '==', filters.duePeriod));
     }
-    if (filters.isCompleted !== undefined && filters.isCompleted !== null) {
-      q = query(q, where('isCompleted', '==', filters.isCompleted));
+    // Handle includePastDue filter
+    if (filters.includePastDue === false || filters.includePastDue === undefined) {
+      q = query(q, where('dueDate', '>=', todayString));
     }
+  } else {
+    // Default: do not include past due if no filters object is provided
+    q = query(q, where('dueDate', '>=', todayString));
   }
+
 
   const sortBy = sort?.field || 'dueDate';
   const sortDirection = sort?.direction || 'asc';
@@ -231,7 +190,6 @@ export const getAssignments = async (
         duePeriod: data.duePeriod,
         submissionMethod: data.submissionMethod,
         targetAudience: data.targetAudience,
-        isCompleted: data.isCompleted,
         createdAt: parseAssignmentTimestamp(data.createdAt),
         updatedAt: parseAssignmentTimestamp(data.updatedAt),
         itemType: 'assignment',
@@ -276,6 +234,7 @@ export const onAssignmentsUpdate = (
     sort?: GetAssignmentsSort 
 ): Unsubscribe => {
     let q = query(assignmentsCollectionRef);
+    const todayString = format(startOfDay(new Date()), 'yyyy-MM-dd');
 
     if (filters) {
         if (filters.subjectId !== undefined) {
@@ -290,10 +249,13 @@ export const onAssignmentsUpdate = (
         if (filters.duePeriod !== undefined) {
             q = query(q, where('duePeriod', '==', filters.duePeriod));
         }
-        if (filters.isCompleted !== undefined && filters.isCompleted !== null) {
-            q = query(q, where('isCompleted', '==', filters.isCompleted));
+        if (filters.includePastDue === false || filters.includePastDue === undefined) {
+          q = query(q, where('dueDate', '>=', todayString));
         }
+    } else {
+        q = query(q, where('dueDate', '>=', todayString));
     }
+
 
     const sortBy = sort?.field || 'dueDate';
     const sortDirection = sort?.direction || 'asc';
@@ -316,7 +278,6 @@ export const onAssignmentsUpdate = (
                 duePeriod: data.duePeriod,
                 submissionMethod: data.submissionMethod,
                 targetAudience: data.targetAudience,
-                isCompleted: data.isCompleted,
                 createdAt: parseAssignmentTimestamp(data.createdAt),
                 updatedAt: parseAssignmentTimestamp(data.updatedAt),
                 itemType: 'assignment',
@@ -342,4 +303,3 @@ export const onAssignmentsUpdate = (
         }
     });
 };
-

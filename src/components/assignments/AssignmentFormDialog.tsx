@@ -76,10 +76,10 @@ export default function AssignmentFormDialog({
     defaultValues: {
       title: '',
       description: '',
-      subjectId: null, // Represents "指定なし"
+      subjectId: null, 
       customSubjectName: '',
       dueDate: new Date(),
-      duePeriod: null, // Represents "指定なし"
+      duePeriod: null, 
       submissionMethod: '',
       targetAudience: '',
     }
@@ -119,7 +119,7 @@ export default function AssignmentFormDialog({
 
   const mutation = useMutation({
     mutationFn: (data: AssignmentFormData) => {
-      const payload: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType' | 'isCompleted'> = {
+      const payload: Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType'> = { // Removed isCompleted
         title: data.title,
         description: data.description,
         subjectId: data.subjectId === SUBJECT_OTHER_VALUE ? null : data.subjectId,

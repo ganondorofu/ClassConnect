@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MainLayout from '@/components/layout/MainLayout';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,12 +16,12 @@ import type { Assignment, GetAssignmentsFilters, GetAssignmentsSort, AssignmentD
 import { AssignmentDuePeriods } from '@/models/assignment';
 import type { Subject } from '@/models/subject';
 import { queryFnGetSubjects } from '@/controllers/subjectController';
-import { queryFnGetAssignments, addAssignment, updateAssignment, deleteAssignment, toggleAssignmentCompletion, onAssignmentsUpdate } from '@/controllers/assignmentController';
-import { format, parseISO } from 'date-fns';
+import { queryFnGetAssignments, deleteAssignment, onAssignmentsUpdate } from '@/controllers/assignmentController';
+import { format, parseISO, startOfDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit, Trash2, Filter, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon, Info } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, AlertCircle, WifiOff, ChevronUp, ChevronDown, CalendarIcon, Info } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import AssignmentFormDialog from '@/components/assignments/AssignmentFormDialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,7 +41,7 @@ function AssignmentsPageContent() {
   const { toast } = useToast();
   const { user, isAnonymous } = useAuth();
 
-  const [filters, setFilters] = useState<GetAssignmentsFilters>({ isCompleted: false });
+  const [filters, setFilters] = useState<GetAssignmentsFilters>({ includePastDue: false }); // Default to not including past due
   const [sort, setSort] = useState<GetAssignmentsSort>({ field: 'dueDate', direction: 'asc' });
   
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -71,7 +71,7 @@ function AssignmentsPageContent() {
     setIsOffline(isFirestoreUnavailable || (typeof navigator !== 'undefined' && !navigator.onLine));
   };
 
-  const { data: initialAssignments, isLoading, error: queryError, refetch } = useQuery<Assignment[], Error>({
+  const { data: initialAssignments, isLoading, error: queryError } = useQuery<Assignment[], Error>({
     queryKey: ['assignments', filters, sort],
     queryFn: queryFnGetAssignments(filters, sort),
     staleTime: 1000 * 60 * 1, 
@@ -121,19 +121,6 @@ function AssignmentsPageContent() {
       if (err.message.includes("オフライン")) setIsOffline(true);
     },
   });
-
-  const toggleCompletionMutation = useMutation({
-    mutationFn: ({ assignmentId, completed }: { assignmentId: string; completed: boolean }) => 
-      toggleAssignmentCompletion(assignmentId, completed, userIdForLog),
-    onSuccess: async () => {
-      toast({ title: "成功", description: "課題の完了状態を更新しました。" });
-      await queryClientHook.invalidateQueries({ queryKey: ['assignments'] }); 
-    },
-    onError: (err: Error) => {
-      toast({ title: "更新失敗", description: err.message, variant: "destructive" });
-       if (err.message.includes("オフライン")) setIsOffline(true);
-    },
-  });
   
   const handleOpenFormModal = (assignment?: Assignment) => {
     setEditingAssignment(assignment || null);
@@ -154,7 +141,7 @@ function AssignmentsPageContent() {
 
   const renderTableHeaders = () => (
     <TableRow>
-      <TableHead className="w-[50px] text-center">完了</TableHead>
+      {/* Removed "完了" column */}
       <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => handleSort('title')}>
         <div className="flex items-center gap-1">課題名 <SortIndicator field="title" /></div>
       </TableHead>
@@ -171,6 +158,8 @@ function AssignmentsPageContent() {
   );
 
   const canPerformActions = user || isAnonymous;
+  const todayString = format(startOfDay(new Date()), 'yyyy-MM-dd');
+
 
   if (!user && !isAnonymous && !isLoading) {
      return (
@@ -209,7 +198,7 @@ function AssignmentsPageContent() {
         <CardHeader>
           <CardTitle className="text-lg">フィルタリングと検索</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-center">
           <Input
             placeholder="タイトル・内容で検索..."
             value={filters.searchTerm || ''}
@@ -268,26 +257,15 @@ function AssignmentsPageContent() {
               {AssignmentDuePeriods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 col-span-1 sm:col-span-2 md:col-span-1"> {/* Adjusted span for better layout */}
             <Checkbox
-              id="showCompletedFilter"
-              checked={filters.isCompleted === true}
-              onCheckedChange={(checked) => setFilters(prev => ({ ...prev, isCompleted: checked === true ? true : (prev.isCompleted === false ? null : false) }))} 
+              id="includePastDueFilter"
+              checked={filters.includePastDue === true}
+              onCheckedChange={(checked) => setFilters(prev => ({ ...prev, includePastDue: checked === true ? true : false }))} 
               disabled={isOffline}
             />
-            <label htmlFor="showCompletedFilter" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              完了済みのみ表示
-            </label>
-          </div>
-           <div className="flex items-center space-x-2">
-            <Checkbox
-              id="showActiveFilter"
-              checked={filters.isCompleted === false}
-              onCheckedChange={(checked) => setFilters(prev => ({ ...prev, isCompleted: checked === true ? false : (prev.isCompleted === true ? null : true) }))}
-              disabled={isOffline}
-            />
-            <label htmlFor="showActiveFilter" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              未完了のみ表示
+            <label htmlFor="includePastDueFilter" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              期限切れの課題を含める
             </label>
           </div>
         </CardContent>
@@ -296,7 +274,7 @@ function AssignmentsPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>登録されている課題</CardTitle>
-          <CardDescription>提出期限や内容を確認し、完了状態を更新できます。</CardDescription>
+          <CardDescription>提出期限や内容を確認できます。</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading && !isOffline ? (
@@ -310,21 +288,16 @@ function AssignmentsPageContent() {
               <Table>
                 <TableHeader>{renderTableHeaders()}</TableHeader>
                 <TableBody>
-                  {assignments.map((assignment) => (
-                    <TableRow key={assignment.id} className={assignment.isCompleted ? "bg-muted/30 dark:bg-muted/20" : ""}>
-                      <TableCell className="text-center">
-                        <Checkbox
-                          checked={assignment.isCompleted}
-                          onCheckedChange={(checked) => toggleCompletionMutation.mutate({ assignmentId: assignment.id!, completed: !!checked })}
-                          disabled={!canPerformActions || toggleCompletionMutation.isPending || isOffline}
-                          aria-label={`課題「${assignment.title}」を完了済みにする`}
-                        />
-                      </TableCell>
-                      <TableCell className={`font-medium ${assignment.isCompleted ? "line-through text-muted-foreground" : ""}`}>{assignment.title}</TableCell>
-                      <TableCell>{assignment.subjectId ? subjectsMap.get(assignment.subjectId) : (assignment.customSubjectName || 'その他')}</TableCell>
-                      <TableCell>{format(parseISO(assignment.dueDate), 'yyyy/MM/dd (E)', { locale: ja })}</TableCell>
-                      <TableCell>{assignment.duePeriod || <span className="text-xs text-muted-foreground italic">指定なし</span>}</TableCell>
-                      <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={assignment.description}>
+                  {assignments.map((assignment) => {
+                    const isPastDue = assignment.dueDate < todayString;
+                    return (
+                    <TableRow key={assignment.id} className={isPastDue ? "bg-muted/30 dark:bg-muted/20 opacity-70" : ""}>
+                      {/* Removed completion checkbox cell */}
+                      <TableCell className={`font-medium ${isPastDue ? "text-muted-foreground" : ""}`}>{assignment.title}</TableCell>
+                      <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{assignment.subjectId ? subjectsMap.get(assignment.subjectId) : (assignment.customSubjectName || 'その他')}</TableCell>
+                      <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{format(parseISO(assignment.dueDate), 'yyyy/MM/dd (E)', { locale: ja })}</TableCell>
+                      <TableCell className={isPastDue ? "text-muted-foreground" : ""}>{assignment.duePeriod || <span className="text-xs text-muted-foreground italic">指定なし</span>}</TableCell>
+                      <TableCell className={`max-w-xs truncate text-sm ${isPastDue ? "text-muted-foreground/80" : "text-muted-foreground"}`} title={assignment.description}>
                         {assignment.description && assignment.description.length > 50 ? assignment.description.substring(0,50) + "..." : assignment.description}
                       </TableCell>
                       <TableCell className="text-right">
@@ -351,7 +324,7 @@ function AssignmentsPageContent() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             </div>

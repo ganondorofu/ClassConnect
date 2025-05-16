@@ -17,8 +17,22 @@ export interface Assignment {
   duePeriod?: AssignmentDuePeriod | null;
   submissionMethod?: string | null;
   targetAudience?: string | null;
-  isCompleted: boolean;
+  // isCompleted: boolean; // Removed
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
   itemType: 'assignment'; // For differentiating in combined lists like calendar
+}
+
+export interface GetAssignmentsFilters {
+  searchTerm?: string | null;
+  subjectId?: string | null; // null for "Other" or general school tasks, undefined for all
+  dueDateStart?: string | null;
+  dueDateEnd?: string | null;
+  duePeriod?: AssignmentDuePeriod | null;
+  includePastDue?: boolean | null; // New filter, null or false means don't include past due
+}
+
+export interface GetAssignmentsSort {
+  field: 'title' | 'subjectId' | 'dueDate' | 'createdAt';
+  direction: 'asc' | 'desc';
 }
