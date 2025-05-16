@@ -9,13 +9,15 @@ import { ja } from 'date-fns/locale';
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogClose
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 
 import type { FixedTimeSlot, TimetableSettings, DayOfWeek, SchoolEvent } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
@@ -73,6 +75,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
 
   const [selectedEventForDetail, setSelectedEventForDetail] = useState<SchoolEvent | null>(null);
   const [isEventDetailModalOpen, setIsEventDetailModalOpen] = useState(false);
+  
+  const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<Assignment | null>(null);
+  const [isAssignmentDetailModalOpen, setIsAssignmentDetailModalOpen] = useState(false);
+
 
   const { user, isAnonymous, loading: authLoading } = useAuth();
 
@@ -228,7 +234,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
             return onDailyAnnouncementsUpdate(dateStr, 
               (announcements) => {
                   setLiveDailyAnnouncements(prev => {
-                    if (areArraysOfObjectsEqual(prev[dateStr], announcements)) {
+                    if (areDailyAnnouncementsMapEqual({[dateStr]: prev[dateStr]}, {[dateStr]: announcements})) {
                       return prev;
                     }
                     return { ...prev, [dateStr]: announcements };
@@ -269,14 +275,21 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const getFixedSlot = (day: DayOfWeek, period: number): FixedTimeSlot | undefined => fixedTimetable.find(slot => slot.day === day && slot.period === period);
   const getDailyAnnouncement = (date: string, period: number): DailyAnnouncement | undefined => dailyAnnouncements[date]?.find(ann => ann.period === period);
   
-  const getAssignmentsForSlot = useCallback((date: Date, period?: number): Assignment[] => {
+  const getAssignmentsForDayHeader = useCallback((date: Date): Assignment[] => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return assignmentsForWeek.filter(assignment => 
+      assignment.dueDate === dateStr && !assignment.duePeriod
+    );
+  }, [assignmentsForWeek]);
+
+  const getAssignmentsForPeriodCell = useCallback((date: Date, period: number): Assignment[] => {
     const dateStr = format(date, 'yyyy-MM-dd');
     return assignmentsForWeek.filter(assignment => {
       if (assignment.dueDate !== dateStr) return false;
-      if (period === undefined) return true; 
-      return !assignment.duePeriod || assignment.duePeriod === `${period}限` || (period === 1 && assignment.duePeriod === "朝ST+1");
+      return (assignment.duePeriod === `${period}限`) || (period === 1 && assignment.duePeriod === "朝ST+1");
     });
   }, [assignmentsForWeek]);
+
 
   const getEventsForDay = useCallback((date: Date): SchoolEvent[] => {
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -323,6 +336,12 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     setSelectedEventForDetail(event);
     setIsEventDetailModalOpen(true);
   };
+  
+  const handleOpenAssignmentDetailModal = (assignment: Assignment) => {
+    setSelectedAssignmentForDetail(assignment);
+    setIsAssignmentDetailModalOpen(true);
+  };
+
 
   const handleSaveAnnouncement = async () => {
     if (!selectedSlot || isSaving) return;
@@ -458,7 +477,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       queryClientHook.invalidateQueries({ queryKey: ['calendarItems', new Date(date).getFullYear(), new Date(date).getMonth() + 1] });
     } catch (error: any) {
         toast({ title: "エラー", description: `基本の時間割への復元に失敗しました: ${error.message}`, variant: "destructive" });
-        setIsOffline(true); 
+        if ((error as FirestoreError).code === 'unavailable') setIsOffline(true); 
     } finally {
         setIsSaving(false);
     }
@@ -473,21 +492,21 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
       const dateForDay = weekDays.find(d => dayCodeToDayOfWeekEnum(getDay(d)) === dayEnum);
       if (!dateForDay) { 
         const tempDate = new Date(); 
-        return { date: tempDate, dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false, assignmentsForDay: [] };
+        return { date: tempDate, dayOfWeek: dayEnum, isWeekend: false, isConfigActive: false, hasEvents: false, assignmentsForDayHeader: [] };
       }
       const isConfigActive = activeDaysSetting.includes(dayEnum);
       const eventsForDay = getEventsForDay(dateForDay);
-      const assignmentsForDay = getAssignmentsForSlot(dateForDay, undefined); 
+      const assignmentsForDayHeader = getAssignmentsForDayHeader(dateForDay); 
       const isWeekend = dayEnum === DayOfWeekEnum.SATURDAY || dayEnum === DayOfWeekEnum.SUNDAY;
       
-      return { date: dateForDay, dayOfWeek: dayEnum, isWeekend, isConfigActive, hasEvents: eventsForDay.length > 0, assignmentsForDay };
+      return { date: dateForDay, dayOfWeek: dayEnum, isWeekend, isConfigActive, hasEvents: eventsForDay.length > 0, assignmentsForDayHeader };
     });
-  }, [weekDays, activeDaysSetting, getEventsForDay, getAssignmentsForSlot]);
+  }, [weekDays, activeDaysSetting, getEventsForDay, getAssignmentsForDayHeader]);
 
 
   const headers = [
     <div key="header-time" className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-20 whitespace-nowrap`}>時間</div>,
-    ...displayDays.map(({ date, dayOfWeek, isWeekend, assignmentsForDay }) => { 
+    ...displayDays.map(({ date, dayOfWeek, isWeekend, assignmentsForDayHeader }) => { 
       const dateStr = format(date, 'yyyy-MM-dd');
       const eventsForDay = getEventsForDay(date);
       return (
@@ -507,13 +526,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
               <span>{event.title}</span>
             </Button>
           ))}
-          {assignmentsForDay.filter(a => !a.duePeriod).map(assignment => ( 
+          {assignmentsForDayHeader.map(assignment => ( 
             <Button
               key={`assignment-header-btn-${assignment.id}-${dateStr}`}
               variant="ghost"
               size="sm"
               className="mt-1 p-1 w-full h-auto justify-start bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 rounded text-xs truncate flex items-center gap-1 hover:bg-purple-500/30 dark:hover:bg-purple-500/40"
               title={assignment.title}
+              onClick={() => handleOpenAssignmentDetailModal(assignment)}
             >
               <ClipboardList className="w-3 h-3 shrink-0" />
               <span>{assignment.title}</span>
@@ -561,8 +581,8 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
               const skeletonCells = [
                 <div key={`skeleton-period-${period}`} className={`${TIME_CELL_WIDTH} p-1 sm:p-2 font-semibold text-center border-r sticky left-0 bg-card z-10 flex items-center justify-center`}><Skeleton className="h-6 w-8" /></div>,
                 ...displayDays.map(({ date }) => (
-                  <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card flex-1 min-h-[80px] sm:min-h-[100px]`}>
-                    <Skeleton className="h-4 w-3/4 mb-1" /><Skeleton className="h-3 w-1/2 mb-2" /><Skeleton className="h-8 w-full" />
+                  <div key={`skeleton-cell-${format(date, 'yyyy-MM-dd')}-${period}`} className={`${DAY_CELL_WIDTH} p-1 sm:p-2 border-r flex flex-col justify-between bg-card flex-1 min-h-[80px] sm:min-h-[100px] gap-0.5`}>
+                    <Skeleton className="h-4 w-3/4" /><Skeleton className="h-3 w-1/2" /><Skeleton className="h-8 w-full" />
                   </div>
                 ))
               ];
@@ -577,7 +597,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const fixedSlot = getFixedSlot(dayOfWeek, period);
                   const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
                   const announcement = getDailyAnnouncement(dateStr, period);
-                  const assignmentsForThisSlot = getAssignmentsForSlot(date, period); 
+                  const assignmentsForThisSlot = getAssignmentsForPeriodCell(date, period); 
                   
                   let displaySubjectId: string | null = baseFixedSubjectId;
                   if (announcement && !announcement.isManuallyCleared) {
@@ -636,7 +656,12 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               </div>
                             )}
                             {assignmentsForThisSlot.map(assignment => (
-                              <div key={`assignment-cell-${assignment.id}`} className="p-1 rounded bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 text-xs truncate w-full" title={assignment.title}> 
+                              <div 
+                                key={`assignment-cell-${assignment.id}`} 
+                                className="p-1 rounded bg-purple-500/20 text-purple-700 dark:bg-purple-500/30 dark:text-purple-300 text-xs truncate w-full cursor-pointer hover:bg-purple-500/30" 
+                                title={assignment.title}
+                                onClick={() => handleOpenAssignmentDetailModal(assignment)}
+                              > 
                                 <ClipboardList className="w-3 h-3 inline-block mr-1" />
                                 {assignment.title} ({assignment.duePeriod || '終日'})
                               </div>
@@ -788,8 +813,59 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      <Dialog open={isAssignmentDetailModalOpen} onOpenChange={setIsAssignmentDetailModalOpen}>
+        <DialogContent className="sm:max-w-md md:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>課題詳細</DialogTitle>
+            {selectedAssignmentForDetail && (
+                 <DialogDescription>
+                    課題名: {selectedAssignmentForDetail.title}
+                 </DialogDescription>
+            )}
+          </DialogHeader>
+          {selectedAssignmentForDetail && (
+            <ScrollArea className="h-[400px] w-full my-4 pr-3">
+                <div className="space-y-3 text-sm">
+                    <div>
+                        <h4 className="font-semibold mb-0.5">科目:</h4>
+                        <p className="text-muted-foreground">{selectedAssignmentForDetail.subjectId ? (subjectsMap.get(selectedAssignmentForDetail.subjectId)?.name ?? '不明な科目') : (selectedAssignmentForDetail.customSubjectName || 'その他')}</p>
+                    </div>
+                    <div>
+                        <h4 className="font-semibold mb-0.5">提出期限:</h4>
+                        <p className="text-muted-foreground">{format(parseISO(selectedAssignmentForDetail.dueDate), 'yyyy年M月d日 (E)', { locale: ja })}</p>
+                    </div>
+                    {selectedAssignmentForDetail.duePeriod && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">提出時限:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetail.duePeriod}</p>
+                        </div>
+                    )}
+                    <div>
+                        <h4 className="font-semibold mb-0.5">内容:</h4>
+                        <p className="text-muted-foreground whitespace-pre-wrap bg-muted/50 p-2 rounded-md">{selectedAssignmentForDetail.description}</p>
+                    </div>
+                    {selectedAssignmentForDetail.submissionMethod && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">提出方法:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetail.submissionMethod}</p>
+                        </div>
+                    )}
+                    {selectedAssignmentForDetail.targetAudience && (
+                        <div>
+                            <h4 className="font-semibold mb-0.5">対象者:</h4>
+                            <p className="text-muted-foreground">{selectedAssignmentForDetail.targetAudience}</p>
+                        </div>
+                    )}
+                </div>
+            </ScrollArea>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAssignmentDetailModalOpen(false)}>閉じる</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
 }
-
