@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, Suspense } from 'react'; // Added Suspense
+import React, { useState, useEffect, Suspense } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import MainLayout from '@/components/layout/MainLayout';
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
@@ -32,6 +32,11 @@ function HomePageContent() {
   
   const { user, loading: authLoading, isAnonymous, setAnonymousAccess } = useAuth();
   const [showInitialChoice, setShowInitialChoice] = useState(false);
+  const [isClientMounted, setIsClientMounted] = useState(false); // New state for client mount
+
+  useEffect(() => {
+    setIsClientMounted(true); // Set true once component mounts on client
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -76,15 +81,18 @@ function HomePageContent() {
 
 
   useEffect(() => {
-    if (!authLoading) { 
-      const anonymousAccessChosen = typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true';
-      if (!user && !anonymousAccessChosen) {
-        setShowInitialChoice(true);
-      } else if (anonymousAccessChosen && !isAnonymous) {
-        setAnonymousAccess(true); 
-      }
+    if (!isClientMounted || authLoading) return; // Only run on client after mount & auth resolved
+ 
+    const anonymousAccessChosen = localStorage.getItem('classconnect_anonymous_access') === 'true';
+    if (!user && !anonymousAccessChosen) {
+      setShowInitialChoice(true);
+    } else if (anonymousAccessChosen && !isAnonymous) {
+      setAnonymousAccess(true); 
+      setShowInitialChoice(false);
+    } else {
+      setShowInitialChoice(false);
     }
-  }, [user, authLoading, isAnonymous, setAnonymousAccess]);
+  }, [isClientMounted, user, authLoading, isAnonymous, setAnonymousAccess]);
 
 
   const { data: initialGeneralAnnouncement, isLoading: isLoadingGeneral, error: errorGeneral } = useQuery({
@@ -134,11 +142,9 @@ function HomePageContent() {
     setShowInitialChoice(false);
   };
   
-  if (authLoading || (!currentDate && !showInitialChoice)) {
+  if (!isClientMounted || authLoading || !currentDate) {
     return (
       <MainLayout>
-        {showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
-        {!showInitialChoice && ( 
            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
                <Skeleton className="h-8 w-32 sm:w-48" />
                <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
@@ -148,22 +154,13 @@ function HomePageContent() {
                     <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
                </div>
            </div>
-        )}
-        {!showInitialChoice && <Skeleton className="h-24 sm:h-32 w-full mb-6" />}
-        {!showInitialChoice && <Skeleton className="h-80 sm:h-96 w-full" />}
+        <Skeleton className="h-24 sm:h-32 w-full mb-6" />
+        <Skeleton className="h-80 sm:h-96 w-full" />
+        {isClientMounted && showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
       </MainLayout>
     );
   }
   
-  if (showInitialChoice && !user && !(typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true')) {
-      return (
-          <MainLayout>
-              <InitialChoice onChoiceMade={handleChoiceMade} />
-          </MainLayout>
-      );
-  }
-
-
   return (
     <MainLayout>
         <>
@@ -218,6 +215,7 @@ function HomePageContent() {
           <div className="mt-6">
             {currentDate && <TimetableGrid currentDate={currentDate} />}
           </div>
+          {isClientMounted && showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
         </>
     </MainLayout>
   );
