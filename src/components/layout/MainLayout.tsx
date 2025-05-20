@@ -21,7 +21,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <Header toggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
       <div className="flex flex-1">
         <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
-        <main className="flex-1 container py-4 px-4 md:py-6 md:px-8 overflow-x-auto">
+        <main className="flex-1 w-full py-4 px-4 md:py-6 md:px-8 overflow-x-auto">
           {children}
         </main>
       </div>
