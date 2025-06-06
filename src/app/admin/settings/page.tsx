@@ -19,7 +19,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!authLoading && !user && !isAnonymous) { // Not loading, no user, not anonymous -> redirect
-      router.push('/login?redirect=/admin/settings');
+      router.push('/teacher-login?redirect=/admin/settings');
     } else if (!authLoading && isAnonymous) { // Not loading, is anonymous -> redirect to home
         router.push('/');
     }

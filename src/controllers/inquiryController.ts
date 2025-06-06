@@ -16,9 +16,9 @@ import {
 import type { Inquiry, InquiryStatus } from '@/models/inquiry';
 import { logAction } from '@/services/logService';
 import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
+import { getCurrentClassId } from '@/lib/classUtils';
 
-const CURRENT_CLASS_ID = 'defaultClass';
-const inquiriesCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'inquiries');
+const getInquiriesCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'inquiries');
 
 const parseInquiryTimestamp = (timestampField: any): Date | Timestamp => {
   if (!timestampField) return new Date(); 
@@ -46,7 +46,7 @@ export const addInquiry = async (data: Omit<Inquiry, 'id' | 'createdAt' | 'statu
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-    const docRef = await addDoc(inquiriesCollectionRef, inquiryData);
+    const docRef = await addDoc(getInquiriesCollectionRef(), inquiryData);
     // For logging, we can't get serverTimestamp value client-side easily before logging.
     // We'll log what we have, or re-fetch if exact timestamp is critical for log.
     // For simplicity, log the data sent, acknowledging serverTimestamp will be different.
@@ -64,7 +64,7 @@ export const addInquiry = async (data: Omit<Inquiry, 'id' | 'createdAt' | 'statu
 
 export const getInquiries = async (): Promise<Inquiry[]> => {
   try {
-    const q = query(inquiriesCollectionRef, orderBy('createdAt', 'desc'));
+    const q = query(getInquiriesCollectionRef(), orderBy('createdAt', 'desc'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -93,7 +93,7 @@ export const getInquiries = async (): Promise<Inquiry[]> => {
 export const queryFnGetInquiries = () => getInquiries();
 
 export const updateInquiryStatus = async (inquiryId: string, status: InquiryStatus, userId: string): Promise<void> => {
-  const docRef = doc(inquiriesCollectionRef, inquiryId);
+  const docRef = doc(getInquiriesCollectionRef(), inquiryId);
   try {
     const oldSnap = await getDoc(docRef);
     let beforeState: Inquiry | null = null;

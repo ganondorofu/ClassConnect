@@ -10,11 +10,14 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { queryFnGetTimetableSettings, updateTimetableSettings, onTimetableSettingsUpdate, queryFnGetFixedTimetable, batchUpdateFixedTimetable, applyFixedTimetableForFuture, resetFixedTimetable, resetFutureDailyAnnouncements } from '@/controllers/timetableController';
+import { queryFnGetFeatures, updateFeatures } from '@/controllers/featuresController';
+import type { FeatureFlags } from '@/models/features';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
 import type { TimetableSettings, FixedTimeSlot, DayOfWeek } from '@/models/timetable';
 import type { Subject } from '@/models/subject';
 import { DEFAULT_TIMETABLE_SETTINGS, ConfigurableWeekDays, getDayOfWeekName } from '@/models/timetable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { AlertCircle, WifiOff, Save, RefreshCw, RotateCcw } from 'lucide-react';
 import { SubjectSelector } from '@/components/timetable/SubjectSelector';
@@ -34,6 +37,7 @@ export default function SettingsContent() {
   const [isResetting, setIsResetting] = useState(false);
   const [isOverwritingFuture, setIsOverwritingFuture] = useState(false);
   const [liveSubjects, setLiveSubjects] = useState<Subject[]>([]);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags | null>(null);
   
   const userIdForLog = user?.uid ?? 'admin_user_settings';
 
@@ -76,6 +80,18 @@ export default function SettingsContent() {
     onError: handleQueryError('timetableSettings'),
     enabled: !isOffline,
   });
+
+  const { data: initialFeatures, isLoading: isLoadingFeatures, error: errorFeatures } = useQuery({
+    queryKey: ['featureFlags'],
+    queryFn: queryFnGetFeatures,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    enabled: !isOffline,
+  });
+
+  useEffect(() => {
+    if (initialFeatures) setFeatureFlags(initialFeatures);
+  }, [initialFeatures]);
 
   useEffect(() => {
     if (isOffline) return;
@@ -161,6 +177,14 @@ export default function SettingsContent() {
       const isOfflineError = error.message.includes("オフラインのため");
       if (isOfflineError || (typeof navigator !== 'undefined' && !navigator.onLine)) setIsOffline(true);
       toast({ title: isOfflineError ? "オフライン" : "エラー", description: isOfflineError ? "設定の更新に失敗しました。" : `設定の更新に失敗しました: ${error.message}`, variant: "destructive" });
+    },
+  });
+
+  const featuresMutation = useMutation({
+    mutationFn: (updates: Partial<FeatureFlags>) => updateFeatures(updates, userIdForLog),
+    onSuccess: async () => {
+      toast({ title: '成功', description: '機能設定を更新しました。' });
+      await queryClientHook.invalidateQueries({ queryKey: ['featureFlags'] });
     },
   });
 
@@ -259,6 +283,13 @@ export default function SettingsContent() {
     overwriteFutureMutation.mutate();
   };
 
+  const handleToggleFeature = (key: keyof FeatureFlags) => {
+    if (!featureFlags) return;
+    const newFlags = { ...featureFlags, [key]: !featureFlags[key] } as FeatureFlags;
+    setFeatureFlags(newFlags);
+    featuresMutation.mutate({ [key]: newFlags[key] });
+  };
+
   const showLoadingSettings = isLoadingSettings && !isOffline;
   const showErrorSettings = errorSettings && !isOffline;
   const showLoadingFixed = isLoadingFixed && !isOffline;
@@ -289,6 +320,34 @@ export default function SettingsContent() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* --- Feature Toggles Card --- */}
+      <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>
+        <CardHeader>
+          <CardTitle>機能設定</CardTitle>
+          <CardDescription>利用する機能をオン・オフできます。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoadingFeatures ? (
+            <Skeleton className="h-6 w-1/4" />
+          ) : errorFeatures ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>エラー</AlertTitle>
+              <AlertDescription>機能設定の読み込みに失敗しました。</AlertDescription>
+            </Alert>
+          ) : featureFlags ? (
+            <div className="space-y-2">
+              {Object.entries(featureFlags).map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <Label>{key}</Label>
+                  <Switch checked={value} onCheckedChange={() => handleToggleFeature(key as keyof FeatureFlags)} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {/* --- Basic Settings Card --- */}
       <Card className={`mb-6 ${isOffline ? 'opacity-50 pointer-events-none' : ''}`}>

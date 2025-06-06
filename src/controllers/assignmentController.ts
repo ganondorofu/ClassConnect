@@ -15,13 +15,13 @@ import {
   getDoc,
   onSnapshot,
 } from 'firebase/firestore';
+import { getCurrentClassId } from '@/lib/classUtils';
 import type { Assignment, GetAssignmentsFilters, GetAssignmentsSort } from '@/models/assignment';
 import { logAction } from '@/services/logService';
 import { prepareStateForLog } from '@/lib/logUtils';
 import { parseISO, isValid, format, startOfDay } from 'date-fns';
 
-const CURRENT_CLASS_ID = 'defaultClass';
-const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments');
+const getAssignmentsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'assignments');
 
 const parseAssignmentTimestamp = (timestampField: any): Date => {
   if (!timestampField) return new Date();
@@ -50,7 +50,7 @@ export const addAssignment = async (data: Omit<Assignment, 'id' | 'createdAt' | 
       updatedAt: Timestamp.now(),
       itemType: 'assignment',
     };
-    const docRef = await addDoc(assignmentsCollectionRef, assignmentData);
+    const docRef = await addDoc(getAssignmentsCollectionRef(), assignmentData);
     const afterState = { id: docRef.id, ...assignmentData };
     await logAction('add_assignment', { after: prepareStateForLog(afterState) }, userId);
     return docRef.id;
@@ -64,7 +64,7 @@ export const addAssignment = async (data: Omit<Assignment, 'id' | 'createdAt' | 
 };
 
 export const updateAssignment = async (assignmentId: string, data: Partial<Omit<Assignment, 'id' | 'createdAt' | 'updatedAt' | 'itemType'>>, userId: string): Promise<void> => {
-  const docRef = doc(assignmentsCollectionRef, assignmentId);
+  const docRef = doc(getAssignmentsCollectionRef(), assignmentId);
   try {
     const oldSnap = await getDoc(docRef);
     let beforeState: Assignment | null = null;
@@ -114,7 +114,7 @@ export const updateAssignment = async (assignmentId: string, data: Partial<Omit<
 };
 
 export const deleteAssignment = async (assignmentId: string, userId: string): Promise<void> => {
-  const docRef = doc(assignmentsCollectionRef, assignmentId);
+  const docRef = doc(getAssignmentsCollectionRef(), assignmentId);
   try {
     const oldSnap = await getDoc(docRef);
     let beforeState: Assignment | null = null;
@@ -142,7 +142,7 @@ export const getAssignments = async (
   filters?: GetAssignmentsFilters,
   sort?: GetAssignmentsSort
 ): Promise<Assignment[]> => {
-  let q = query(assignmentsCollectionRef);
+  let q = query(getAssignmentsCollectionRef());
   const todayString = format(startOfDay(new Date()), 'yyyy-MM-dd');
 
   if (filters) {
@@ -233,7 +233,7 @@ export const onAssignmentsUpdate = (
     filters?: GetAssignmentsFilters, 
     sort?: GetAssignmentsSort 
 ): Unsubscribe => {
-    let q = query(assignmentsCollectionRef);
+    let q = query(getAssignmentsCollectionRef());
     const todayString = format(startOfDay(new Date()), 'yyyy-MM-dd');
 
     if (filters) {

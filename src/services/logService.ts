@@ -7,12 +7,12 @@
 
 import { db } from '@/config/firebase';
 import { collection, doc, setDoc, Timestamp, FirestoreError, getDoc, writeBatch } from 'firebase/firestore';
+import { getCurrentClassId } from '@/lib/classUtils';
 import type { Subject } from '@/models/subject'; // Import Subject type
 import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 
 // --- Firestore Collection Reference ---
-const CURRENT_CLASS_ID = 'defaultClass'; // Replace with dynamic class ID logic
-const logsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'logs');
+const getLogsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'logs');
 
 export interface LogEntry {
   id?: string;
@@ -46,7 +46,7 @@ export const logAction = async (
   };
 
   try {
-    const newLogRef = doc(logsCollectionRef);
+    const newLogRef = doc(getLogsCollectionRef());
     await setDoc(newLogRef, logEntry);
     console.log(`Action logged: ${actionType} by ${userId}`);
     return newLogRef.id;
@@ -64,7 +64,7 @@ export const logAction = async (
  * Attempts to roll back a previously logged action.
  */
 export const rollbackAction = async (logId: string, userId: string = 'system_rollback'): Promise<void> => {
-    const logRef = doc(logsCollectionRef, logId);
+    const logRef = doc(getLogsCollectionRef(), logId);
     let logEntry: LogEntry | null = null;
 
     try {
@@ -89,7 +89,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
                  throw new Error(`Cannot roll back a rollback action (Log ID: ${logId}) without the originalLogId.`);
             }
              console.warn(`Attempting to re-apply original action from Log ID: ${originalLogId} due to rollback of Log ID: ${logId}`);
-             const originalLogRef = doc(logsCollectionRef, originalLogId);
+             const originalLogRef = doc(getLogsCollectionRef(), originalLogId);
              const originalLogSnap = await getDoc(originalLogRef);
              if (!originalLogSnap.exists()) {
                  throw new Error(`Original log entry (ID: ${originalLogId}) for rollback action (Log ID: ${logId}) not found.`);
@@ -232,7 +232,7 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
             let restoredCount = 0;
             for(const beforeSlot of beforeSlots) {
                 if (!beforeSlot || typeof beforeSlot.id !== 'string') continue;
-                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
+                const slotRef = doc(db, `classes/${getCurrentClassId()}/fixedTimetable`, beforeSlot.id);
                 const dataToRestore: any = { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() };
                 if(beforeSlot.day) dataToRestore.day = beforeSlot.day;
                 if(beforeSlot.period) dataToRestore.period = beforeSlot.period;
@@ -361,7 +361,7 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
          if (!Array.isArray(targetSlots)) throw new Error(`Re-apply for ${action} requires target state to be an array.`);
          targetSlots.forEach(slot => {
              if (!slot || typeof slot.id !== 'string') return;
-             const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, slot.id);
+             const slotRef = doc(db, `classes/${getCurrentClassId()}/fixedTimetable`, slot.id);
              const dataToRestore: any = { subjectId: slot.subjectId ?? null, updatedAt: Timestamp.now() };
              if(slot.day) dataToRestore.day = slot.day;
              if(slot.period) dataToRestore.period = slot.period;
@@ -378,28 +378,28 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
 
 function getCollectionPathForAction(action: string): string | null {
     if (action.includes('subject') && !action.includes('override')) { // ensure not matching 'subjectIdOverride' from announcements
-        return `classes/${CURRENT_CLASS_ID}/subjects`;
+        return `classes/${getCurrentClassId()}/subjects`;
     }
     if (action.includes('event')) {
-        return `classes/${CURRENT_CLASS_ID}/events`;
+        return `classes/${getCurrentClassId()}/events`;
     }
     if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable' || action === 'update_fixed_slot') {
-        return `classes/${CURRENT_CLASS_ID}/fixedTimetable`;
+        return `classes/${getCurrentClassId()}/fixedTimetable`;
     }
     if (action.includes('announcement') && !action.includes('general_announcement') && !action.includes('future_daily_announcements')) {
-        return `classes/${CURRENT_CLASS_ID}/dailyAnnouncements`;
+        return `classes/${getCurrentClassId()}/dailyAnnouncements`;
     }
      if (action.includes('general_announcement')) {
-        return `classes/${CURRENT_CLASS_ID}/generalAnnouncements`;
+        return `classes/${getCurrentClassId()}/generalAnnouncements`;
     }
     if (action.includes('settings')) {
-         return `classes/${CURRENT_CLASS_ID}/settings`;
+         return `classes/${getCurrentClassId()}/settings`;
     }
     if (action.includes('inquiry')) {
-        return `classes/${CURRENT_CLASS_ID}/inquiries`;
+        return `classes/${getCurrentClassId()}/inquiries`;
     }
     if (action.includes('assignment')) {
-        return `classes/${CURRENT_CLASS_ID}/assignments`;
+        return `classes/${getCurrentClassId()}/assignments`;
     }
     console.warn(`Could not determine collection path for action: ${action}`);
     return null;

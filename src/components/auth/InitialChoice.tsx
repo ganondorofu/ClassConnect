@@ -16,9 +16,14 @@ export function InitialChoice({ onChoiceMade }: InitialChoiceProps) {
   const { setAnonymousAccess } = useAuth();
   const router = useRouter();
 
-  const handleAdminLogin = () => {
+  const handleTeacherLogin = () => {
     onChoiceMade();
-    router.push("/login");
+    router.push("/teacher-login");
+  };
+
+  const handleStudentLogin = () => {
+    onChoiceMade();
+    router.push("/student-login");
   };
 
   const handleAnonymousAccess = () => {
@@ -36,9 +41,13 @@ export function InitialChoice({ onChoiceMade }: InitialChoiceProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 p-6">
-          <Button onClick={handleAdminLogin} className="w-full" size="lg">
+          <Button onClick={handleTeacherLogin} className="w-full" size="lg">
             <LogIn className="mr-2 h-5 w-5" />
-            管理者としてログイン
+            教員としてログイン
+          </Button>
+          <Button onClick={handleStudentLogin} className="w-full" variant="secondary" size="lg">
+            <User className="mr-2 h-5 w-5" />
+            学生としてログイン
           </Button>
           <Button onClick={handleAnonymousAccess} className="w-full" variant="secondary" size="lg">
             <User className="mr-2 h-5 w-5" />

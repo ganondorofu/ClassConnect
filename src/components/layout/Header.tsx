@@ -17,11 +17,11 @@ interface HeaderProps {
 }
 
 export function Header({ toggleSidebar, isSidebarOpen }: HeaderProps) {
-  const { user, loading, logout, isAnonymous } = useAuth();
+  const { user, loading, logout, isAnonymous, role } = useAuth();
   const router = useRouter();
 
   const handleLoginClick = () => {
-    router.push('/login');
+    router.push('/teacher-login');
   };
 
   return (
@@ -52,7 +52,7 @@ export function Header({ toggleSidebar, isSidebarOpen }: HeaderProps) {
                 <Skeleton className="h-8 w-8 sm:w-20" />
                 <Skeleton className="h-8 w-8" />
              </div>
-          ) : user && !isAnonymous ? ( // Logged in as admin
+          ) : user ? (
             <>
               <span className="text-sm text-muted-foreground hidden md:inline-block truncate max-w-xs" title={user.email ?? undefined}>
                  {user.email}
@@ -64,16 +64,16 @@ export function Header({ toggleSidebar, isSidebarOpen }: HeaderProps) {
             </>
           ) : ( // Anonymous or not logged in
             <>
-             {isAnonymous && (
+             {(isAnonymous || role === 'student') && (
                 <span className="text-sm text-muted-foreground flex items-center mr-1 sm:mr-2">
                     <UserCircle className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">ログインなしで利用中</span>
+                    <span className="hidden sm:inline">{isAnonymous ? 'ログインなしで利用中' : '学生として利用中'}</span>
                     <span className="sm:hidden">ゲスト</span>
                 </span>
              )}
              <Button variant="outline" size="sm" onClick={handleLoginClick}>
                 <LogIn className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">管理者ログイン</span>
+                <span className="hidden sm:inline">教員ログイン</span>
                 <span className="sm:hidden">ログイン</span>
               </Button>
             </>
