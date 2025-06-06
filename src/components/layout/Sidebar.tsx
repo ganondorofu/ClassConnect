@@ -44,11 +44,11 @@ const adminLinks = [
 const updateLogLink = { href: '/updates', label: '更新ログ', icon: ScrollText };
 
 export function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
-  const { user, isAnonymous } = useAuth();
+  const { user, isAnonymous, role } = useAuth();
   const pathname = usePathname();
 
   let linksToDisplay = [...baseCommonLinks];
-  if (user && !isAnonymous) {
+  if (user && role === 'teacher') {
     linksToDisplay.push(...adminLinks);
   }
   linksToDisplay.push(updateLogLink);

@@ -230,7 +230,7 @@ export default function SubjectsPage() {
 
   useEffect(() => {
     if (!authLoading && !user && !isAnonymous) {
-      router.push('/login?redirect=/admin/subjects');
+      router.push('/teacher-login?redirect=/admin/subjects');
     } else if (!authLoading && isAnonymous) {
        router.push('/');
     }

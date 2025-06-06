@@ -204,7 +204,7 @@ export default function LogsPage() {
 
   useEffect(() => {
     if (!authLoading && !user && !isAnonymous) {
-      router.push('/login?redirect=/admin/logs');
+      router.push('/teacher-login?redirect=/admin/logs');
     } else if (!authLoading && isAnonymous) {
         router.push('/');
     }
