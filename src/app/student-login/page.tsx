@@ -59,7 +59,7 @@ function LoginPageContent() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">管理者ログイン</CardTitle>
+          <CardTitle className="text-2xl font-bold">学生ログイン</CardTitle>
           <CardDescription>
             メールアドレスとパスワードを入力してログインしてください。
           </CardDescription>
@@ -71,7 +71,7 @@ function LoginPageContent() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@example.com"
+                placeholder="student@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

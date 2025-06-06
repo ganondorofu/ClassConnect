@@ -34,17 +34,17 @@ import { logAction } from '@/services/logService';
 import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
 import { queryFnGetSubjects as getSubjectsFromSubjectController } from '@/controllers/subjectController';
 import { summarizeAnnouncement } from '@/ai/flows/summarize-announcement-flow';
+import { getCurrentClassId } from '@/lib/classUtils';
+
+const FUTURE_DAYS_TO_APPLY = 60;
 
 
-const CURRENT_CLASS_ID = 'defaultClass';
-const FUTURE_DAYS_TO_APPLY = 60; 
-
-const settingsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'settings');
-const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
-const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
-const generalAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'generalAnnouncements');
-const eventsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'events');
-const assignmentsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'assignments'); 
+const getSettingsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'settings');
+const getFixedTimetableCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'fixedTimetable');
+const getDailyAnnouncementsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'dailyAnnouncements');
+const getGeneralAnnouncementsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'generalAnnouncements');
+const getEventsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'events');
+const getAssignmentsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'assignments');
 
 const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
   if (!timestampField) return undefined;
@@ -72,7 +72,7 @@ const parseFirestoreTimestamp = (timestampField: any): Date | undefined => {
 };
 
 export const getTimetableSettings = async (): Promise<TimetableSettings> => {
-  const docRef = doc(settingsCollectionRef, 'timetable');
+  const docRef = doc(getSettingsCollectionRef(), 'timetable');
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -107,7 +107,7 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
     numberOfPeriods: settingsUpdates.numberOfPeriods ?? currentSettings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods,
     activeDays: settingsUpdates.activeDays ?? currentSettings.activeDays ?? DEFAULT_TIMETABLE_SETTINGS.activeDays,
   };
-  const docRef = doc(settingsCollectionRef, 'timetable');
+  const docRef = doc(getSettingsCollectionRef(), 'timetable');
 
   try {
     let fixedTimetableNeedsUpdate = false;
@@ -128,11 +128,11 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
           for (let day of daysToUpdate) {
             for (let period = currentPeriods + 1; period <= newPeriodsValue; period++) {
               const slotId = `${day}_${period}`;
-              transaction.set(doc(fixedTimetableCollectionRef, slotId), { id: slotId, day, period, subjectId: null });
+              transaction.set(doc(getFixedTimetableCollectionRef(), slotId), { id: slotId, day, period, subjectId: null });
             }
           }
         } else {
-          const q = query(fixedTimetableCollectionRef, where('period', '>', newPeriodsValue), where('day', 'in', daysToUpdate));
+          const q = query(getFixedTimetableCollectionRef(), where('period', '>', newPeriodsValue), where('day', 'in', daysToUpdate));
           const snapshot = await getDocs(q); 
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
@@ -141,9 +141,9 @@ export const updateTimetableSettings = async (settingsUpdates: Partial<Timetable
         const addedDays = newActiveDays.filter(d => !currentActiveDaysInTx.includes(d));
         const removedDays = currentActiveDaysInTx.filter(d => !newActiveDays.includes(d));
         const periodsToManage = newSettingsData.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods;
-        for (const day of addedDays) for (let period = 1; period <= periodsToManage; period++) transaction.set(doc(fixedTimetableCollectionRef, `${day}_${period}`), { id: `${day}_${period}`, day, period, subjectId: null });
+        for (const day of addedDays) for (let period = 1; period <= periodsToManage; period++) transaction.set(doc(getFixedTimetableCollectionRef(), `${day}_${period}`), { id: `${day}_${period}`, day, period, subjectId: null });
         if (removedDays.length > 0) {
-          const q = query(fixedTimetableCollectionRef, where('day', 'in', removedDays));
+          const q = query(getFixedTimetableCollectionRef(), where('day', 'in', removedDays));
           const snapshot = await getDocs(q); 
           snapshot.forEach((docToDelete) => transaction.delete(docToDelete.ref));
         }
@@ -163,7 +163,7 @@ export const onTimetableSettingsUpdate = (
   callback: (settings: TimetableSettings) => void,
   onError?: (error: Error) => void
 ): Unsubscribe => {
-  const docRef = doc(settingsCollectionRef, 'timetable');
+  const docRef = doc(getSettingsCollectionRef(), 'timetable');
   const unsubscribe = onSnapshot(
     docRef,
     (docSnap) => {
@@ -196,7 +196,7 @@ export const onTimetableSettingsUpdate = (
 
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
   try {
-    const snapshot = await getDocs(fixedTimetableCollectionRef);
+    const snapshot = await getDocs(getFixedTimetableCollectionRef());
     let slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: doc.data().subjectId === undefined ? null : doc.data().subjectId } as FixedTimeSlot));
     slots.sort((a, b) => AllDays.indexOf(a.day) - AllDays.indexOf(b.day) || a.period - b.period);
     return slots;
@@ -222,7 +222,7 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[], userId: 
     const existingSlot = existingSlotsMap.get(slot.id);
     const newSubjectId = slot.subjectId === undefined ? null : slot.subjectId;
     if (!existingSlot || (existingSlot.subjectId ?? null) !== newSubjectId) {
-      batch.set(doc(fixedTimetableCollectionRef, slot.id), { ...slot, subjectId: newSubjectId, updatedAt: Timestamp.now() });
+      batch.set(doc(getFixedTimetableCollectionRef(), slot.id), { ...slot, subjectId: newSubjectId, updatedAt: Timestamp.now() });
       changesMade = true;
       beforeStates.push({ id: slot.id, subjectId: existingSlot?.subjectId ?? null });
       afterStates.push({ id: slot.id, subjectId: newSubjectId });
@@ -247,7 +247,7 @@ export const resetFixedTimetable = async (userId: string = 'system_reset_tt'): P
   let resetCount = 0;
   const beforeStates: Array<{ id: string, subjectId: string | null }> = [];
   try {
-    const snapshot = await getDocs(fixedTimetableCollectionRef);
+    const snapshot = await getDocs(getFixedTimetableCollectionRef());
     snapshot.forEach((docSnap) => {
       const slot = docSnap.data() as FixedTimeSlot;
       if ((slot.subjectId ?? null) !== null) {
@@ -268,7 +268,7 @@ export const resetFixedTimetable = async (userId: string = 'system_reset_tt'): P
 };
 
 export const onFixedTimetableUpdate = (callback: (timetable: FixedTimeSlot[]) => void, onError?: (error: Error) => void): Unsubscribe => {
-  const unsubscribe = onSnapshot(query(fixedTimetableCollectionRef), (snapshot) => {
+  const unsubscribe = onSnapshot(query(getFixedTimetableCollectionRef()), (snapshot) => {
     let timetable = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: doc.data().subjectId === undefined ? null : doc.data().subjectId } as FixedTimeSlot));
     timetable.sort((a, b) => AllDays.indexOf(a.day) - AllDays.indexOf(b.day) || a.period - b.period);
     callback(timetable);
@@ -282,7 +282,7 @@ export const onFixedTimetableUpdate = (callback: (timetable: FixedTimeSlot[]) =>
 
 export const getDailyAnnouncements = async (date: string): Promise<DailyAnnouncement[]> => {
   try {
-    const q = query(dailyAnnouncementsCollectionRef, where('date', '==', date));
+    const q = query(getDailyAnnouncementsCollectionRef(), where('date', '==', date));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -310,7 +310,7 @@ export const upsertDailyAnnouncement = async (
 ): Promise<void> => {
   const { date, period } = announcementData;
   const docId = `${date}_${period}`;
-  const docRef = doc(dailyAnnouncementsCollectionRef, docId);
+  const docRef = doc(getDailyAnnouncementsCollectionRef(), docId);
   
   const textToPersist = announcementData.text?.trim() ?? '';
   const subjectIdOverrideToPersist = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride;
@@ -387,7 +387,7 @@ export const upsertDailyAnnouncement = async (
 };
 
 export const onDailyAnnouncementsUpdate = (date: string, callback: (announcements: DailyAnnouncement[]) => void, onError?: (error: Error) => void): Unsubscribe => {
-  const q = query(dailyAnnouncementsCollectionRef, where('date', '==', date));
+  const q = query(getDailyAnnouncementsCollectionRef(), where('date', '==', date));
   const unsubscribe = onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map(docSnap => {
         const data = docSnap.data();
@@ -410,7 +410,7 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
 };
 
 export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGeneralAnnouncement | null> => {
-  const docRef = doc(generalAnnouncementsCollectionRef, date);
+  const docRef = doc(getGeneralAnnouncementsCollectionRef(), date);
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -434,7 +434,7 @@ export const getDailyGeneralAnnouncement = async (date: string): Promise<DailyGe
 };
 
 export const upsertDailyGeneralAnnouncement = async (date: string, content: string, userId: string = 'system_upsert_general_annc'): Promise<void> => {
-  const docRef = doc(generalAnnouncementsCollectionRef, date);
+  const docRef = doc(getGeneralAnnouncementsCollectionRef(), date);
   const trimmedContent = content.trim();
   let beforeState: DailyGeneralAnnouncement | null = null;
 
@@ -497,7 +497,7 @@ export const upsertDailyGeneralAnnouncement = async (date: string, content: stri
 
 
 export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announcement: DailyGeneralAnnouncement | null) => void, onError?: (error: Error) => void): Unsubscribe => {
-  const docRef = doc(generalAnnouncementsCollectionRef, date);
+  const docRef = doc(getGeneralAnnouncementsCollectionRef(), date);
   const unsubscribe = onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -518,7 +518,7 @@ export const onDailyGeneralAnnouncementUpdate = (date: string, callback: (announ
 };
 
 export const generateAndStoreAnnouncementSummary = async (date: string, userId: string = 'system_ai_summary'): Promise<string | null> => {
-  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
+  const announcementRef = doc(getGeneralAnnouncementsCollectionRef(), date);
   try {
     if (!process.env.GOOGLE_GENAI_API_KEY) {
         throw new Error("AI機能は設定されていません。管理者に連絡してください。");
@@ -566,7 +566,7 @@ export const generateAndStoreAnnouncementSummary = async (date: string, userId: 
 };
 
 export const deleteAiSummary = async (date: string, userId: string): Promise<void> => {
-  const announcementRef = doc(generalAnnouncementsCollectionRef, date);
+  const announcementRef = doc(getGeneralAnnouncementsCollectionRef(), date);
   try {
     const announcementSnap = await getDoc(announcementRef);
     if (!announcementSnap.exists() || !announcementSnap.data()?.aiSummary) {
@@ -598,7 +598,7 @@ export const deleteAiSummary = async (date: string, userId: string): Promise<voi
 
 export const getSchoolEvents = async (): Promise<SchoolEvent[]> => {
   try {
-    const q = query(eventsCollectionRef, orderBy('startDate'));
+    const q = query(getEventsCollectionRef(), orderBy('startDate'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => {
         const data = docSnap.data();
@@ -632,7 +632,7 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'create
     updatedAt: Timestamp.now(),
   };
   try {
-    const newDocRef = await addDoc(eventsCollectionRef, dataToSet);
+    const newDocRef = await addDoc(getEventsCollectionRef(), dataToSet);
     const afterState = { id: newDocRef.id, ...dataToSet, createdAt: dataToSet.createdAt.toDate(), updatedAt: dataToSet.updatedAt.toDate() }; 
     await logAction('add_event', { before: null, after: prepareStateForLog(afterState) }, userId);
     return newDocRef.id;
@@ -647,7 +647,7 @@ export const addSchoolEvent = async (eventData: Omit<SchoolEvent, 'id' | 'create
 
 export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string = 'system_update_event'): Promise<void> => {
   if (!eventData.id) throw new Error("Event ID is required for updates.");
-  const docRef = doc(eventsCollectionRef, eventData.id);
+  const docRef = doc(getEventsCollectionRef(), eventData.id);
   const dataToUpdate: Partial<SchoolEvent> = { 
     title: eventData.title || '', 
     startDate: eventData.startDate, 
@@ -701,7 +701,7 @@ export const updateSchoolEvent = async (eventData: SchoolEvent, userId: string =
 };
 
 export const deleteSchoolEvent = async (eventId: string, userId: string = 'system_delete_event'): Promise<void> => {
-  const docRef = doc(eventsCollectionRef, eventId);
+  const docRef = doc(getEventsCollectionRef(), eventId);
   let beforeState: SchoolEvent | null = null;
   try {
     const oldDataSnap = await getDoc(docRef);
@@ -725,7 +725,7 @@ export const deleteSchoolEvent = async (eventId: string, userId: string = 'syste
 };
 
 export const onSchoolEventsUpdate = (callback: (events: SchoolEvent[]) => void, onError?: (error: Error) => void): Unsubscribe => {
-  const q = query(eventsCollectionRef, orderBy('startDate'));
+  const q = query(getEventsCollectionRef(), orderBy('startDate'));
   const unsubscribe = onSnapshot(q, (snapshot) => callback(snapshot.docs.map(docSnap => {
     const data = docSnap.data();
     return { 
@@ -783,7 +783,7 @@ export const applyFixedTimetableForFuture = async (userId: string = 'system_appl
         if (!existingAnn || 
             (!existingAnn.text && !existingAnn.showOnCalendar && (existingAnn.subjectIdOverride ?? null) !== fixedSubjectIdOrNull)
            ) {
-          const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${fixedSlot.period}`);
+          const docRef = doc(getDailyAnnouncementsCollectionRef(), `${dateStr}_${fixedSlot.period}`);
           const newAnnouncementData: Omit<DailyAnnouncement, 'id' | 'updatedAt'> = { 
             date: dateStr, 
             period: fixedSlot.period, 
@@ -840,7 +840,7 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
       const fixedSlotsForDay = fixedTimetable.filter(fs => fs.day === dayOfWeekEnum);
 
       for (let period = 1; period <= (settings.numberOfPeriods ?? DEFAULT_TIMETABLE_SETTINGS.numberOfPeriods); period++) {
-        const docRef = doc(dailyAnnouncementsCollectionRef, `${dateStr}_${period}`);
+        const docRef = doc(getDailyAnnouncementsCollectionRef(), `${dateStr}_${period}`);
         const fixedSlot = fixedSlotsForDay.find(fs => fs.period === period);
         const existingAnnForLog = existingAnnouncementsMap.get(period);
         if (existingAnnForLog) beforeStates[dateStr].push(existingAnnForLog); else beforeStates[dateStr].push(null);
@@ -882,7 +882,7 @@ export const resetFutureDailyAnnouncements = async (userId: string = 'system_res
 };
 
 export const getLogs = async (limitCount: number = 100): Promise<any[]> => {
-  const logsCollection = collection(db, 'classes', CURRENT_CLASS_ID, 'logs');
+  const logsCollection = collection(db, 'classes', getCurrentClassId(), 'logs');
   try {
     const q = query(logsCollection, orderBy('timestamp', 'desc'), limit(limitCount));
     const snapshot = await getDocs(q);
@@ -907,7 +907,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
   try {
     // Fetch Events
     const eventsQuery = query(
-      eventsCollectionRef,
+      getEventsCollectionRef(),
       where('startDate', '<=', monthEndDate), // Events starting before or during the month
       orderBy('startDate')
     );
@@ -935,7 +935,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
 
     // Fetch Announcements
     const announcementsQuery = query(
-      dailyAnnouncementsCollectionRef,
+      getDailyAnnouncementsCollectionRef(),
       where('date', '>=', monthStartDate),
       where('date', '<=', monthEndDate),
       where('showOnCalendar', '==', true),
@@ -963,7 +963,7 @@ export const getCalendarDisplayableItemsForMonth = async (year: number, month: n
 
     // Fetch Assignments
     const assignmentsQuery = query(
-      assignmentsCollectionRef,
+      getAssignmentsCollectionRef(),
       where('dueDate', '>=', monthStartDate),
       where('dueDate', '<=', monthEndDate),
       orderBy('dueDate')

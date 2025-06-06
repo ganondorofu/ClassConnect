@@ -19,15 +19,15 @@ import {
 import type { Subject } from '@/models/subject';
 import { logAction } from '@/services/logService';
 import { prepareStateForLog } from '@/lib/logUtils'; // Import from new location
+import { getCurrentClassId } from '@/lib/classUtils';
 
-const CURRENT_CLASS_ID = 'defaultClass'; 
-const subjectsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'subjects');
-const fixedTimetableCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'fixedTimetable');
-const dailyAnnouncementsCollectionRef = collection(db, 'classes', CURRENT_CLASS_ID, 'dailyAnnouncements');
+const getSubjectsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'subjects');
+const getFixedTimetableCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'fixedTimetable');
+const getDailyAnnouncementsCollectionRef = () => collection(db, 'classes', getCurrentClassId(), 'dailyAnnouncements');
 
 export const getSubjects = async (): Promise<Subject[]> => {
   try {
-    const q = query(subjectsCollectionRef, orderBy('name'));
+    const q = query(getSubjectsCollectionRef(), orderBy('name'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subject));
   } catch (error) {
@@ -53,7 +53,7 @@ export const addSubject = async (name: string, teacherName: string | null, userI
     teacherName: trimmedTeacherName,
   };
   try {
-    const docRef = await addDoc(subjectsCollectionRef, dataToSet);
+    const docRef = await addDoc(getSubjectsCollectionRef(), dataToSet);
     const newSubjectWithId = { id: docRef.id, ...dataToSet };
     await logAction('add_subject', {
         before: null,
@@ -77,7 +77,7 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
    if (!id) throw new Error("Subject ID is required for updates.");
    if (!name) throw new Error("科目名は必須です。");
 
-  const docRef = doc(subjectsCollectionRef, id);
+  const docRef = doc(getSubjectsCollectionRef(), id);
   const trimmedTeacherName = teacherName?.trim() || null;
   const dataToSet: Omit<Subject, 'id'> = {
     name: name.trim(),
@@ -112,7 +112,7 @@ export const updateSubject = async (id: string, name: string, teacherName: strin
 
 export const deleteSubject = async (id: string, userId: string = 'system_delete_subject'): Promise<void> => {
   if (!id) throw new Error("Subject ID is required for deletion.");
-  const subjectDocRef = doc(subjectsCollectionRef, id);
+  const subjectDocRef = doc(getSubjectsCollectionRef(), id);
   let beforeState: Subject | null = null;
   let referencesUpdatedCount = 0;
 
@@ -126,14 +126,14 @@ export const deleteSubject = async (id: string, userId: string = 'system_delete_
       throw new Error(`科目 (ID: ${id}) が見つかりませんでした。`);
     }
 
-    const fixedUsageQuery = query(fixedTimetableCollectionRef, where('subjectId', '==', id));
+    const fixedUsageQuery = query(getFixedTimetableCollectionRef(), where('subjectId', '==', id));
     const fixedUsageSnapshot = await getDocs(fixedUsageQuery);
     fixedUsageSnapshot.forEach((docSnap) => {
       batch.update(docSnap.ref, { subjectId: null });
       referencesUpdatedCount++;
     });
 
-    const dailyUsageQuery = query(dailyAnnouncementsCollectionRef, where('subjectIdOverride', '==', id));
+    const dailyUsageQuery = query(getDailyAnnouncementsCollectionRef(), where('subjectIdOverride', '==', id));
     const dailyUsageSnapshot = await getDocs(dailyUsageQuery);
     dailyUsageSnapshot.forEach((docSnap) => {
       batch.update(docSnap.ref, { subjectIdOverride: null });
@@ -162,7 +162,7 @@ export const onSubjectsUpdate = (
     callback: (subjects: Subject[]) => void,
     onError?: (error: Error) => void
 ): Unsubscribe => {
-    const q = query(subjectsCollectionRef, orderBy('name'));
+    const q = query(getSubjectsCollectionRef(), orderBy('name'));
     return onSnapshot(q, (snapshot) => {
         const subjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), teacherName: doc.data().teacherName ?? null } as Subject));
         callback(subjects);
