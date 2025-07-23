@@ -39,7 +39,7 @@ import {
   batchUpdateFixedTimetable, // Import batch updater
 } from '@/controllers/timetableController';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
-import { AlertCircle, CalendarDays, Edit2, Info, WifiOff, User, FileText, ClipboardList, RotateCcw, Trash2, LucideIcon, CheckSquare, Square } from 'lucide-react';
+import { AlertCircle, CalendarDays, Edit2, Info, WifiOff, User, FileText, ClipboardList, RotateCcw, Trash2, LucideIcon, CheckSquare, Square, X } from 'lucide-react';
 import type { Timestamp, FirestoreError } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from "@/lib/utils";
