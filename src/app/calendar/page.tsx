@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent } from '@/components/ui/card';
@@ -276,16 +275,15 @@ function CalendarPageContent() {
 
   if (authLoading) {
     return (
-      <MainLayout>
+      <>
         <Skeleton className="h-12 w-1/2 mb-4" />
         <Skeleton className="h-96 w-full" />
-      </MainLayout>
+      </>
     );
   }
 
   if (!user && !isAnonymous) {
     return (
-      <MainLayout>
         <Alert variant="default" className="mt-4">
             <Info className="h-4 w-4" />
             <AlertTitle>カレンダーの表示</AlertTitle>
@@ -293,12 +291,11 @@ function CalendarPageContent() {
                 ログインまたは「ログインなしで利用」を選択すると、カレンダーが表示されます。
             </AlertDescription>
         </Alert>
-      </MainLayout>
     );
   }
 
   return (
-    <MainLayout>
+    <>
       <div className="flex flex-col h-full">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2 sm:gap-0">
           <h1 className="text-xl sm:text-2xl font-semibold">クラスカレンダー</h1>
@@ -636,7 +633,7 @@ function CalendarPageContent() {
         />
       )}
 
-    </MainLayout>
+    </>
   );
 }
 
@@ -647,6 +644,3 @@ export default function CalendarPage() {
     </QueryClientProvider>
   );
 }
-
-
-

@@ -224,24 +224,40 @@ export const rollbackAction = async (logId: string, userId: string = 'system_rol
             rollbackDetails.restoredDocId = docId;
             rollbackDetails.restoredDocPath = docToRestoreRef.path;
 
-        } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable') {
-            const beforeSlots: Array<{ id: string, subjectId: string | null, day?: string, period?: number }> = details.before || [];
+        } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable' || action === 'batch_upsert_announcements') {
+            const beforeSlots: Array<{ id: string, subjectId?: string | null, text?: string, showOnCalendar?: boolean, subjectIdOverride?: string | null, isManuallyCleared?: boolean, day?: string, period?: number }> = details.before || [];
             if (!Array.isArray(beforeSlots)) {
                  throw new Error(`Rollback for ${action} requires 'before' details to be an array of slot changes.`);
             }
             let restoredCount = 0;
             for(const beforeSlot of beforeSlots) {
                 if (!beforeSlot || typeof beforeSlot.id !== 'string') continue;
-                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, beforeSlot.id);
-                const dataToRestore: any = { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() };
-                if(beforeSlot.day) dataToRestore.day = beforeSlot.day;
-                if(beforeSlot.period) dataToRestore.period = beforeSlot.period;
+                const collectionName = action === 'batch_upsert_announcements' ? 'dailyAnnouncements' : 'fixedTimetable';
+                const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/${collectionName}`, beforeSlot.id);
+                
+                let dataToRestore: any;
+                if (action === 'batch_upsert_announcements') {
+                    // This handles restoring a previous state for a daily announcement
+                    dataToRestore = {
+                        ...beforeSlot, // contains date, period etc.
+                        subjectIdOverride: beforeSlot.subjectIdOverride === undefined ? null : beforeSlot.subjectIdOverride,
+                        text: beforeSlot.text ?? '',
+                        showOnCalendar: beforeSlot.showOnCalendar ?? false,
+                        isManuallyCleared: beforeSlot.isManuallyCleared ?? false,
+                        updatedAt: Timestamp.now(),
+                    };
+                    delete dataToRestore.id;
+                } else {
+                    // This handles restoring a fixed timetable slot
+                    dataToRestore = { subjectId: beforeSlot.subjectId ?? null, updatedAt: Timestamp.now() };
+                    if(beforeSlot.day) dataToRestore.day = beforeSlot.day;
+                    if(beforeSlot.period) dataToRestore.period = beforeSlot.period;
+                }
 
-                batch.set(slotRef, dataToRestore, {merge: true}); // Use set with merge or update
+                batch.set(slotRef, dataToRestore, {merge: true}); 
                 restoredCount++;
             }
              rollbackDetails.restoredSlotsCount = restoredCount;
-
         } else if (action === 'apply_fixed_timetable_future' || action === 'reset_future_daily_announcements') {
              throw new Error(`Action '${action}' affects future dates and cannot be automatically rolled back.`);
         }
@@ -356,17 +372,40 @@ async function performActionBasedOnLog(action: string, targetState: any, previou
          const docRef = doc(db, collectionPath, docId);
          batch.delete(docRef);
 
-    } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable') {
-         const targetSlots: Array<{ id: string, subjectId: string | null, day?: string, period?: number }> = (action === 'reset_fixed_timetable') ? (previousState || []).map((s: any) => ({ ...s, subjectId: null })) : (targetState || []);
+    } else if (action === 'batch_update_fixed_timetable' || action === 'reset_fixed_timetable' || action === 'batch_upsert_announcements') {
+        const targetSlots = action === 'reset_fixed_timetable' ? [] : (targetState || []);
+
          if (!Array.isArray(targetSlots)) throw new Error(`Re-apply for ${action} requires target state to be an array.`);
-         targetSlots.forEach(slot => {
-             if (!slot || typeof slot.id !== 'string') return;
-             const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, slot.id);
-             const dataToRestore: any = { subjectId: slot.subjectId ?? null, updatedAt: Timestamp.now() };
-             if(slot.day) dataToRestore.day = slot.day;
-             if(slot.period) dataToRestore.period = slot.period;
+         
+         const previousSlotsMap = new Map((previousState || []).map((s: any) => [s.id, s]));
+
+         for (const targetSlot of targetSlots) {
+             if (!targetSlot || typeof targetSlot.id !== 'string') continue;
+             const collectionName = action === 'batch_upsert_announcements' ? 'dailyAnnouncements' : 'fixedTimetable';
+             const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/${collectionName}`, targetSlot.id);
+             
+             let dataToRestore: any;
+             if (action === 'batch_upsert_announcements') {
+                 dataToRestore = { ...targetSlot, updatedAt: Timestamp.now() };
+                 delete dataToRestore.id;
+             } else {
+                 dataToRestore = { subjectId: targetSlot.subjectId ?? null, updatedAt: Timestamp.now() };
+                 if(targetSlot.day) dataToRestore.day = targetSlot.day;
+                 if(targetSlot.period) dataToRestore.period = targetSlot.period;
+             }
+             
              batch.set(slotRef, dataToRestore, {merge: true});
-         });
+             previousSlotsMap.delete(targetSlot.id);
+         }
+         
+         // For reset_fixed_timetable, we need to handle slots that were in `before` but not `after`
+         if (action === 'reset_fixed_timetable') {
+             for (const [id, slotData] of previousSlotsMap.entries()) {
+                  const slotRef = doc(db, `classes/${CURRENT_CLASS_ID}/fixedTimetable`, id);
+                  batch.update(slotRef, { subjectId: null, updatedAt: Timestamp.now() });
+             }
+         }
+
 
     } else {
         throw new Error(`Unsupported action type for re-apply: ${action} (${context})`);
@@ -404,4 +443,3 @@ function getCollectionPathForAction(action: string): string | null {
     console.warn(`Could not determine collection path for action: ${action}`);
     return null;
 }
-
