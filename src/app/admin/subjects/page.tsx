@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -159,7 +158,7 @@ function SubjectsPageContent() {
   const headerWidths = ['', '', 'text-right w-[80px] sm:w-[100px]'];
 
   return (
-    <MainLayout>
+    <>
       <h1 className="text-2xl font-semibold mb-6">科目管理</h1>
       {isOffline && (
         <Alert variant="destructive" className="mb-6">
@@ -220,7 +219,7 @@ function SubjectsPageContent() {
           <DialogFooter><DialogClose asChild><Button type="button" variant="secondary" disabled={isSaving} size="sm">キャンセル</Button></DialogClose><Button onClick={handleSave} disabled={isSaving || isOffline} size="sm"><Save className="mr-2 h-4 w-4" />{isSaving ? '保存中...' : '保存'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-    </MainLayout>
+    </>
   );
 }
 
@@ -238,19 +237,16 @@ export default function SubjectsPage() {
 
   if (authLoading || (!user && !isAnonymous)) {
     return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
             <Skeleton className="h-12 w-1/2 mb-4" />
             <Skeleton className="h-8 w-3/4 mb-2" />
             <Skeleton className="h-8 w-3/4" />
         </div>
-      </MainLayout>
     );
   }
 
   if (isAnonymous) {
      return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
           <Alert variant="destructive" className="w-full max-w-md">
             <Lock className="h-5 w-5" />
@@ -261,7 +257,6 @@ export default function SubjectsPage() {
             </AlertDescription>
           </Alert>
         </div>
-      </MainLayout>
     );
   }
 
@@ -274,17 +269,14 @@ export default function SubjectsPage() {
   }
   
   return ( 
-      <MainLayout>
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
-           <Alert variant="default" className="w-full max-w-md">
-             <AlertCircle className="h-5 w-5" />
-             <AlertTitle>認証情報を確認中...</AlertTitle>
-             <AlertDescription>
-               ページの読み込みに時間がかかっています。
-             </AlertDescription>
-           </Alert>
-         </div>
-      </MainLayout>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
+         <Alert variant="default" className="w-full max-w-md">
+           <AlertCircle className="h-5 w-5" />
+           <AlertTitle>認証情報を確認中...</AlertTitle>
+           <AlertDescription>
+             ページの読み込みに時間がかかっています。
+           </AlertDescription>
+         </Alert>
+       </div>
   );
 }
-

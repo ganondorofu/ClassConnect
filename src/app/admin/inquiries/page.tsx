@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -115,19 +114,16 @@ function InquiriesPageContent() {
 
   if (authLoading || (!user && !isAnonymous)) {
     return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
             <Skeleton className="h-12 w-1/2 mb-4" />
             <Skeleton className="h-8 w-3/4 mb-2" />
             <Skeleton className="h-8 w-3/4" />
         </div>
-      </MainLayout>
     );
   }
   
   if (isAnonymous) {
      return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
           <Alert variant="destructive" className="w-full max-w-md">
             <Lock className="h-5 w-5" />
@@ -138,12 +134,11 @@ function InquiriesPageContent() {
             </AlertDescription>
           </Alert>
         </div>
-      </MainLayout>
     );
   }
 
   return (
-    <MainLayout>
+    <>
       <h1 className="text-2xl font-semibold mb-6">お問い合わせ一覧</h1>
       <Card>
         <CardHeader>
@@ -247,7 +242,7 @@ function InquiriesPageContent() {
         </DialogContent>
       </Dialog>
 
-    </MainLayout>
+    </>
   );
 }
 

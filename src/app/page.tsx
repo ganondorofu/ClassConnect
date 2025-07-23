@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { TimetableGrid } from '@/components/timetable/TimetableGrid';
 import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay';
 import { Button } from '@/components/ui/button';
@@ -144,7 +143,7 @@ function HomePageContent() {
   
   if (!isClientMounted || authLoading || !currentDate) {
     return (
-      <MainLayout>
+      <>
            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
                <Skeleton className="h-8 w-32 sm:w-48" />
                <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
@@ -157,12 +156,12 @@ function HomePageContent() {
         <Skeleton className="h-24 sm:h-32 w-full mb-6" />
         <Skeleton className="h-80 sm:h-96 w-full" />
         {isClientMounted && showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
-      </MainLayout>
+      </>
     );
   }
   
   return (
-    <MainLayout>
+    <>
         <>
           <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
             <h1 className="text-xl md:text-2xl font-semibold">クラス時間割・連絡</h1>
@@ -217,7 +216,7 @@ function HomePageContent() {
           </div>
           {isClientMounted && showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
         </>
-    </MainLayout>
+    </>
   );
 }
 
@@ -225,7 +224,7 @@ export default function Home() {
   return (
     <QueryClientProvider client={queryClient}>
         <Suspense fallback={
-          <MainLayout>
+          <>
              <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
                  <Skeleton className="h-8 w-32 sm:w-48" />
                  <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
@@ -237,11 +236,10 @@ export default function Home() {
              </div>
             <Skeleton className="h-24 sm:h-32 w-full mb-6" />
             <Skeleton className="h-80 sm:h-96 w-full" />
-          </MainLayout>
+          </>
         }>
           <HomePageContent />
         </Suspense>
     </QueryClientProvider>
   );
 }
-

@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -108,6 +107,7 @@ function LogsPageContent() {
       'reset_future_daily_announcements': '将来の連絡リセット', 'upsert_general_announcement': '全体連絡 更新/作成',
       'delete_general_announcement': '全体連絡 削除', 'rollback_action': '操作のロールバック',
       'rollback_action_failed': 'ロールバック失敗', 'rollback_rollback_action': 'ロールバックの取り消し(元操作再適用)',
+      'batch_upsert_announcements': '時間割一括更新',
     };
     return descriptions[action] || action;
   };
@@ -141,7 +141,7 @@ function LogsPageContent() {
   const headerWidths = ['w-[140px] sm:w-[180px]', 'w-[120px] sm:w-[180px]', 'w-[80px] sm:w-[100px]', '', 'w-[100px] text-right'];
 
   return (
-    <MainLayout>
+    <>
       <h1 className="text-2xl font-semibold mb-6">変更履歴</h1>
       <Card>
         <CardHeader>
@@ -194,7 +194,7 @@ function LogsPageContent() {
           )}
         </CardContent>
       </Card>
-    </MainLayout>
+    </>
   );
 }
 
@@ -212,19 +212,16 @@ export default function LogsPage() {
 
   if (authLoading || (!user && !isAnonymous)) {
     return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
             <Skeleton className="h-12 w-1/2 mb-4" />
             <Skeleton className="h-8 w-3/4 mb-2" />
             <Skeleton className="h-8 w-3/4" />
         </div>
-      </MainLayout>
     );
   }
   
   if (isAnonymous) {
      return (
-      <MainLayout>
         <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
           <Alert variant="destructive" className="w-full max-w-md">
             <Lock className="h-5 w-5" />
@@ -235,7 +232,6 @@ export default function LogsPage() {
             </AlertDescription>
           </Alert>
         </div>
-      </MainLayout>
     );
   }
 
@@ -248,16 +244,14 @@ export default function LogsPage() {
   }
   
   return (
-      <MainLayout>
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
-           <Alert variant="default" className="w-full max-w-md">
-             <AlertCircle className="h-5 w-5" />
-             <AlertTitle>認証情報を確認中...</AlertTitle>
-             <AlertDescription>
-               ページの読み込みに時間がかかっています。
-             </AlertDescription>
-           </Alert>
-         </div>
-      </MainLayout>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4">
+         <Alert variant="default" className="w-full max-w-md">
+           <AlertCircle className="h-5 w-5" />
+           <AlertTitle>認証情報を確認中...</AlertTitle>
+           <AlertDescription>
+             ページの読み込みに時間がかかっています。
+           </AlertDescription>
+         </Alert>
+       </div>
   );
 }

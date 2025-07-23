@@ -5,6 +5,7 @@ import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from "@/components/ui/toaster"; // Import Toaster
 import { AuthProvider } from '@/contexts/AuthContext'; // Import AuthProvider
+import MainLayout from '@/components/layout/MainLayout';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -28,7 +29,9 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <MainLayout>
+              {children}
+            </MainLayout>
             <Toaster /> {/* Add Toaster component */}
           </ThemeProvider>
         </AuthProvider>

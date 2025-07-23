@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -171,7 +170,6 @@ function AssignmentsPageContent() {
 
   if (!user && !isAnonymous && !isLoading) {
      return (
-      <MainLayout>
         <Alert variant="default" className="mt-4">
             <Info className="h-4 w-4" />
             <AlertTitle>課題一覧の表示</AlertTitle>
@@ -179,13 +177,12 @@ function AssignmentsPageContent() {
                 ログインまたは「ログインなしで利用」を選択すると、課題一覧が表示されます。
             </AlertDescription>
         </Alert>
-      </MainLayout>
     );
   }
 
 
   return (
-    <MainLayout>
+    <>
       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-2">
         <h1 className="text-2xl font-semibold">課題一覧</h1>
         {canPerformActions && (
@@ -414,8 +411,7 @@ function AssignmentsPageContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-    </MainLayout>
+    </>
   );
 }
 
@@ -426,5 +422,3 @@ export default function AssignmentsPage() {
     </QueryClientProvider>
   );
 }
-
-
