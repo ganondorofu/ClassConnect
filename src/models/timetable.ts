@@ -12,8 +12,8 @@ export interface FixedTimeSlot {
   day: DayOfWeek;
   /** Period number (1-based index) */
   period: number;
-  /** ID of the subject assigned to this slot (references /subjects collection) */
-  subjectId: string | null; // Use null if no subject is assigned
+  /** ID of the subject assigned to this slot (references /subjects collection). `null` means "None/Empty", `undefined` means "Unset". */
+  subjectId: string | null | undefined;
   /** Optional room number or location */
   room?: string;
   /** Timestamp of the last update for this specific fixed slot */
