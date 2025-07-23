@@ -197,7 +197,7 @@ export const onTimetableSettingsUpdate = (
 export const getFixedTimetable = async (): Promise<FixedTimeSlot[]> => {
   try {
     const snapshot = await getDocs(fixedTimetableCollectionRef);
-    let slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: doc.data().subjectId === undefined ? null : doc.data().subjectId } as FixedTimeSlot));
+    let slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FixedTimeSlot));
     slots.sort((a, b) => AllDays.indexOf(a.day) - AllDays.indexOf(b.day) || a.period - b.period);
     return slots;
   } catch (error) {
@@ -214,17 +214,17 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[], userId: 
   const existingSlotsData = await getFixedTimetable();
   const existingSlotsMap: Map<string, FixedTimeSlot> = new Map(existingSlotsData.map(slot => [slot.id, slot]))
 
-  const beforeStates: Array<{ id: string, subjectId: string | null }> = [];
-  const afterStates: Array<{ id: string, subjectId: string | null }> = [];
+  const beforeStates: Array<{ id: string, subjectId: string | null | undefined }> = [];
+  const afterStates: Array<{ id: string, subjectId: string | null | undefined }> = [];
 
   slots.forEach(slot => {
     if (!slot.id || !slot.day || slot.period === undefined) return;
     const existingSlot = existingSlotsMap.get(slot.id);
-    const newSubjectId = slot.subjectId === undefined ? null : slot.subjectId;
-    if (!existingSlot || (existingSlot.subjectId ?? null) !== newSubjectId) {
+    const newSubjectId = slot.subjectId; // Can be string, null, or undefined
+    if (!existingSlot || existingSlot.subjectId !== newSubjectId) {
       batch.set(doc(fixedTimetableCollectionRef, slot.id), { ...slot, subjectId: newSubjectId, updatedAt: Timestamp.now() });
       changesMade = true;
-      beforeStates.push({ id: slot.id, subjectId: existingSlot?.subjectId ?? null });
+      beforeStates.push({ id: slot.id, subjectId: existingSlot?.subjectId });
       afterStates.push({ id: slot.id, subjectId: newSubjectId });
     }
   });
@@ -245,14 +245,14 @@ export const batchUpdateFixedTimetable = async (slots: FixedTimeSlot[], userId: 
 export const resetFixedTimetable = async (userId: string = 'system_reset_tt'): Promise<void> => {
   const batch = writeBatch(db);
   let resetCount = 0;
-  const beforeStates: Array<{ id: string, subjectId: string | null }> = [];
+  const beforeStates: Array<{ id: string, subjectId: string | null | undefined }> = [];
   try {
     const snapshot = await getDocs(fixedTimetableCollectionRef);
     snapshot.forEach((docSnap) => {
       const slot = docSnap.data() as FixedTimeSlot;
-      if ((slot.subjectId ?? null) !== null) {
+      if (slot.subjectId !== undefined) {
         beforeStates.push({ id: docSnap.id, subjectId: slot.subjectId });
-        batch.update(docSnap.ref, { subjectId: null, updatedAt: Timestamp.now() });
+        batch.update(docSnap.ref, { subjectId: undefined, updatedAt: Timestamp.now() });
         resetCount++;
       }
     });
@@ -269,7 +269,7 @@ export const resetFixedTimetable = async (userId: string = 'system_reset_tt'): P
 
 export const onFixedTimetableUpdate = (callback: (timetable: FixedTimeSlot[]) => void, onError?: (error: Error) => void): Unsubscribe => {
   const unsubscribe = onSnapshot(query(fixedTimetableCollectionRef), (snapshot) => {
-    let timetable = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: doc.data().subjectId === undefined ? null : doc.data().subjectId } as FixedTimeSlot));
+    let timetable = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FixedTimeSlot));
     timetable.sort((a, b) => AllDays.indexOf(a.day) - AllDays.indexOf(b.day) || a.period - b.period);
     callback(timetable);
   }, (error) => {
@@ -289,7 +289,7 @@ export const getDailyAnnouncements = async (date: string): Promise<DailyAnnounce
       return {
         id: docSnap.id,
         ...data,
-        subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
+        subjectIdOverride: data.subjectIdOverride,
         showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
         updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
         itemType: 'announcement',
@@ -313,7 +313,7 @@ export const upsertDailyAnnouncement = async (
   const docRef = doc(dailyAnnouncementsCollectionRef, docId);
   
   const textToPersist = announcementData.text?.trim() ?? '';
-  const subjectIdOverrideToPersist = announcementData.subjectIdOverride === undefined ? null : announcementData.subjectIdOverride;
+  const subjectIdOverrideToPersist = announcementData.subjectIdOverride;
   const showOnCalendarToPersist = announcementData.showOnCalendar === undefined ? false : announcementData.showOnCalendar;
   const isManuallyClearedToPersist = announcementData.isManuallyCleared === true;
 
@@ -327,7 +327,7 @@ export const upsertDailyAnnouncement = async (
       ...oldData,
       date: oldData.date,
       period: oldData.period,
-      subjectIdOverride: oldData.subjectIdOverride === undefined ? null : oldData.subjectIdOverride,
+      subjectIdOverride: oldData.subjectIdOverride,
       text: oldData.text ?? '',
       showOnCalendar: oldData.showOnCalendar === undefined ? false : oldData.showOnCalendar,
       updatedAt: parseFirestoreTimestamp(oldData.updatedAt) ?? new Date(),
@@ -369,7 +369,7 @@ export const upsertDailyAnnouncement = async (
 
   const hasChanged = !beforeState ||
                      beforeState.text !== dataToSet.text ||
-                     (beforeState.subjectIdOverride ?? null) !== (dataToSet.subjectIdOverride ?? null) ||
+                     (beforeState.subjectIdOverride) !== (dataToSet.subjectIdOverride) ||
                      (beforeState.showOnCalendar ?? false) !== (dataToSet.showOnCalendar ?? false) ||
                      (beforeState.isManuallyCleared ?? false) !== (dataToSet.isManuallyCleared ?? false);
 
@@ -394,7 +394,7 @@ export const onDailyAnnouncementsUpdate = (date: string, callback: (announcement
         return {
             id: docSnap.id,
             ...data,
-            subjectIdOverride: data.subjectIdOverride === undefined ? null : data.subjectIdOverride,
+            subjectIdOverride: data.subjectIdOverride,
             showOnCalendar: data.showOnCalendar === undefined ? false : data.showOnCalendar,
             updatedAt: parseFirestoreTimestamp(data.updatedAt) ?? new Date(),
             itemType: 'announcement',
@@ -1042,5 +1042,6 @@ export const queryFnGetDailyGeneralAnnouncement = (date: string) => () => getDai
 export const queryFnGetSchoolEvents = () => getSchoolEvents();
 export const queryFnGetCalendarDisplayableItemsForMonth = (year: number, month: number) => () => getCalendarDisplayableItemsForMonth(year, month);
 export const queryFnGetSubjects = () => getSubjectsFromSubjectController();
+
 
 

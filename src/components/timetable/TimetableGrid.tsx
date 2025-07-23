@@ -36,9 +36,10 @@ import {
   onDailyAnnouncementsUpdate,
   onSchoolEventsUpdate,
   upsertDailyAnnouncement,
+  batchUpdateFixedTimetable, // Import batch updater
 } from '@/controllers/timetableController';
 import { queryFnGetSubjects, onSubjectsUpdate } from '@/controllers/subjectController';
-import { AlertCircle, CalendarDays, Edit2, Info, WifiOff, User, FileText, ClipboardList, RotateCcw, Trash2, LucideIcon } from 'lucide-react';
+import { AlertCircle, CalendarDays, Edit2, Info, WifiOff, User, FileText, ClipboardList, RotateCcw, Trash2, LucideIcon, CheckSquare, Square } from 'lucide-react';
 import type { Timestamp, FirestoreError } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from "@/lib/utils";
@@ -63,15 +64,18 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     date: string,
     period: number,
     day: DayOfWeek,
-    baseFixedSubjectId: string | null,
+    baseFixedSubjectId: string | null | undefined, // Allow undefined for 'unset'
     announcement?: DailyAnnouncement
   } | null>(null);
 
   const [isSlotViewModalOpen, setIsSlotViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isBulkEditing, setIsBulkEditing] = useState(false);
+  const [selectedBulkSlots, setSelectedBulkSlots] = useState<Set<string>>(new Set());
+
 
   const [announcementText, setAnnouncementText] = useState('');
-  const [subjectIdOverrideModal, setSubjectIdOverrideModal] = useState<string | null>(null);
+  const [subjectIdOverrideModal, setSubjectIdOverrideModal] = useState<string | null | undefined>(undefined);
   const [showOnCalendarModal, setShowOnCalendarModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
@@ -303,18 +307,22 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     });
   }, [schoolEvents]);
 
-  const getSubjectById = (id: string | null): Subject | undefined => id ? subjectsMap.get(id) : undefined;
+  const getSubjectById = (id: string | null | undefined): Subject | undefined => id ? subjectsMap.get(id) : undefined;
 
   const canEditTimetableSlot = !!user || isAnonymous;
 
   const handleSlotClick = (date: string, period: number, day: DayOfWeek) => {
+    if (isBulkEditing) {
+        toggleBulkSlotSelection(`${date}_${period}`);
+        return;
+    }
     const fixedSlot = getFixedSlot(day, period);
     const announcement = getDailyAnnouncement(date, period);
     setSelectedSlot({
       date,
       period,
       day,
-      baseFixedSubjectId: fixedSlot?.subjectId ?? null,
+      baseFixedSubjectId: fixedSlot?.subjectId,
       announcement
     });
     setIsSlotViewModalOpen(true);
@@ -324,13 +332,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     if (!selectedSlot) return;
     setAnnouncementText(selectedSlot.announcement?.text ?? '');
      if (selectedSlot.announcement?.isManuallyCleared) {
-      setSubjectIdOverrideModal(selectedSlot.baseFixedSubjectId ?? null);
+      setSubjectIdOverrideModal(selectedSlot.baseFixedSubjectId);
     } else if (selectedSlot.announcement?.subjectIdOverride === "") {
         setSubjectIdOverrideModal(null);
-    } else if (selectedSlot.announcement?.subjectIdOverride !== undefined && selectedSlot.announcement.subjectIdOverride !== null) {
-        setSubjectIdOverrideModal(selectedSlot.announcement.subjectIdOverride);
     } else {
-        setSubjectIdOverrideModal(selectedSlot.baseFixedSubjectId ?? null);
+        setSubjectIdOverrideModal(selectedSlot.announcement?.subjectIdOverride ?? selectedSlot.baseFixedSubjectId);
     }
     setShowOnCalendarModal(selectedSlot.announcement?.showOnCalendar ?? false);
     setIsSlotViewModalOpen(false);
@@ -356,20 +362,23 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
     }
     setIsSaving(true);
 
-    const textToPersist = announcementText.trim();
+    const textToPersist = announcementText.trim() ?? '';
     const showOnCalendarToPersist = showOnCalendarModal;
 
-    let finalSubjectIdOverrideForDb: string | null;
+    let finalSubjectIdOverrideForDb: string | null | undefined;
     const modalSelection = subjectIdOverrideModal;
     const fixedSubjectForSlot = selectedSlot.baseFixedSubjectId;
 
-    if (modalSelection === null) {
+    if (modalSelection === null) { // "なし"
         finalSubjectIdOverrideForDb = ""; 
-    } else if (modalSelection === fixedSubjectForSlot) {
+    } else if (modalSelection === fixedSubjectForSlot) { // Same as fixed, so no override needed
         finalSubjectIdOverrideForDb = null; 
-    } else {
+    } else if (modalSelection === undefined) { // "未設定"
+        finalSubjectIdOverrideForDb = null;
+    } else { // A specific subject is chosen
         finalSubjectIdOverrideForDb = modalSelection; 
     }
+
 
     try {
       const userIdForLog = user ? user.uid : (isAnonymous ? 'anonymous_slot_edit' : 'unknown_user');
@@ -427,7 +436,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date: date,
         period: period,
         text: '',
-        subjectIdOverride: baseFixedSubjectId, 
+        subjectIdOverride: baseFixedSubjectId ?? null, 
         showOnCalendar: false,
         itemType: 'announcement',
         isManuallyCleared: true, 
@@ -467,7 +476,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         date,
         period,
         text: '', 
-        subjectIdOverride: baseFixedSubjectId, 
+        subjectIdOverride: baseFixedSubjectId ?? null, 
         showOnCalendar: false, 
         itemType: 'announcement',
         isManuallyCleared: false, 
@@ -485,6 +494,75 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         if ((error as FirestoreError).code === 'unavailable') setIsOffline(true);
     } finally {
         setIsSaving(false);
+    }
+  };
+
+  const toggleBulkSlotSelection = (slotId: string) => {
+    setSelectedBulkSlots(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(slotId)) {
+        newSet.delete(slotId);
+      } else {
+        newSet.add(slotId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleBulkUpdate = async (newSubjectId: string | null | undefined) => {
+    if (selectedBulkSlots.size === 0) {
+      toast({ title: '情報', description: '一括変更するコマが選択されていません。' });
+      return;
+    }
+    setIsSaving(true);
+    const userId = user ? user.uid : (isAnonymous ? 'anonymous_bulk_edit' : 'unknown');
+    
+    // Create an array of DailyAnnouncement objects to upsert
+    const announcementsToUpsert: Omit<DailyAnnouncement, 'id' | 'updatedAt'>[] = [];
+    
+    selectedBulkSlots.forEach(slotId => {
+      const [date, periodStr] = slotId.split('_');
+      const period = parseInt(periodStr, 10);
+      const dayOfWeek = dayCodeToDayOfWeekEnum(getDay(parseISO(date)));
+      const fixedSlot = getFixedSlot(dayOfWeek, period);
+      const announcement = getDailyAnnouncement(date, period);
+
+      let finalSubjectIdOverride: string | null | undefined;
+      if (newSubjectId === undefined) { // Unset
+          finalSubjectIdOverride = null;
+      } else if (newSubjectId === null) { // None
+          finalSubjectIdOverride = "";
+      } else {
+          finalSubjectIdOverride = newSubjectId;
+      }
+
+      announcementsToUpsert.push({
+        date,
+        period,
+        text: announcement?.text ?? '', // Preserve existing text
+        subjectIdOverride: finalSubjectIdOverride,
+        showOnCalendar: announcement?.showOnCalendar ?? false, // Preserve existing calendar state
+        itemType: 'announcement',
+        isManuallyCleared: newSubjectId === undefined, // Mark as cleared if "unset"
+      });
+    });
+
+    try {
+      // Since we don't have a batch upsert, we can create one in the controller
+      // For now, let's call the single upsert in a loop.
+      // This is not ideal, but works. A true batch operation is better.
+      const promises = announcementsToUpsert.map(ann => upsertDailyAnnouncement(ann, userId));
+      await Promise.all(promises);
+      
+      toast({ title: '成功', description: `${selectedBulkSlots.size}件のコマを一括更新しました。` });
+      setSelectedBulkSlots(new Set());
+      setIsBulkEditing(false); // Exit bulk edit mode on success
+      queryClientHook.invalidateQueries({ queryKey: ['dailyAnnouncements'] });
+      queryClientHook.invalidateQueries({ queryKey: ['calendarItems'] });
+    } catch (error) {
+      toast({ title: '一括更新エラー', description: `更新中にエラーが発生しました: ${error}`, variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -567,6 +645,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
   const periodNumbers = Array.from({ length: numberOfPeriods }, (_, i) => i + 1);
 
   return (
+   <div className="flex flex-col">
     <div className="w-full overflow-hidden rounded-lg shadow-lg border">
       <Card className="w-full border-0 shadow-none rounded-none">
         {isOffline && (
@@ -602,13 +681,13 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 ...displayDays.map(({ date, dayOfWeek, isConfigActive, isWeekend, hasEvents }) => {
                   const dateStr = format(date, 'yyyy-MM-dd');
                   const fixedSlot = getFixedSlot(dayOfWeek, period);
-                  const baseFixedSubjectId = fixedSlot?.subjectId ?? null;
+                  const baseFixedSubjectId = fixedSlot?.subjectId; // undefined if no slot
                   const announcement = getDailyAnnouncement(dateStr, period);
                   const assignmentsForThisSlot = getAssignmentsForPeriodCell(date, period); 
 
-                  let displaySubjectId: string | null = baseFixedSubjectId;
+                  let displaySubjectId: string | null | undefined = baseFixedSubjectId;
                   if (announcement && !announcement.isManuallyCleared) {
-                      if (announcement.subjectIdOverride === "") { 
+                      if (announcement.subjectIdOverride === "") { // "なし"
                           displaySubjectId = null;
                       } else if (announcement.subjectIdOverride !== null && announcement.subjectIdOverride !== undefined) {
                           displaySubjectId = announcement.subjectIdOverride; 
@@ -628,12 +707,14 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   const isToday = isSameDay(date, currentDate);
                   const canEditThisSlot = (user || isAnonymous);
                   const cellIsInteractive = isConfigActive || hasEvents || isWeekend;
+                  const slotId = `${dateStr}_${period}`;
 
 
                   return (
                     <div key={`${dateStr}-${period}-cell`} className={cn(
                         DAY_CELL_WIDTH, 
                         "p-1 sm:p-2 border-r relative flex flex-col justify-start bg-card min-h-[80px] sm:min-h-[100px] md:min-h-[110px] gap-0.5 overflow-hidden",
+                         isBulkEditing ? 'cursor-pointer' : '',
                         isToday && "bg-primary/5 dark:bg-primary/10",
                         (isWeekend) && !isConfigActive && !hasEvents && "bg-muted/30 dark:bg-muted/20",
                         !isConfigActive && !(isWeekend) && !hasEvents && "bg-muted/10 dark:bg-muted/5",
@@ -646,11 +727,20 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                       tabIndex={canEditThisSlot && cellIsInteractive ? 0 : undefined}
                       onKeyDown={canEditThisSlot && cellIsInteractive ? (e) => { if (e.key === 'Enter' || e.key === ' ') handleSlotClick(dateStr, period, dayOfWeek); } : undefined}
                       >
+                       {isBulkEditing && canEditThisSlot && cellIsInteractive && (
+                        <div className="absolute top-1 right-1 z-10">
+                            <Checkbox
+                            checked={selectedBulkSlots.has(slotId)}
+                            onCheckedChange={() => toggleBulkSlotSelection(slotId)}
+                            aria-label={`Select slot for ${dateStr} period ${period}`}
+                            />
+                        </div>
+                        )}
                       {cellIsInteractive ? (
                         <div className="flex flex-col h-full min-w-0 gap-0.5"> 
                           <div className="flex-shrink-0 space-y-0.5 min-w-0"> 
-                            <div className={cn("text-sm truncate min-w-0", displaySubjectName && isToday ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend ? '未設定' : '')}>
-                              {displaySubjectName ?? ((isConfigActive || isWeekend) ? '未設定' : '')}
+                            <div className={cn("text-sm truncate min-w-0", displaySubjectName && isToday ? "font-bold" : "font-medium")} title={displaySubjectName ?? (isConfigActive || isWeekend ? (displaySubjectId === null ? 'なし' : '未設定') : '')}>
+                              {displaySubjectName ?? ((isConfigActive || isWeekend) ? (displaySubjectId === null ? 'なし' : '未設定') : '')}
                               {subjectChangedFromFixed && <span className="text-xs ml-1 text-destructive">(変更)</span>}
                             </div>
                             {displayTeacherName && (
@@ -700,15 +790,15 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                               )}
                             </div>
                           
-                          {canEditThisSlot && (
+                          {canEditThisSlot && !isBulkEditing && (
                             <div className="mt-auto flex-shrink-0">
                               <Button variant="ghost" size="sm" className="h-6 px-1 text-xs absolute bottom-1 right-1 text-muted-foreground hover:text-primary" onClick={(e) => { e.stopPropagation(); handleSlotClick(dateStr, period, dayOfWeek); }} aria-label={`${dateStr} ${period}限目の連絡・変更を編集`} disabled={isOffline}>
                                 <Edit2 className="w-3 h-3" />
                               </Button>
                             </div>
                           )}
-                           {!displaySubjectName && !hasMeaningfulAnnouncementText && !hasAnyPeriodSpecificAssignments && (isConfigActive || isWeekend || hasEvents) && (
-                             <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">{hasEvents ? '行事日' : (isWeekend && !isConfigActive) ? '休日' : ''}</div>
+                           {!displaySubjectName && displaySubjectId !== null && !hasMeaningfulAnnouncementText && !hasAnyPeriodSpecificAssignments && (isConfigActive || isWeekend || hasEvents) && (
+                             <div className="text-xs text-muted-foreground italic h-full flex items-center justify-center">{hasEvents ? '行事日' : (isWeekend && !isConfigActive) ? '休日' : '未設定'}</div>
                           )}
                         </div>
                       ) : (
@@ -723,6 +813,46 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
           )}
         </CardContent>
       </Card>
+      </div>
+
+     {/* Bulk Edit Panel */}
+    {canEditTimetableSlot && (
+    <div className="mt-4 flex justify-end">
+        <Button onClick={() => {
+            setIsBulkEditing(!isBulkEditing);
+            setSelectedBulkSlots(new Set()); // Clear selection when toggling
+        }}>
+        {isBulkEditing ? <X className="mr-2 h-4 w-4" /> : <CheckSquare className="mr-2 h-4 w-4" />}
+        {isBulkEditing ? '一括編集を終了' : '一括編集を開始'}
+        </Button>
+    </div>
+    )}
+     <div className={`sticky bottom-0 z-20 transition-all duration-300 ease-in-out ${isBulkEditing ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
+        <Card className="w-full mt-4 border-t-4 border-primary shadow-2xl rounded-t-lg rounded-b-none">
+          <CardContent className="p-3 flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex-shrink-0">
+                <p className="font-semibold text-sm">一括編集パネル</p>
+                <p className="text-xs text-muted-foreground">{selectedBulkSlots.size}件のコマを選択中</p>
+            </div>
+            <div className="flex-grow w-full sm:w-auto">
+              <SubjectSelector
+                subjects={subjects}
+                selectedSubjectId={undefined} // No pre-selection
+                onValueChange={(subjectId) => handleBulkUpdate(subjectId)}
+                placeholder="選択したコマの科目を変更..."
+                disabled={isSaving || selectedBulkSlots.size === 0}
+                includeUnsetOption={true}
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setSelectedBulkSlots(new Set())} disabled={isSaving || selectedBulkSlots.size === 0}>
+                選択をクリア
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+       {/* Spacer to prevent bulk edit panel from overlapping content */}
+      <div className={cn("h-0 transition-all duration-300", isBulkEditing ? "h-24" : "h-0")} />
 
       {/* View Slot Modal */}
       <Dialog open={isSlotViewModalOpen} onOpenChange={(open) => {
@@ -746,11 +876,11 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                   <div>
                     {(() => {
                       const baseSubjectIdInModal = selectedSlot.baseFixedSubjectId;
-                      let currentDisplaySubjectIdInModal = baseSubjectIdInModal;
+                      let currentDisplaySubjectIdInModal: string | null | undefined = baseSubjectIdInModal;
 
                       if (selectedSlot.announcement && !selectedSlot.announcement.isManuallyCleared) {
                         if (selectedSlot.announcement.subjectIdOverride === "") { 
-                          currentDisplaySubjectIdInModal = null;
+                          currentDisplaySubjectIdInModal = null; // なし
                         } else if (selectedSlot.announcement.subjectIdOverride !== undefined && selectedSlot.announcement.subjectIdOverride !== null) {
                           currentDisplaySubjectIdInModal = selectedSlot.announcement.subjectIdOverride;
                         }
@@ -765,7 +895,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                         <>
                           <h4 className="font-semibold text-sm mb-1">現在の科目:</h4>
                           <p className="text-sm">
-                            {subjectForDisplayInModal?.name ?? '未設定'}
+                            {subjectForDisplayInModal?.name ?? (currentDisplaySubjectIdInModal === null ? 'なし' : '未設定')}
                             {subjectIsChangedInModal && <span className="text-xs ml-1 text-destructive">(変更)</span>}
                           </p>
                           {subjectForDisplayInModal?.teacherName && (
@@ -828,7 +958,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
         if (!open) {
             setSelectedSlot(null);
             setAnnouncementText('');
-            setSubjectIdOverrideModal(null);
+            setSubjectIdOverrideModal(undefined);
             setShowOnCalendarModal(false);
         }
         }}>
@@ -866,9 +996,10 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                     subjects={subjects}
                     selectedSubjectId={subjectIdOverrideModal}
                     onValueChange={setSubjectIdOverrideModal}
-                    placeholder={`変更なし (${getSubjectById(selectedSlot?.baseFixedSubjectId ?? null)?.name ?? '未設定'})`}
+                    placeholder={`変更なし (${getSubjectById(selectedSlot?.baseFixedSubjectId ?? undefined)?.name ?? '未設定'})`}
                     disabled={isSaving || isLoadingSubjects || !canEditTimetableSlot}
                     className="col-span-3"
+                    includeUnsetOption={true}
                     />
                 </div>
                 <div className="grid grid-cols-4 items-start gap-x-4 gap-y-1">
@@ -918,7 +1049,7 @@ export function TimetableGrid({ currentDate }: TimetableGridProps) {
                 </AlertDialog>
                  <Button variant="outline" size="sm" onClick={handleRevertToFixed} className="w-full sm:w-auto"
                   disabled={isSaving || isOffline || !canEditTimetableSlot || (
-                    (subjectIdOverrideModal === (selectedSlot?.baseFixedSubjectId ?? null)) && 
+                    (subjectIdOverrideModal === (selectedSlot?.baseFixedSubjectId ?? undefined)) && 
                     !announcementText && 
                     !showOnCalendarModal && 
                     (!selectedSlot?.announcement || ( 
