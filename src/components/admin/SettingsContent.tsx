@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -365,7 +366,7 @@ export default function SettingsContent() {
                             subjects={subjects}
                             selectedSubjectId={slot?.subjectId ?? null}
                             onValueChange={(newSubId) => handleSubjectChange(day, period, newSubId)}
-                            placeholder="科目未設定"
+                            placeholder="なし"
                             disabled={fixedTimetableMutation.isPending || isOffline || isLoadingSubjects}
                             className="w-full text-xs sm:text-sm"
                           />
@@ -410,7 +411,7 @@ export default function SettingsContent() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>時間割を初期化しますか？</AlertDialogTitle>
                   <AlertDialogDescription>
-                    すべての固定時間割の科目が「未設定」に戻ります。将来の時間割も未設定で上書きされます。この操作は元に戻せません。
+                    すべての固定時間割の科目が「なし」に戻ります。将来の時間割も未設定で上書きされます。この操作は元に戻せません。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

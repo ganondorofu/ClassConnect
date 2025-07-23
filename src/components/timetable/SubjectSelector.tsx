@@ -20,7 +20,7 @@ export function SubjectSelector({
   subjects,
   selectedSubjectId,
   onValueChange,
-  placeholder = "科目を選択", 
+  placeholder = "なし", 
   disabled = false,
   className,
 }: SubjectSelectorProps) {
@@ -42,7 +42,7 @@ export function SubjectSelector({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={SUBJECT_SELECTOR_NONE_VALUE}>
-          <span className="text-muted-foreground">科目未設定 (なし)</span>
+          <span className="text-muted-foreground">なし</span>
         </SelectItem>
         {subjects.map((subject) => (
           <SelectItem key={subject.id} value={subject.id!}>
