@@ -68,9 +68,10 @@ export default function TerminalPage() {
         setDone(true);
         return;
       }
-      setLines((prev) => [...prev, script[i]]);
+      const item = script[i];
+      setLines((prev) => [...prev, item]);
       i++;
-      const delay = script[i - 1].text === '' ? 100 : Math.random() * 60 + 30;
+      const delay = item.text === '' ? 100 : Math.random() * 60 + 30;
       setTimeout(next, delay);
     }
     const timeout = setTimeout(next, 400);
