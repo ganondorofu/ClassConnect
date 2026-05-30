@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type LogLine = {
   text: string;
@@ -8,6 +8,7 @@ type LogLine = {
 };
 
 type Phase = 'classconnect' | 'bsod' | 'terminal';
+type GameState = 'inactive' | 'playing' | 'won' | 'lost';
 
 function detectOS(): string {
   const ua = navigator.userAgent;
@@ -54,6 +55,8 @@ function detectBrowser(): string {
   return 'UNKNOWN';
 }
 
+const MAX_ATTEMPTS = 7;
+
 export default function TerminalPage() {
   const [phase, setPhase] = useState<Phase>('classconnect');
   const [glitching, setGlitching] = useState(false);
@@ -62,6 +65,14 @@ export default function TerminalPage() {
   const [currentText, setCurrentText] = useState('');
   const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
+
+  // Mini-game state
+  const [gameState, setGameState] = useState<GameState>('inactive');
+  const [gameTarget, setGameTarget] = useState(0);
+  const [gameInput, setGameInput] = useState('');
+  const [gameAttempts, setGameAttempts] = useState(0);
+  const [gameHistory, setGameHistory] = useState<{ guess: number; hint: string; color: string }[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // ClassConnect fake loading → BSOD transition
   useEffect(() => {
@@ -95,6 +106,7 @@ export default function TerminalPage() {
     setCurrentText('');
     setCurrentColor('#00ff41');
     setDone(false);
+    setGameState('inactive');
 
     const deviceInfo = {
       os: detectOS(),
@@ -112,9 +124,9 @@ export default function TerminalPage() {
     const script: LogLine[] = [
       { text: '> INITIATING DEEP SCAN...' },
       { text: '' },
-      { text: '> [SYS] QR_BREACH_DETECTED' },
-      { text: '> [SYS] Source: Physical fabric (T-shirt)' },
-      { text: '> [SYS] Vector: Optical QR decode via camera sensor' },
+      { text: '> [SYS] UNAUTHORIZED_ACCESS_DETECTED' },
+      { text: '> [SYS] Origin: UNKNOWN' },
+      { text: '> [SYS] Threat level: ELEVATED' },
       { text: '' },
       { text: '> Scanning target device...' },
       { text: '' },
@@ -131,17 +143,16 @@ export default function TerminalPage() {
       { text: '' },
       { text: '> Scan complete.' },
       { text: '' },
-      { text: '> [WARNING] DEVICE_COMPROMISED_BY_TSHIRT', color: '#ffff00' },
-      { text: '> [WARNING] All data collected via 100% organic fiber interface', color: '#ffff00' },
+      { text: '> [WARNING] DEVICE_COMPROMISED', color: '#ffff00' },
+      { text: '> [WARNING] All data has been uploaded to our servers', color: '#ffff00' },
       { text: '' },
       { text: '> Establishing uplink...' },
       { text: '> Routing through class 2-X mainframe...' },
       { text: '> Authenticating... ACCESS GRANTED', color: '#00ff41' },
       { text: '' },
-      { text: '> You have been hacked by a T-shirt.', color: '#ff4444' },
+      { text: '> You have been hacked.', color: '#ff4444' },
       { text: '' },
       { text: '> Have a nice day.' },
-      { text: '> _' },
     ];
 
     let lineIdx = 0;
@@ -187,7 +198,55 @@ export default function TerminalPage() {
     };
   }, [phase]);
 
-  // Phase 1: Fake ClassConnect loading screen (matches real app design)
+  // Start mini-game when scan is done
+  useEffect(() => {
+    if (!done) return;
+    const target = Math.floor(Math.random() * 100) + 1;
+    setGameTarget(target);
+    setGameAttempts(0);
+    setGameHistory([]);
+    setGameInput('');
+    setGameState('playing');
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, [done]);
+
+  function handleGuess(e: React.FormEvent) {
+    e.preventDefault();
+    const n = parseInt(gameInput, 10);
+    if (isNaN(n) || n < 1 || n > 100) return;
+
+    const newAttempts = gameAttempts + 1;
+    setGameAttempts(newAttempts);
+    setGameInput('');
+
+    if (n === gameTarget) {
+      setGameHistory(prev => [...prev, { guess: n, hint: 'CORRECT', color: '#00ff41' }]);
+      setGameState('won');
+    } else {
+      const remaining = MAX_ATTEMPTS - newAttempts;
+      const hint = n < gameTarget ? 'TOO LOW' : 'TOO HIGH';
+      const color = remaining <= 2 ? '#ff4444' : '#ffff00';
+      if (newAttempts >= MAX_ATTEMPTS) {
+        setGameHistory(prev => [...prev, { guess: n, hint: `${hint} — GAME OVER`, color: '#ff4444' }]);
+        setGameState('lost');
+      } else {
+        setGameHistory(prev => [...prev, { guess: n, hint: `${hint}  (${remaining} attempts left)`, color }]);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
+    }
+  }
+
+  function restartGame() {
+    const target = Math.floor(Math.random() * 100) + 1;
+    setGameTarget(target);
+    setGameAttempts(0);
+    setGameHistory([]);
+    setGameInput('');
+    setGameState('playing');
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }
+
+  // Phase 1: Fake ClassConnect loading screen
   if (phase === 'classconnect') {
     return (
       <>
@@ -199,7 +258,6 @@ export default function TerminalPage() {
           filter: glitching ? 'hue-rotate(180deg) saturate(3) contrast(2)' : 'none',
           transition: glitching ? 'none' : 'filter 0.15s',
         }}>
-          {/* Header */}
           <header style={{
             position: 'sticky',
             top: 0,
@@ -241,15 +299,9 @@ export default function TerminalPage() {
             </div>
           </header>
 
-          {/* Main content skeleton */}
           <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem 1rem' }}>
-            {/* Skeleton rows */}
             {[...Array(5)].map((_, i) => (
-              <div key={i} style={{
-                display: 'flex',
-                gap: '8px',
-                marginBottom: '8px',
-              }}>
+              <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
                 {[...Array(6)].map((__, j) => (
                   <div key={j} style={{
                     flex: 1,
@@ -264,7 +316,6 @@ export default function TerminalPage() {
             ))}
           </main>
 
-          {/* InitialChoice modal overlay */}
           <div style={{
             position: 'fixed',
             inset: 0,
@@ -294,38 +345,18 @@ export default function TerminalPage() {
               </div>
               <div style={{ padding: '0 1.5rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <button type="button" style={{
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  background: '#3498db',
-                  color: '#ffffff',
-                  fontFamily: 'inherit',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
+                  width: '100%', padding: '12px', borderRadius: '8px',
+                  background: '#3498db', color: '#ffffff', fontFamily: 'inherit',
+                  fontSize: '15px', fontWeight: 600, border: 'none', cursor: 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 }}>
                   <span>&#x2192;</span> 管理者としてログイン
                 </button>
                 <button type="button" style={{
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  background: '#f1f5f9',
-                  color: '#0f172a',
-                  fontFamily: 'inherit',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
+                  width: '100%', padding: '12px', borderRadius: '8px',
+                  background: '#f1f5f9', color: '#0f172a', fontFamily: 'inherit',
+                  fontSize: '15px', fontWeight: 600, border: 'none', cursor: 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 }}>
                   <span>&#x1F464;</span> ログインなしで利用する
                 </button>
@@ -337,10 +368,7 @@ export default function TerminalPage() {
         <style>{`
           * { box-sizing: border-box; }
           body { margin: 0; padding: 0; background: #ffffff; }
-          @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-          }
+          @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         `}</style>
       </>
     );
@@ -351,30 +379,18 @@ export default function TerminalPage() {
     return (
       <>
         <div style={{
-          position: 'fixed',
-          inset: 0,
+          position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10,
           background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
-          pointerEvents: 'none',
-          zIndex: 10,
         }} />
         <div style={{
-          position: 'fixed',
-          inset: 0,
+          position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9,
           background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%)',
-          pointerEvents: 'none',
-          zIndex: 9,
         }} />
-
         <main style={{
-          minHeight: '100vh',
-          background: '#050505',
-          color: '#00ff41',
+          minHeight: '100vh', background: '#050505', color: '#00ff41',
           fontFamily: '"Courier New", Courier, monospace',
-          display: 'grid',
-          placeItems: 'center',
-          padding: 'clamp(1.25rem, 5vw, 3rem)',
-          position: 'relative',
-          zIndex: 1,
+          display: 'grid', placeItems: 'center',
+          padding: 'clamp(1.25rem, 5vw, 3rem)', position: 'relative', zIndex: 1,
         }}>
           <section style={{
             width: 'min(100%, 720px)',
@@ -384,29 +400,13 @@ export default function TerminalPage() {
             background: 'rgba(0, 20, 8, 0.72)',
             textShadow: '0 0 6px rgba(0,255,65,0.75)',
           }}>
-            <p style={{
-              color: '#ff4444',
-              fontSize: 'clamp(13px, 2.4vw, 16px)',
-              letterSpacing: '0.08em',
-              marginBottom: '1rem',
-            }}>
+            <p style={{ color: '#ff4444', fontSize: 'clamp(13px, 2.4vw, 16px)', letterSpacing: '0.08em', marginBottom: '1rem' }}>
               HTTP 490 / TOO FOUND
             </p>
-            <h1 style={{
-              color: '#ffff66',
-              fontSize: 'clamp(2rem, 9vw, 4.5rem)',
-              lineHeight: 0.95,
-              margin: '0 0 1.25rem',
-              textTransform: 'uppercase',
-            }}>
+            <h1 style={{ color: '#ffff66', fontSize: 'clamp(2rem, 9vw, 4.5rem)', lineHeight: 0.95, margin: '0 0 1.25rem', textTransform: 'uppercase' }}>
               ClassConnect is too well known.
             </h1>
-            <p style={{
-              fontSize: 'clamp(14px, 2.7vw, 18px)',
-              lineHeight: 1.7,
-              marginBottom: '2rem',
-              maxWidth: '56ch',
-            }}>
+            <p style={{ fontSize: 'clamp(14px, 2.7vw, 18px)', lineHeight: 1.7, marginBottom: '2rem', maxWidth: '56ch' }}>
               The requested system cannot be hidden because too many people have
               already found it. Opposite-of-not-found condition confirmed.
             </p>
@@ -414,23 +414,16 @@ export default function TerminalPage() {
               type="button"
               onClick={() => setPhase('terminal')}
               style={{
-                appearance: 'none',
-                border: '1px solid #00ff41',
-                background: 'transparent',
-                color: '#00ff41',
-                font: 'inherit',
-                fontSize: 'clamp(14px, 2.5vw, 16px)',
-                padding: '0.85rem 1.2rem',
-                cursor: 'pointer',
-                textShadow: '0 0 6px rgba(0,255,65,0.8)',
-                boxShadow: '0 0 14px rgba(0,255,65,0.2)',
+                appearance: 'none', border: '1px solid #00ff41', background: 'transparent',
+                color: '#00ff41', font: 'inherit', fontSize: 'clamp(14px, 2.5vw, 16px)',
+                padding: '0.85rem 1.2rem', cursor: 'pointer',
+                textShadow: '0 0 6px rgba(0,255,65,0.8)', boxShadow: '0 0 14px rgba(0,255,65,0.2)',
               }}
             >
               CONTINUE
             </button>
           </section>
         </main>
-
         <style>{`
           * { box-sizing: border-box; }
           body { margin: 0; padding: 0; background: #050505; }
@@ -441,48 +434,34 @@ export default function TerminalPage() {
     );
   }
 
-  // Phase 3: Terminal scan
+  // Phase 3: Terminal scan + mini-game
+  const font = '"Courier New", Courier, monospace';
+  const fontSize = 'clamp(11px, 2.2vw, 15px)';
+
   return (
     <>
       <div style={{
-        position: 'fixed',
-        inset: 0,
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10,
         background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
-        pointerEvents: 'none',
-        zIndex: 10,
       }} />
       <div style={{
-        position: 'fixed',
-        inset: 0,
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9,
         background: 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%)',
-        pointerEvents: 'none',
-        zIndex: 9,
       }} />
 
       <main style={{
-        minHeight: '100vh',
-        background: '#050505',
-        padding: 'clamp(1rem, 5vw, 3rem)',
-        boxSizing: 'border-box',
-        position: 'relative',
-        zIndex: 1,
+        minHeight: '100vh', background: '#050505',
+        padding: 'clamp(1rem, 5vw, 3rem)', boxSizing: 'border-box',
+        position: 'relative', zIndex: 1,
       }}>
+        {/* Scan output */}
         <pre style={{
-          color: '#00ff41',
-          fontFamily: '"Courier New", Courier, monospace',
-          fontSize: 'clamp(11px, 2.2vw, 15px)',
-          lineHeight: '1.9',
-          margin: 0,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          textShadow: '0 0 6px rgba(0,255,65,0.8)',
-          maxWidth: '800px',
+          color: '#00ff41', fontFamily: font, fontSize,
+          lineHeight: '1.9', margin: 0, whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word', textShadow: '0 0 6px rgba(0,255,65,0.8)', maxWidth: '800px',
         }}>
           {lines.map((line, idx) => (
-            <span
-              key={idx}
-              style={{ color: line.color ?? '#00ff41', display: 'block' }}
-            >
+            <span key={idx} style={{ color: line.color ?? '#00ff41', display: 'block' }}>
               {line.text}
             </span>
           ))}
@@ -490,26 +469,118 @@ export default function TerminalPage() {
             <span style={{ color: currentColor, display: 'block' }}>
               {currentText}
               <span style={{
-                display: 'inline-block',
-                width: '0.55em',
-                height: '1.1em',
-                background: currentColor,
-                animation: 'blink 0.8s step-end infinite',
-                boxShadow: `0 0 6px ${currentColor}`,
-                verticalAlign: 'text-bottom',
+                display: 'inline-block', width: '0.55em', height: '1.1em',
+                background: currentColor, animation: 'blink 0.8s step-end infinite',
+                boxShadow: `0 0 6px ${currentColor}`, verticalAlign: 'text-bottom',
               }} />
             </span>
           )}
         </pre>
+
+        {/* Mini-game */}
+        {gameState !== 'inactive' && (
+          <div style={{
+            marginTop: '2rem', maxWidth: '800px',
+            fontFamily: font, fontSize,
+            color: '#00ff41', textShadow: '0 0 6px rgba(0,255,65,0.8)',
+            lineHeight: '1.9',
+          }}>
+            <span style={{ color: '#ff4444', display: 'block' }}>{'> ─────────────────────────────────'}</span>
+            <span style={{ color: '#ffff00', display: 'block' }}>{'> [CHALLENGE] ENCRYPTION_LOCK_ACTIVE'}</span>
+            <span style={{ display: 'block' }}>{'> Crack the key to elevate your access.'}</span>
+            <span style={{ display: 'block' }}>{`> Guess the number between 1 and 100. (${MAX_ATTEMPTS} attempts)`}</span>
+            <span style={{ display: 'block' }}>{'> ─────────────────────────────────'}</span>
+
+            {gameHistory.map((h, i) => (
+              <span key={i} style={{ color: h.color, display: 'block' }}>
+                {`> [${String(h.guess).padStart(3, ' ')}] → ${h.hint}`}
+              </span>
+            ))}
+
+            {gameState === 'playing' && (
+              <form onSubmit={handleGuess} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <span>{'> ENTER KEY: '}</span>
+                <input
+                  ref={inputRef}
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={gameInput}
+                  onChange={e => setGameInput(e.target.value)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid #00ff41',
+                    color: '#00ff41',
+                    fontFamily: font,
+                    fontSize,
+                    width: '5ch',
+                    outline: 'none',
+                    textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                    MozAppearance: 'textfield',
+                  }}
+                />
+                <button type="submit" style={{
+                  background: 'transparent', border: '1px solid #00ff41',
+                  color: '#00ff41', fontFamily: font, fontSize,
+                  padding: '0.1rem 0.6rem', cursor: 'pointer',
+                  textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                }}>
+                  SUBMIT
+                </button>
+              </form>
+            )}
+
+            {gameState === 'won' && (
+              <>
+                <span style={{ color: '#00ff41', display: 'block', marginTop: '0.5rem' }}>
+                  {`> ENCRYPTION CRACKED in ${gameAttempts} attempt${gameAttempts === 1 ? '' : 's'}. Access level elevated.`}
+                </span>
+                <button
+                  type="button"
+                  onClick={restartGame}
+                  style={{
+                    marginTop: '1rem', background: 'transparent',
+                    border: '1px solid #00ff41', color: '#00ff41',
+                    fontFamily: font, fontSize, padding: '0.4rem 1rem',
+                    cursor: 'pointer', textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                  }}
+                >
+                  PLAY AGAIN
+                </button>
+              </>
+            )}
+
+            {gameState === 'lost' && (
+              <>
+                <span style={{ color: '#ff4444', display: 'block', marginTop: '0.5rem' }}>
+                  {`> ACCESS DENIED. The key was ${gameTarget}.`}
+                </span>
+                <button
+                  type="button"
+                  onClick={restartGame}
+                  style={{
+                    marginTop: '1rem', background: 'transparent',
+                    border: '1px solid #ff4444', color: '#ff4444',
+                    fontFamily: font, fontSize, padding: '0.4rem 1rem',
+                    cursor: 'pointer', textShadow: '0 0 6px rgba(255,68,68,0.8)',
+                  }}
+                >
+                  RETRY
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </main>
 
       <style>{`
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; background: #050505; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        button:hover { background: rgba(0, 255, 65, 0.1) !important; }
       `}</style>
     </>
   );
