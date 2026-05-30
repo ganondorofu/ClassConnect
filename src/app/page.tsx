@@ -9,6 +9,8 @@ type LogLine = {
 
 export default function TerminalPage() {
   const [lines, setLines] = useState<LogLine[]>([]);
+  const [currentText, setCurrentText] = useState('');
+  const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -62,72 +64,115 @@ export default function TerminalPage() {
       { text: '> _' },
     ];
 
-    let i = 0;
-    function next() {
-      if (i >= script.length) {
+    let lineIdx = 0;
+    let charIdx = 0;
+
+    function tick() {
+      if (lineIdx >= script.length) {
         setDone(true);
         return;
       }
-      const item = script[i];
-      setLines((prev) => [...prev, item]);
-      i++;
-      const delay = item.text === '' ? 100 : Math.random() * 60 + 30;
-      setTimeout(next, delay);
+
+      const line = script[lineIdx];
+
+      if (line.text === '') {
+        setLines(prev => [...prev, { text: '', color: undefined }]);
+        setCurrentText('');
+        lineIdx++;
+        setTimeout(tick, 200);
+        return;
+      }
+
+      if (charIdx < line.text.length) {
+        const ch = line.text[charIdx];
+        charIdx++;
+        setCurrentText(prev => prev + ch);
+        setTimeout(tick, 35 + Math.random() * 45);
+      } else {
+        const completedText = line.text;
+        const completedColor = line.color;
+        setLines(prev => [...prev, { text: completedText, color: completedColor }]);
+        setCurrentText('');
+        setCurrentColor(script[lineIdx + 1]?.color ?? '#00ff41');
+        lineIdx++;
+        charIdx = 0;
+        setTimeout(tick, 250 + Math.random() * 350);
+      }
     }
-    const timeout = setTimeout(next, 400);
+
+    const timeout = setTimeout(tick, 600);
     return () => clearTimeout(timeout);
   }, []);
 
   return (
-    <div
-      style={{
+    <>
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
+        pointerEvents: 'none',
+        zIndex: 10,
+      }} />
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%)',
+        pointerEvents: 'none',
+        zIndex: 9,
+      }} />
+
+      <main style={{
         minHeight: '100vh',
-        background: '#0a0a0a',
-        padding: '2rem',
+        background: '#050505',
+        padding: 'clamp(1rem, 5vw, 3rem)',
         boxSizing: 'border-box',
-        overflowX: 'hidden',
-      }}
-    >
-      <pre
-        style={{
+        position: 'relative',
+        zIndex: 1,
+      }}>
+        <pre style={{
           color: '#00ff41',
           fontFamily: '"Courier New", Courier, monospace',
-          fontSize: 'clamp(11px, 2vw, 14px)',
-          lineHeight: '1.6',
+          fontSize: 'clamp(11px, 2.2vw, 15px)',
+          lineHeight: '1.9',
           margin: 0,
           whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-          textShadow: '0 0 8px #00ff41',
-        }}
-      >
-        {lines.map((line, idx) => (
-          <span
-            key={idx}
-            style={{ color: line.color ?? '#00ff41', display: 'block' }}
-          >
-            {line.text}
-          </span>
-        ))}
-        {!done && (
-          <span
-            style={{
-              display: 'inline-block',
-              width: '0.6em',
-              height: '1em',
-              background: '#00ff41',
-              animation: 'blink 1s step-end infinite',
-              boxShadow: '0 0 8px #00ff41',
-              verticalAlign: 'text-bottom',
-            }}
-          />
-        )}
-      </pre>
+          wordBreak: 'break-word',
+          textShadow: '0 0 6px rgba(0,255,65,0.8)',
+          maxWidth: '800px',
+        }}>
+          {lines.map((line, idx) => (
+            <span
+              key={idx}
+              style={{ color: line.color ?? '#00ff41', display: 'block' }}
+            >
+              {line.text}
+            </span>
+          ))}
+          {!done && (
+            <span style={{ color: currentColor, display: 'block' }}>
+              {currentText}
+              <span style={{
+                display: 'inline-block',
+                width: '0.55em',
+                height: '1.1em',
+                background: currentColor,
+                animation: 'blink 0.8s step-end infinite',
+                boxShadow: `0 0 6px ${currentColor}`,
+                verticalAlign: 'text-bottom',
+              }} />
+            </span>
+          )}
+        </pre>
+      </main>
+
       <style>{`
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
         }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: #050505; }
       `}</style>
-    </div>
+    </>
   );
 }
