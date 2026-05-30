@@ -8,12 +8,22 @@ type LogLine = {
 };
 
 export default function TerminalPage() {
+  const [started, setStarted] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [currentText, setCurrentText] = useState('');
   const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
 
   useEffect(() => {
+    if (!started) {
+      return;
+    }
+
+    setLines([]);
+    setCurrentText('');
+    setCurrentColor('#00ff41');
+    setDone(false);
+
     const deviceInfo = {
       os: navigator.platform || 'UNKNOWN',
       browser: navigator.userAgent.split(' ').pop() || 'UNKNOWN',
@@ -66,8 +76,14 @@ export default function TerminalPage() {
 
     let lineIdx = 0;
     let charIdx = 0;
+    let timeout: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
     function tick() {
+      if (cancelled) {
+        return;
+      }
+
       if (lineIdx >= script.length) {
         setDone(true);
         return;
@@ -79,7 +95,7 @@ export default function TerminalPage() {
         setLines(prev => [...prev, { text: '', color: undefined }]);
         setCurrentText('');
         lineIdx++;
-        setTimeout(tick, 200);
+        timeout = setTimeout(tick, 200);
         return;
       }
 
@@ -87,7 +103,7 @@ export default function TerminalPage() {
         const ch = line.text[charIdx];
         charIdx++;
         setCurrentText(prev => prev + ch);
-        setTimeout(tick, 35 + Math.random() * 45);
+        timeout = setTimeout(tick, 35 + Math.random() * 45);
       } else {
         const completedText = line.text;
         const completedColor = line.color;
@@ -96,13 +112,116 @@ export default function TerminalPage() {
         setCurrentColor(script[lineIdx + 1]?.color ?? '#00ff41');
         lineIdx++;
         charIdx = 0;
-        setTimeout(tick, 250 + Math.random() * 350);
+        timeout = setTimeout(tick, 250 + Math.random() * 350);
       }
     }
 
-    const timeout = setTimeout(tick, 600);
-    return () => clearTimeout(timeout);
-  }, []);
+    timeout = setTimeout(tick, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [started]);
+
+  if (!started) {
+    return (
+      <>
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }} />
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%)',
+          pointerEvents: 'none',
+          zIndex: 9,
+        }} />
+
+        <main style={{
+          minHeight: '100vh',
+          background: '#050505',
+          color: '#00ff41',
+          fontFamily: '"Courier New", Courier, monospace',
+          display: 'grid',
+          placeItems: 'center',
+          padding: 'clamp(1.25rem, 5vw, 3rem)',
+          position: 'relative',
+          zIndex: 1,
+        }}>
+          <section style={{
+            width: 'min(100%, 720px)',
+            border: '1px solid rgba(0,255,65,0.65)',
+            boxShadow: '0 0 24px rgba(0,255,65,0.18), inset 0 0 18px rgba(0,255,65,0.08)',
+            padding: 'clamp(1.25rem, 5vw, 2.5rem)',
+            background: 'rgba(0, 20, 8, 0.72)',
+            textShadow: '0 0 6px rgba(0,255,65,0.75)',
+          }}>
+            <p style={{
+              color: '#ff4444',
+              fontSize: 'clamp(13px, 2.4vw, 16px)',
+              letterSpacing: '0.08em',
+              marginBottom: '1rem',
+            }}>
+              HTTP 490 / TOO FOUND
+            </p>
+            <h1 style={{
+              color: '#ffff66',
+              fontSize: 'clamp(2rem, 9vw, 4.5rem)',
+              lineHeight: 0.95,
+              margin: '0 0 1.25rem',
+              textTransform: 'uppercase',
+            }}>
+              ClassConnect is too well known.
+            </h1>
+            <p style={{
+              fontSize: 'clamp(14px, 2.7vw, 18px)',
+              lineHeight: 1.7,
+              marginBottom: '2rem',
+              maxWidth: '56ch',
+            }}>
+              The requested system cannot be hidden because too many people have
+              already found it. Opposite-of-not-found condition confirmed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setStarted(true)}
+              style={{
+                appearance: 'none',
+                border: '1px solid #00ff41',
+                background: 'transparent',
+                color: '#00ff41',
+                font: 'inherit',
+                fontSize: 'clamp(14px, 2.5vw, 16px)',
+                padding: '0.85rem 1.2rem',
+                cursor: 'pointer',
+                textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                boxShadow: '0 0 14px rgba(0,255,65,0.2)',
+              }}
+            >
+              CONTINUE
+            </button>
+          </section>
+        </main>
+
+        <style>{`
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 0; background: #050505; }
+          button:hover {
+            background: rgba(0, 255, 65, 0.14) !important;
+          }
+          button:focus-visible {
+            outline: 2px solid #ffff66;
+            outline-offset: 4px;
+          }
+        `}</style>
+      </>
+    );
+  }
 
   return (
     <>
