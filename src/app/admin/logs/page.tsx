@@ -51,9 +51,12 @@ function LogsPageContent() {
     queryFn: () => getLogs(100),
     staleTime: 1000 * 60,
     refetchInterval: isOffline ? false : 1000 * 60 * 5,
-    onError: handleQueryError,
     enabled: !isOffline,
   });
+
+  useEffect(() => {
+    if (error) handleQueryError(error);
+  }, [error]);
 
   const rollbackMutation = useMutation({
     mutationFn: (logId: string) => rollbackAction(logId, user?.uid ?? 'admin_user_logs'),
