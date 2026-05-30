@@ -1,249 +1,132 @@
+'use client';
 
-"use client";
+import { useEffect, useState } from 'react';
 
-import React, { useState, useEffect, Suspense } from 'react'; // Added Suspense
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';
-import { TimetableGrid } from '@/components/timetable/TimetableGrid';
-import { DailyAnnouncementDisplay } from '@/components/announcements/DailyAnnouncementDisplay';
-import { Button } from '@/components/ui/button';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react';
-import { format, addDays, subDays, addWeeks, subWeeks, startOfDay, parseISO, isValid } from 'date-fns';
-import { ja } from 'date-fns/locale';
-import type { DailyGeneralAnnouncement } from '@/models/announcement';
-import { queryFnGetDailyGeneralAnnouncement, onDailyGeneralAnnouncementUpdate } from '@/controllers/timetableController';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
-import { useAuth } from '@/contexts/AuthContext';
-import { InitialChoice } from '@/components/auth/InitialChoice';
-import { useSearchParams } from 'next/navigation';
+type LogLine = {
+  text: string;
+  color?: string;
+};
 
-const queryClient = new QueryClient();
-
-function HomePageContent() {
-  const searchParams = useSearchParams();
-  const [currentDate, setCurrentDate] = useState<Date | null>(null);
-  const [todayStr, setTodayStr] = useState<string>('');
-  const [selectedDateForPicker, setSelectedDateForPicker] = useState<Date | undefined>(undefined);
-  const [liveGeneralAnnouncement, setLiveGeneralAnnouncement] = useState<DailyGeneralAnnouncement | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
-  
-  const { user, loading: authLoading, isAnonymous, setAnonymousAccess } = useAuth();
-  const [showInitialChoice, setShowInitialChoice] = useState(false);
+export default function TerminalPage() {
+  const [lines, setLines] = useState<LogLine[]>([]);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
-      setIsOffline(!navigator.onLine);
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-      return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      };
+    const deviceInfo = {
+      os: navigator.platform || 'UNKNOWN',
+      browser: navigator.userAgent.split(' ').pop() || 'UNKNOWN',
+      lang: navigator.language,
+      screen: `${window.screen.width}x${window.screen.height}`,
+      cores: navigator.hardwareConcurrency ?? '?',
+      memory: (navigator as { deviceMemory?: number }).deviceMemory
+        ? `${(navigator as { deviceMemory?: number }).deviceMemory}GB`
+        : 'CLASSIFIED',
+      online: navigator.onLine ? 'CONNECTED' : 'OFFLINE',
+      touch: navigator.maxTouchPoints > 0 ? 'YES' : 'NO',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      colorDepth: `${window.screen.colorDepth}bit`,
+    };
+
+    const script: LogLine[] = [
+      { text: '> INITIATING DEEP SCAN...' },
+      { text: '' },
+      { text: '> [SYS] QR_BREACH_DETECTED' },
+      { text: '> [SYS] Source: Physical fabric (T-shirt)' },
+      { text: '> [SYS] Vector: Optical QR decode via camera sensor' },
+      { text: '' },
+      { text: '> Scanning target device...' },
+      { text: '' },
+      { text: `> OS           : ${deviceInfo.os}` },
+      { text: `> BROWSER      : ${deviceInfo.browser}` },
+      { text: `> LANGUAGE     : ${deviceInfo.lang}` },
+      { text: `> SCREEN       : ${deviceInfo.screen}` },
+      { text: `> CPU CORES    : ${deviceInfo.cores}` },
+      { text: `> MEMORY       : ${deviceInfo.memory}` },
+      { text: `> NETWORK      : ${deviceInfo.online}` },
+      { text: `> TOUCH INPUT  : ${deviceInfo.touch}` },
+      { text: `> TIMEZONE     : ${deviceInfo.timezone}` },
+      { text: `> COLOR DEPTH  : ${deviceInfo.colorDepth}` },
+      { text: '' },
+      { text: '> Scan complete.' },
+      { text: '' },
+      { text: '> [WARNING] DEVICE_COMPROMISED_BY_TSHIRT', color: '#ffff00' },
+      { text: '> [WARNING] All data collected via 100% organic fiber interface', color: '#ffff00' },
+      { text: '' },
+      { text: '> Establishing uplink...' },
+      { text: '> Routing through class 2-X mainframe...' },
+      { text: '> Authenticating... ACCESS GRANTED', color: '#00ff41' },
+      { text: '' },
+      { text: '> You have been hacked by a T-shirt.', color: '#ff4444' },
+      { text: '' },
+      { text: '> Have a nice day.' },
+      { text: '> _' },
+    ];
+
+    let i = 0;
+    function next() {
+      if (i >= script.length) {
+        setDone(true);
+        return;
+      }
+      setLines((prev) => [...prev, script[i]]);
+      i++;
+      const delay = script[i - 1].text === '' ? 100 : Math.random() * 60 + 30;
+      setTimeout(next, delay);
     }
-    return () => {};
+    const timeout = setTimeout(next, 400);
+    return () => clearTimeout(timeout);
   }, []);
 
-
-  useEffect(() => {
-    const dateParam = searchParams.get('date');
-    let initialDate = startOfDay(new Date()); 
-    if (dateParam) {
-      try {
-        const parsedDate = parseISO(dateParam);
-        if (isValid(parsedDate)) {
-          initialDate = startOfDay(parsedDate);
-        } else {
-          console.warn("Invalid date parameter in URL, defaulting to today:", dateParam);
-        }
-      } catch (e) {
-        console.error("Error parsing date parameter, defaulting to today:", e);
-      }
-    }
-    setCurrentDate(initialDate);
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (currentDate) {
-        setTodayStr(format(currentDate, 'yyyy-MM-dd'));
-        setSelectedDateForPicker(currentDate);
-    }
-  }, [currentDate]);
-
-
-  useEffect(() => {
-    if (!authLoading) { 
-      const anonymousAccessChosen = typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true';
-      if (!user && !anonymousAccessChosen) {
-        setShowInitialChoice(true);
-      } else if (anonymousAccessChosen && !isAnonymous) {
-        setAnonymousAccess(true); 
-      }
-    }
-  }, [user, authLoading, isAnonymous, setAnonymousAccess]);
-
-
-  const { data: initialGeneralAnnouncement, isLoading: isLoadingGeneral, error: errorGeneral } = useQuery({
-    queryKey: ['dailyGeneralAnnouncement', todayStr],
-    queryFn: queryFnGetDailyGeneralAnnouncement(todayStr),
-    staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: true,
-    enabled: !!todayStr && (!!user || isAnonymous) && !isOffline,
-  });
-
-  useEffect(() => {
-    if (!todayStr || (!user && !isAnonymous) || isOffline) {
-        setLiveGeneralAnnouncement(null); 
-        return;
-    }
-    const unsubscribe = onDailyGeneralAnnouncementUpdate(todayStr, 
-      (announcement) => {
-        setLiveGeneralAnnouncement(announcement);
-      }, 
-      (error) => {
-        console.error("Realtime general announcement error:", error);
-        setIsOffline(true); 
-      }
-    );
-    return () => unsubscribe();
-  }, [todayStr, user, isAnonymous, isOffline]);
-
-  const dailyGeneralAnnouncement = liveGeneralAnnouncement ?? initialGeneralAnnouncement;
-
-  const updateCurrentDate = (newDate: Date | null) => {
-    if (newDate) {
-      const newDateStartOfDay = startOfDay(newDate);
-      setCurrentDate(newDateStartOfDay);
-    }
-  };
-
-  const handlePreviousWeek = () => updateCurrentDate(currentDate ? subWeeks(currentDate, 1) : null);
-  const handleNextWeek = () => updateCurrentDate(currentDate ? addWeeks(currentDate, 1) : null);
-  const handlePreviousDay = () => updateCurrentDate(currentDate ? subDays(currentDate, 1) : null);
-  const handleNextDay = () => updateCurrentDate(currentDate ? addDays(currentDate, 1) : null);
-  const handleToday = () => updateCurrentDate(new Date());
-  const handleDateSelect = (date: Date | undefined) => {
-    if (date) updateCurrentDate(date);
-  };
-
-  const handleChoiceMade = () => {
-    setShowInitialChoice(false);
-  };
-  
-  if (authLoading || (!currentDate && !showInitialChoice)) {
-    return (
-      <MainLayout>
-        {showInitialChoice && <InitialChoice onChoiceMade={handleChoiceMade} />}
-        {!showInitialChoice && ( 
-           <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
-               <Skeleton className="h-8 w-32 sm:w-48" />
-               <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-                   <Skeleton className="h-9 w-16" />
-                   <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-                   <Skeleton className="h-9 w-24 sm:w-28" />
-                    <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-               </div>
-           </div>
-        )}
-        {!showInitialChoice && <Skeleton className="h-24 sm:h-32 w-full mb-6" />}
-        {!showInitialChoice && <Skeleton className="h-80 sm:h-96 w-full" />}
-      </MainLayout>
-    );
-  }
-  
-  if (showInitialChoice && !user && !(typeof window !== 'undefined' && localStorage.getItem('classconnect_anonymous_access') === 'true')) {
-      return (
-          <MainLayout>
-              <InitialChoice onChoiceMade={handleChoiceMade} />
-          </MainLayout>
-      );
-  }
-
-
   return (
-    <MainLayout>
-        <>
-          <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
-            <h1 className="text-xl md:text-2xl font-semibold">クラス時間割・連絡</h1>
-            <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-              <Button variant="outline" size="sm" onClick={handleToday} disabled={!user && !isAnonymous}>
-                <RotateCcw className="mr-1 h-4 w-4" /> 今日
-              </Button>
-              <div className="flex items-center gap-1 border rounded-md p-0.5">
-                <Button variant="ghost" size="icon" onClick={handlePreviousDay} aria-label="前の日" className="h-8 w-8" disabled={!user && !isAnonymous}>
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"ghost"}
-                      className={cn("w-[100px] md:w-[130px] justify-center text-center font-normal h-8 px-1 text-xs sm:text-sm", !currentDate && "text-muted-foreground")}
-                      disabled={!user && !isAnonymous}
-                    >
-                      <CalendarIcon className="mr-1 h-3 w-3 sm:h-4 sm:w-4" />
-                      {currentDate ? format(currentDate, "M月d日 (E)", { locale: ja }) : <span>日付選択</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={selectedDateForPicker} onSelect={handleDateSelect} initialFocus locale={ja} />
-                  </PopoverContent>
-                </Popover>
-                <Button variant="ghost" size="icon" onClick={handleNextDay} aria-label="次の日" className="h-8 w-8" disabled={!user && !isAnonymous}>
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex items-center gap-1 border rounded-md p-0.5">
-                <Button variant="ghost" size="icon" onClick={handlePreviousWeek} aria-label="前の週" className="h-8 w-8" disabled={!user && !isAnonymous}>
-                  <ChevronLeft className="h-4 w-4" /> <span className="sr-only">前の週</span>
-                </Button>
-                <span className="text-xs px-1 text-muted-foreground">週</span>
-                <Button variant="ghost" size="icon" onClick={handleNextWeek} aria-label="次の週" className="h-8 w-8" disabled={!user && !isAnonymous}>
-                  <ChevronRight className="h-4 w-4" /> <span className="sr-only">次の週</span>
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <DailyAnnouncementDisplay
-            date={currentDate}
-            announcement={dailyGeneralAnnouncement}
-            isLoading={isLoadingGeneral || !todayStr || authLoading}
-            error={errorGeneral}
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#0a0a0a',
+        padding: '2rem',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+      }}
+    >
+      <pre
+        style={{
+          color: '#00ff41',
+          fontFamily: '"Courier New", Courier, monospace',
+          fontSize: 'clamp(11px, 2vw, 14px)',
+          lineHeight: '1.6',
+          margin: 0,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          textShadow: '0 0 8px #00ff41',
+        }}
+      >
+        {lines.map((line, idx) => (
+          <span
+            key={idx}
+            style={{ color: line.color ?? '#00ff41', display: 'block' }}
+          >
+            {line.text}
+          </span>
+        ))}
+        {!done && (
+          <span
+            style={{
+              display: 'inline-block',
+              width: '0.6em',
+              height: '1em',
+              background: '#00ff41',
+              animation: 'blink 1s step-end infinite',
+              boxShadow: '0 0 8px #00ff41',
+              verticalAlign: 'text-bottom',
+            }}
           />
-
-          <div className="mt-6">
-            {currentDate && <TimetableGrid currentDate={currentDate} />}
-          </div>
-        </>
-    </MainLayout>
+        )}
+      </pre>
+      <style>{`
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+      `}</style>
+    </div>
   );
 }
-
-export default function Home() {
-  return (
-    <QueryClientProvider client={queryClient}>
-        <Suspense fallback={
-          <MainLayout>
-             <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-y-2">
-                 <Skeleton className="h-8 w-32 sm:w-48" />
-                 <div className="flex items-center gap-1 md:gap-2 flex-wrap justify-center md:justify-end">
-                     <Skeleton className="h-9 w-16" />
-                     <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-                     <Skeleton className="h-9 w-24 sm:w-28" />
-                      <div className="flex gap-1"><Skeleton className="h-9 w-9" /><Skeleton className="h-9 w-9" /></div>
-                 </div>
-             </div>
-            <Skeleton className="h-24 sm:h-32 w-full mb-6" />
-            <Skeleton className="h-80 sm:h-96 w-full" />
-          </MainLayout>
-        }>
-          <HomePageContent />
-        </Suspense>
-    </QueryClientProvider>
-  );
-}
-
