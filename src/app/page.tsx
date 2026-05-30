@@ -7,17 +7,89 @@ type LogLine = {
   color?: string;
 };
 
+type Phase = 'classconnect' | 'bsod' | 'terminal';
+
+function detectOS(): string {
+  const ua = navigator.userAgent;
+  const uaData = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
+  if (uaData?.platform) {
+    const p = uaData.platform;
+    if (p === 'Windows') return 'Windows 10/11';
+    if (p === 'macOS') return 'macOS';
+    if (p === 'Linux') return 'Linux';
+    return p;
+  }
+  if (/Windows NT 10\.0/.test(ua)) return 'Windows 10/11';
+  if (/Windows NT 6\.3/.test(ua)) return 'Windows 8.1';
+  if (/Windows NT 6\.1/.test(ua)) return 'Windows 7';
+  if (/Mac OS X/.test(ua)) return 'macOS';
+  if (/Android/.test(ua)) return 'Android';
+  if (/iPhone|iPad/.test(ua)) return 'iOS';
+  if (/Linux/.test(ua)) return 'Linux';
+  return navigator.platform || 'UNKNOWN';
+}
+
+function detectBrowser(): string {
+  const ua = navigator.userAgent;
+  if (/Edg\//.test(ua)) {
+    const m = ua.match(/Edg\/([\d]+)/);
+    return `Microsoft Edge ${m ? m[1] : ''}`.trim();
+  }
+  if (/OPR\//.test(ua)) {
+    const m = ua.match(/OPR\/([\d]+)/);
+    return `Opera ${m ? m[1] : ''}`.trim();
+  }
+  if (/Chrome\//.test(ua)) {
+    const m = ua.match(/Chrome\/([\d]+)/);
+    return `Google Chrome ${m ? m[1] : ''}`.trim();
+  }
+  if (/Firefox\//.test(ua)) {
+    const m = ua.match(/Firefox\/([\d]+)/);
+    return `Mozilla Firefox ${m ? m[1] : ''}`.trim();
+  }
+  if (/Safari\//.test(ua)) {
+    const m = ua.match(/Version\/([\d]+)/);
+    return `Safari ${m ? m[1] : ''}`.trim();
+  }
+  return 'UNKNOWN';
+}
+
 export default function TerminalPage() {
-  const [started, setStarted] = useState(false);
+  const [phase, setPhase] = useState<Phase>('classconnect');
+  const [glitching, setGlitching] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [currentText, setCurrentText] = useState('');
   const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
 
+  // ClassConnect fake loading → BSOD transition
   useEffect(() => {
-    if (!started) {
-      return;
-    }
+    if (phase !== 'classconnect') return;
+
+    let p = 0;
+    const interval = setInterval(() => {
+      p += Math.random() * 18 + 4;
+      if (p >= 100) {
+        p = 100;
+        clearInterval(interval);
+        setTimeout(() => {
+          setGlitching(true);
+          setTimeout(() => {
+            setGlitching(false);
+            setPhase('bsod');
+          }, 600);
+        }, 300);
+      }
+      setProgress(Math.min(p, 100));
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [phase]);
+
+  // Terminal typing effect
+  useEffect(() => {
+    if (phase !== 'terminal') return;
 
     setLines([]);
     setCurrentText('');
@@ -25,8 +97,8 @@ export default function TerminalPage() {
     setDone(false);
 
     const deviceInfo = {
-      os: navigator.platform || 'UNKNOWN',
-      browser: navigator.userAgent.split(' ').pop() || 'UNKNOWN',
+      os: detectOS(),
+      browser: detectBrowser(),
       lang: navigator.language,
       screen: `${window.screen.width}x${window.screen.height}`,
       cores: navigator.hardwareConcurrency ?? '?',
@@ -80,17 +152,12 @@ export default function TerminalPage() {
     let cancelled = false;
 
     function tick() {
-      if (cancelled) {
-        return;
-      }
-
+      if (cancelled) return;
       if (lineIdx >= script.length) {
         setDone(true);
         return;
       }
-
       const line = script[lineIdx];
-
       if (line.text === '') {
         setLines(prev => [...prev, { text: '', color: undefined }]);
         setCurrentText('');
@@ -98,7 +165,6 @@ export default function TerminalPage() {
         timeout = setTimeout(tick, 200);
         return;
       }
-
       if (charIdx < line.text.length) {
         const ch = line.text[charIdx];
         charIdx++;
@@ -117,14 +183,173 @@ export default function TerminalPage() {
     }
 
     timeout = setTimeout(tick, 600);
-
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [started]);
+  }, [phase]);
 
-  if (!started) {
+  // Phase 1: Fake ClassConnect loading screen (matches real app design)
+  if (phase === 'classconnect') {
+    return (
+      <>
+        <div style={{
+          minHeight: '100vh',
+          background: '#ffffff',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          color: '#1e293b',
+          filter: glitching ? 'hue-rotate(180deg) saturate(3) contrast(2)' : 'none',
+          transition: glitching ? 'none' : 'filter 0.15s',
+        }}>
+          {/* Header */}
+          <header style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
+            width: '100%',
+            borderBottom: '1px solid #e2e8f0',
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(8px)',
+          }}>
+            <div style={{
+              maxWidth: '1200px',
+              margin: '0 auto',
+              padding: '0 1rem',
+              height: '56px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="ClassConnect Logo" width={24} height={24} />
+                <span style={{ fontWeight: 700, fontSize: '15px' }}>ClassConnect</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {['カレンダー', 'ヘルプ', '管理者ログイン'].map((label) => (
+                  <div key={label} style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: '#64748b',
+                    border: label === '管理者ログイン' ? '1px solid #e2e8f0' : 'none',
+                    cursor: 'default',
+                    userSelect: 'none',
+                  }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </header>
+
+          {/* Main content skeleton */}
+          <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem 1rem' }}>
+            {/* Skeleton rows */}
+            {[...Array(5)].map((_, i) => (
+              <div key={i} style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '8px',
+              }}>
+                {[...Array(6)].map((__, j) => (
+                  <div key={j} style={{
+                    flex: 1,
+                    height: '60px',
+                    borderRadius: '6px',
+                    background: '#f1f5f9',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    animationDelay: `${(i + j) * 0.05}s`,
+                  }} />
+                ))}
+              </div>
+            ))}
+          </main>
+
+          {/* InitialChoice modal overlay */}
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+            opacity: glitching ? 0.2 : 1,
+            transition: 'opacity 0.1s',
+          }}>
+            <div style={{
+              background: '#ffffff',
+              borderRadius: '12px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              width: 'min(100% - 2rem, 420px)',
+              overflow: 'hidden',
+            }}>
+              <div style={{ padding: '1.5rem 1.5rem 0', textAlign: 'center' }}>
+                <h2 style={{ fontSize: '22px', fontWeight: 700, margin: '0 0 0.5rem', color: '#0f172a' }}>
+                  ClassConnectへようこそ
+                </h2>
+                <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 1.5rem' }}>
+                  利用方法を選択してください。
+                </p>
+              </div>
+              <div style={{ padding: '0 1.5rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button type="button" style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: '#3498db',
+                  color: '#ffffff',
+                  fontFamily: 'inherit',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}>
+                  <span>&#x2192;</span> 管理者としてログイン
+                </button>
+                <button type="button" style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: '#f1f5f9',
+                  color: '#0f172a',
+                  fontFamily: 'inherit',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}>
+                  <span>&#x1F464;</span> ログインなしで利用する
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <style>{`
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 0; background: #ffffff; }
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+          }
+        `}</style>
+      </>
+    );
+  }
+
+  // Phase 2: BSOD / HTTP 490
+  if (phase === 'bsod') {
     return (
       <>
         <div style={{
@@ -189,7 +414,7 @@ export default function TerminalPage() {
             </p>
             <button
               type="button"
-              onClick={() => setStarted(true)}
+              onClick={() => setPhase('terminal')}
               style={{
                 appearance: 'none',
                 border: '1px solid #00ff41',
@@ -211,18 +436,14 @@ export default function TerminalPage() {
         <style>{`
           * { box-sizing: border-box; }
           body { margin: 0; padding: 0; background: #050505; }
-          button:hover {
-            background: rgba(0, 255, 65, 0.14) !important;
-          }
-          button:focus-visible {
-            outline: 2px solid #ffff66;
-            outline-offset: 4px;
-          }
+          button:hover { background: rgba(0, 255, 65, 0.14) !important; }
+          button:focus-visible { outline: 2px solid #ffff66; outline-offset: 4px; }
         `}</style>
       </>
     );
   }
 
+  // Phase 3: Terminal scan
   return (
     <>
       <div style={{
