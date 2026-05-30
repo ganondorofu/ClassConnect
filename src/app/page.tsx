@@ -102,9 +102,7 @@ export default function TerminalPage() {
       lang: navigator.language,
       screen: `${window.screen.width}x${window.screen.height}`,
       cores: navigator.hardwareConcurrency ?? '?',
-      memory: (navigator as { deviceMemory?: number }).deviceMemory
-        ? `${(navigator as { deviceMemory?: number }).deviceMemory}GB`
-        : 'CLASSIFIED',
+      memory: 'CLASSIFIED',
       online: navigator.onLine ? 'CONNECTED' : 'OFFLINE',
       touch: navigator.maxTouchPoints > 0 ? 'YES' : 'NO',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
