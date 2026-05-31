@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type LogLine = {
   text: string;
@@ -92,6 +92,7 @@ export default function TerminalPage() {
   const [currentText, setCurrentText] = useState('');
   const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // ClassConnect fake loading → BSOD transition
   useEffect(() => {
@@ -215,6 +216,11 @@ export default function TerminalPage() {
       clearTimeout(timeout);
     };
   }, [phase]);
+
+  // 新しい行が追加されるたびに自動スクロール
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [lines, currentText]);
 
   // Phase 1: Fake ClassConnect loading screen
   if (phase === 'classconnect') {
@@ -420,47 +426,53 @@ export default function TerminalPage() {
       }} />
 
       <main style={{
-        minHeight: '100vh', background: '#050505',
-        padding: 'clamp(1rem, 5vw, 3rem)', boxSizing: 'border-box',
-        position: 'relative', zIndex: 1,
+        height: '100dvh', background: '#050505',
+        display: 'flex', flexDirection: 'column',
+        padding: 'clamp(1rem, 5vw, 2rem)', boxSizing: 'border-box',
+        position: 'relative', zIndex: 1, overflow: 'hidden',
       }}>
-        {/* Scan output */}
-        <pre style={{
-          color: '#00ff41', fontFamily: font, fontSize,
-          lineHeight: '1.9', margin: 0, whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word', textShadow: '0 0 6px rgba(0,255,65,0.8)', maxWidth: '800px',
-        }}>
-          {lines.map((line, idx) => (
-            <span key={idx} style={{ color: line.color ?? '#00ff41', display: 'block' }}>
-              {line.text}
-            </span>
-          ))}
-          {!done && (
-            <span style={{ color: currentColor, display: 'block' }}>
-              {currentText}
-              <span style={{
-                display: 'inline-block', width: '0.55em', height: '1.1em',
-                background: currentColor, animation: 'blink 0.8s step-end infinite',
-                boxShadow: `0 0 6px ${currentColor}`, verticalAlign: 'text-bottom',
-              }} />
-            </span>
-          )}
-        </pre>
+        {/* スクロール可能なターミナル出力エリア */}
+        <div
+          ref={scrollRef}
+          style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}
+        >
+          <pre style={{
+            color: '#00ff41', fontFamily: font, fontSize,
+            lineHeight: '1.9', margin: 0, whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word', textShadow: '0 0 6px rgba(0,255,65,0.8)', maxWidth: '800px',
+          }}>
+            {lines.map((line, idx) => (
+              <span key={idx} style={{ color: line.color ?? '#00ff41', display: 'block' }}>
+                {line.text}
+              </span>
+            ))}
+            {!done && (
+              <span style={{ color: currentColor, display: 'block' }}>
+                {currentText}
+                <span style={{
+                  display: 'inline-block', width: '0.55em', height: '1.1em',
+                  background: currentColor, animation: 'blink 0.8s step-end infinite',
+                  boxShadow: `0 0 6px ${currentColor}`, verticalAlign: 'text-bottom',
+                }} />
+              </span>
+            )}
+          </pre>
+        </div>
 
-        {/* Mini-game */}
+        {/* ゲームリンク — 下部に固定表示 */}
         {done && (
-          <div style={{ marginTop: '2rem', maxWidth: '800px', fontFamily: font, fontSize }}>
-            <span style={{ color: '#ff4444', display: 'block', marginBottom: '0.75rem' }}>
-              {'> ─────────────────────────────────'}
-            </span>
-            <span style={{ color: '#ffff00', display: 'block' }}>
+          <div style={{
+            flexShrink: 0, paddingTop: '1rem',
+            borderTop: '1px solid rgba(0,255,65,0.2)',
+            fontFamily: font, fontSize,
+          }}>
+            <span style={{ color: '#ffff00', display: 'block', marginBottom: '0.5rem' }}>
               {'> [MINI-GAME] BLOCK_BREAKER available'}
             </span>
             <a
               href="/game"
               style={{
                 display: 'inline-block',
-                marginTop: '0.6rem',
                 border: '1px solid #00ff41',
                 color: '#00ff41',
                 fontFamily: font,
