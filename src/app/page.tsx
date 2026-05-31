@@ -12,26 +12,54 @@ type Phase = 'classconnect' | 'bsod' | 'terminal';
 
 function detectOS(): string {
   const ua = navigator.userAgent;
+  // userAgentData は Chromium のみ対応。iOS/Safari では使えないので補助的に使う
   const uaData = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
   if (uaData?.platform) {
     const p = uaData.platform;
     if (p === 'Windows') return 'Windows 10/11';
     if (p === 'macOS') return 'macOS';
     if (p === 'Linux') return 'Linux';
+    if (p === 'Android') return 'Android';
+    if (p === 'iOS' || p === 'iPhone' || p === 'iPad') return 'iOS';
     return p;
   }
+  // iPhone/iPad の UA は "like Mac OS X" を含むので Mac より先にチェック
+  if (/iPhone/.test(ua)) return 'iOS (iPhone)';
+  if (/iPad/.test(ua)) return 'iOS (iPad)';
+  if (/Android/.test(ua)) return 'Android';
   if (/Windows NT 10\.0/.test(ua)) return 'Windows 10/11';
   if (/Windows NT 6\.3/.test(ua)) return 'Windows 8.1';
   if (/Windows NT 6\.1/.test(ua)) return 'Windows 7';
-  if (/Mac OS X/.test(ua)) return 'macOS';
-  if (/Android/.test(ua)) return 'Android';
-  if (/iPhone|iPad/.test(ua)) return 'iOS';
+  if (/Windows/.test(ua)) return 'Windows';
+  // iPad デスクトップモード (iOS 13+) は Mac と同じ UA になるので maxTouchPoints で判定
+  if (/Mac OS X/.test(ua)) {
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1) return 'iOS (iPad)';
+    return 'macOS';
+  }
   if (/Linux/.test(ua)) return 'Linux';
-  return navigator.platform || 'UNKNOWN';
+  return 'UNKNOWN';
 }
 
 function detectBrowser(): string {
   const ua = navigator.userAgent;
+  // iOS 固有トークンを先にチェック（CriOS = Chrome on iOS, FxiOS = Firefox on iOS）
+  if (/EdgiOS\//.test(ua)) {
+    const m = ua.match(/EdgiOS\/([\d]+)/);
+    return `Microsoft Edge ${m ? m[1] : ''}`.trim();
+  }
+  if (/CriOS\//.test(ua)) {
+    const m = ua.match(/CriOS\/([\d]+)/);
+    return `Google Chrome ${m ? m[1] : ''}`.trim();
+  }
+  if (/FxiOS\//.test(ua)) {
+    const m = ua.match(/FxiOS\/([\d]+)/);
+    return `Mozilla Firefox ${m ? m[1] : ''}`.trim();
+  }
+  if (/OPiOS\//.test(ua)) {
+    const m = ua.match(/OPiOS\/([\d]+)/);
+    return `Opera ${m ? m[1] : ''}`.trim();
+  }
+  // デスクトップ / Android
   if (/Edg\//.test(ua)) {
     const m = ua.match(/Edg\/([\d]+)/);
     return `Microsoft Edge ${m ? m[1] : ''}`.trim();
@@ -48,6 +76,7 @@ function detectBrowser(): string {
     const m = ua.match(/Firefox\/([\d]+)/);
     return `Mozilla Firefox ${m ? m[1] : ''}`.trim();
   }
+  // Safari (iOS Safari 含む)。Version/ トークンがバージョン番号
   if (/Safari\//.test(ua)) {
     const m = ua.match(/Version\/([\d]+)/);
     return `Safari ${m ? m[1] : ''}`.trim();
