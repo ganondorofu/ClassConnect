@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 // ── Fake filesystem ──────────────────────────────────────────────────────────
 
 type FSFile = { type: 'file'; content: string; hidden?: boolean; special?: 'qr' };
-type FSDir  = { type: 'dir';  children: string[]; hidden?: boolean };
+type FSDir  = { type: 'dir';  children: string[] };
 type FSNode = FSFile | FSDir;
 
 const FS: Record<string, FSNode> = {
@@ -16,7 +16,8 @@ const FS: Record<string, FSNode> = {
   '/home/user': { type: 'dir', children: ['README.txt', 'hint.txt', '.profile'] },
   '/home/user/README.txt': {
     type: 'file',
-    content: `SYSTEM COMPROMISED
+    content:
+`SYSTEM COMPROMISED
 --------------------
 This device has been accessed remotely.
 Evidence of the breach has been stored on this system.
@@ -29,17 +30,19 @@ Check /var/log for details.`,
   '/home/user/.profile': {
     type: 'file',
     hidden: true,
-    content: `# system profile
+    content:
+`# system profile
 export USER=guest
 export HOME=/home/user
-# debug: breach log at /var/log/breach.log`,
+# debug: see /var/log/breach.log`,
   },
 
   '/var': { type: 'dir', children: ['log'] },
   '/var/log': { type: 'dir', children: ['breach.log', 'system.log'] },
   '/var/log/breach.log': {
     type: 'file',
-    content: `[2026-05-31 09:12:01] INFO  System boot
+    content:
+`[2026-05-31 09:12:01] INFO  System boot
 [2026-05-31 09:12:33] INFO  Network interface up
 [2026-05-31 09:15:02] WARN  Unauthorized access from 0.0.0.0
 [2026-05-31 09:15:03] ALERT Exfiltration detected
@@ -48,15 +51,14 @@ export HOME=/home/user
   },
   '/var/log/system.log': {
     type: 'file',
-    content: '[2026-05-31 09:12:01] kernel: Linux version 6.1.0\n[2026-05-31 09:12:02] kernel: Booting...',
+    content:
+`[2026-05-31 09:12:01] kernel: Linux version 6.1.0
+[2026-05-31 09:12:02] kernel: Booting...
+[2026-05-31 09:12:05] kernel: Mount OK`,
   },
 
   '/tmp': { type: 'dir', children: ['flag'] },
-  '/tmp/flag': {
-    type: 'file',
-    special: 'qr',
-    content: 'CLASSIFIED',
-  },
+  '/tmp/flag': { type: 'file', special: 'qr', content: '' },
 
   '/etc': { type: 'dir', children: ['passwd', 'hostname'] },
   '/etc/passwd': {
@@ -70,12 +72,7 @@ export HOME=/home/user
   '/proc/uptime': { type: 'file', content: '3721.44 14812.20' },
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function resolvePath(cwd: string, input: string): string {
-  if (input.startsWith('/')) return normPath(input);
-  return normPath(cwd + '/' + input);
-}
+// ── Path helpers ─────────────────────────────────────────────────────────────
 
 function normPath(p: string): string {
   const parts: string[] = [];
@@ -87,58 +84,81 @@ function normPath(p: string): string {
   return '/' + parts.join('/');
 }
 
-function node(path: string): FSNode | undefined {
-  return FS[path];
+function resolvePath(cwd: string, input: string): string {
+  return normPath(input.startsWith('/') ? input : cwd + '/' + input);
 }
 
-const FORBIDDEN = ['rm', 'rmdir', 'dd', 'mkfs', 'chmod', 'chown', 'kill', 'killall', 'reboot', 'shutdown', 'poweroff', 'halt', 'fdisk', 'format', 'mkswap'];
+// ── Command definitions ───────────────────────────────────────────────────────
 
-// ── Component ────────────────────────────────────────────────────────────────
+const FORBIDDEN = [
+  'rm', 'rmdir', 'dd', 'mkfs', 'chmod', 'chown',
+  'kill', 'killall', 'reboot', 'shutdown', 'poweroff',
+  'halt', 'fdisk', 'mkswap', 'format',
+];
 
-interface Entry {
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+// ls エントリは構造化して持つ（文字列エスケープ hack を避ける）
+type LSEntry = { name: string; isDir: boolean };
+
+interface HistoryEntry {
   prompt: string;
   output: string;
   color?: string;
-  qr?: string; // data URL
+  ls?: LSEntry[];   // ls コマンドの結果
+  qr?: string;      // QR コード data URL
 }
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 const FONT = '"Courier New", Courier, monospace';
 
-export function FakeShell({ secretUrl }: { secretUrl: string }) {
+export function FakeShell() {
   const [cwd, setCwd] = useState('/home/user');
+  const cwdRef = useRef('/home/user');   // async 関数内で最新値を参照するため
   const [input, setInput] = useState('');
-  const [entries, setEntries] = useState<Entry[]>([
-    { prompt: '', output: '> Shell access granted. Type "help" for available commands.', color: '#ffff00' },
-    { prompt: '', output: '' },
+  const [history, setHistory] = useState<HistoryEntry[]>([
+    { prompt: '', output: 'Shell access granted. Type "help" for available commands.', color: '#ffff00' },
   ]);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // cwd が変わったら ref も更新
+  useEffect(() => { cwdRef.current = cwd; }, [cwd]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries, qrDataUrl]);
+  }, [history]);
 
-  function prompt() {
-    return `guest@class2x:${cwd === '/home/user' ? '~' : cwd}$`;
+  function promptStr(dir: string) {
+    return `guest@class2x:${dir === '/home/user' ? '~' : dir}$`;
   }
 
   async function run(raw: string) {
     const trimmed = raw.trim();
+    const currentCwd = cwdRef.current;
+
     if (!trimmed) {
-      setEntries(prev => [...prev, { prompt: prompt(), output: '' }]);
+      setHistory(prev => [...prev, { prompt: promptStr(currentCwd), output: '' }]);
+      setInput('');
       return;
     }
 
-    const [cmd, ...args] = trimmed.split(/\s+/);
+    const tokens = trimmed.split(/\s+/);
+    const cmd = tokens[0];
+    const args = tokens.slice(1);
     const arg = args.join(' ');
 
     let output = '';
     let color: string | undefined;
+    let ls: LSEntry[] | undefined;
     let qr: string | undefined;
 
+    // ── Commands ──────────────────────────────────────────────────────────────
+
     if (cmd === 'help') {
-      output = `Available commands:
+      output =
+`Available commands:
   ls [-la] [path]   list directory contents
   cat <file>        print file contents
   cd <dir>          change directory
@@ -149,16 +169,22 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
   help              show this help`;
 
     } else if (cmd === 'pwd') {
-      output = cwd;
+      output = currentCwd;
 
     } else if (cmd === 'whoami') {
       output = 'guest';
+
+    } else if (cmd === 'uname') {
+      output = args.includes('-a')
+        ? 'Linux class2x-mainframe 6.1.0 #1 SMP x86_64 GNU/Linux'
+        : 'Linux';
 
     } else if (cmd === 'echo') {
       output = arg || '';
 
     } else if (cmd === 'clear') {
-      setEntries([]);
+      setCwd(currentCwd); // no-op but flushes
+      setHistory([]);
       setInput('');
       return;
 
@@ -171,38 +197,29 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
       color = '#ff4444';
 
     } else if (cmd === 'ls') {
-      const hasA = args.includes('-la') || args.includes('-a') || args.includes('-al');
+      const showHidden = args.some(a => a.startsWith('-') && a.includes('a'));
       const pathArg = args.find(a => !a.startsWith('-'));
-      const target = pathArg ? resolvePath(cwd, pathArg) : cwd;
-      const n = node(target);
+      const target = pathArg ? resolvePath(currentCwd, pathArg) : currentCwd;
+      const n = FS[target];
 
       if (!n) {
         output = `ls: cannot access '${pathArg ?? target}': No such file or directory`;
         color = '#ff4444';
       } else if (n.type === 'file') {
-        output = pathArg ?? target;
+        ls = [{ name: pathArg ?? target, isDir: false }];
       } else {
-        const children = n.children
-          .map(name => {
-            const childPath = target === '/' ? `/${name}` : `${target}/${name}`;
-            const child = FS[childPath];
-            if (!child) return null;
-            if (child.hidden && !hasA) return null;
-            const isDir = child.type === 'dir';
-            return isDir ? `\x1bblue${name}/` : name;
-          })
-          .filter(Boolean) as string[];
-
-        if (hasA) {
-          children.unshift('..', '.');
+        const entries: LSEntry[] = [];
+        if (showHidden) {
+          entries.push({ name: '.', isDir: true }, { name: '..', isDir: true });
         }
-        output = children.map(n => n.startsWith('\x1bblue') ? n.slice(6) : n).join('  ');
-        // color dirs differently
-        const parts = children.map(n => {
-          if (n.startsWith('\x1bblue')) return `<dir>${n.slice(6)}</dir>`;
-          return n;
-        });
-        output = '<<FILELIST>>' + JSON.stringify(parts);
+        for (const name of n.children) {
+          const childPath = target === '/' ? `/${name}` : `${target}/${name}`;
+          const child = FS[childPath];
+          if (!child) continue;
+          if ((child as FSFile).hidden && !showHidden) continue;
+          entries.push({ name: child.type === 'dir' ? `${name}/` : name, isDir: child.type === 'dir' });
+        }
+        ls = entries;
       }
 
     } else if (cmd === 'cat') {
@@ -210,8 +227,8 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
         output = 'cat: missing operand';
         color = '#ff4444';
       } else {
-        const target = resolvePath(cwd, arg);
-        const n = node(target);
+        const target = resolvePath(currentCwd, arg);
+        const n = FS[target];
         if (!n) {
           output = `cat: ${arg}: No such file or directory`;
           color = '#ff4444';
@@ -219,20 +236,20 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
           output = `cat: ${arg}: Is a directory`;
           color = '#ff4444';
         } else if (n.special === 'qr') {
-          // Generate QR code
           try {
-            const dataUrl = await QRCode.toDataURL(secretUrl, {
-              width: 240,
+            const secretUrl = `${window.location.origin}/secret`;
+            qr = await QRCode.toDataURL(secretUrl, {
+              width: 200,
               margin: 2,
               color: { dark: '#00ff41', light: '#050505' },
             });
-            qr = dataUrl;
-            output = `Decrypting payload...
-> Access token verified.
-> Rendering encoded data...`;
+            output =
+`Decrypting payload...
+Access token verified.
+Rendering encoded data...`;
             color = '#00ff41';
           } catch {
-            output = 'Error rendering payload.';
+            output = 'Error: failed to render payload.';
             color = '#ff4444';
           }
         } else {
@@ -241,14 +258,8 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
       }
 
     } else if (cmd === 'cd') {
-      if (!arg || arg === '~') {
-        setCwd('/home/user');
-        setEntries(prev => [...prev, { prompt: prompt(), output: '' }]);
-        setInput('');
-        return;
-      }
-      const target = resolvePath(cwd, arg);
-      const n = node(target);
+      const dest = !arg || arg === '~' ? '/home/user' : resolvePath(currentCwd, arg);
+      const n = FS[dest];
       if (!n) {
         output = `cd: ${arg}: No such file or directory`;
         color = '#ff4444';
@@ -256,8 +267,9 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
         output = `cd: ${arg}: Not a directory`;
         color = '#ff4444';
       } else {
-        setCwd(target);
-        setEntries(prev => [...prev, { prompt: prompt(), output: '' }]);
+        setCwd(dest);
+        cwdRef.current = dest;
+        setHistory(prev => [...prev, { prompt: promptStr(currentCwd), output: '' }]);
         setInput('');
         return;
       }
@@ -265,89 +277,99 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
     } else if (cmd === 'man') {
       output = `What manual page do you want?\nTry "help" instead.`;
 
-    } else if (cmd === 'bash' || cmd === 'sh' || cmd === 'zsh') {
+    } else if (cmd === 'bash' || cmd === 'sh' || cmd === 'zsh' || cmd === 'fish') {
       output = `${cmd}: You're already in a shell.`;
 
-    } else if (cmd === 'python' || cmd === 'python3') {
-      output = 'python3: this interpreter has been disabled on this system.';
+    } else if (cmd === 'python' || cmd === 'python3' || cmd === 'python2') {
+      output = `${cmd}: interpreter has been disabled on this system.`;
+      color = '#ff4444';
+
+    } else if (cmd === 'vi' || cmd === 'vim' || cmd === 'nano') {
+      output = `${cmd}: editor is not available on this system.`;
       color = '#ff4444';
 
     } else if (cmd === 'exit' || cmd === 'logout' || cmd === 'quit') {
       output = 'logout: session terminated.\n\n...just kidding.';
+
+    } else if (cmd === 'history') {
+      output = 'bash: history: command history not available.';
+      color = '#ff4444';
 
     } else {
       output = `${cmd}: command not found`;
       color = '#ff4444';
     }
 
-    if (qr) {
-      setQrDataUrl(qr);
-    }
-    setEntries(prev => [...prev, { prompt: prompt(), output, color, qr }]);
+    setHistory(prev => [...prev, { prompt: promptStr(currentCwd), output, color, ls, qr }]);
     setInput('');
   }
 
   const fs = 'clamp(11px, 2.2vw, 13px)';
-
-  function renderOutput(entry: Entry) {
-    if (entry.output.startsWith('<<FILELIST>>')) {
-      const parts: string[] = JSON.parse(entry.output.slice(12));
-      return (
-        <span>
-          {parts.map((p, i) => {
-            const isDir = p.startsWith('<dir>') && p.endsWith('</dir>');
-            const name = isDir ? p.slice(5, -6) : p;
-            return (
-              <span key={i}>
-                {i > 0 && '  '}
-                <span style={{ color: isDir ? '#6699ff' : '#00ff41' }}>{name}</span>
-              </span>
-            );
-          })}
-        </span>
-      );
-    }
-    return <span style={{ whiteSpace: 'pre-wrap' }}>{entry.output}</span>;
-  }
 
   return (
     <div
       style={{ fontFamily: FONT, fontSize: fs, lineHeight: 1.8 }}
       onClick={() => inputRef.current?.focus()}
     >
-      {/* Output */}
-      {entries.map((e, i) => (
+      {history.map((e, i) => (
         <div key={i}>
+          {/* プロンプト行 */}
           {e.prompt && (
-            <div style={{ color: '#00ff41', textShadow: '0 0 4px rgba(0,255,65,0.6)' }}>
-              <span style={{ color: '#00ccff' }}>{e.prompt}</span>{' '}
+            <div>
+              <span style={{ color: '#00ccff', textShadow: '0 0 4px rgba(0,204,255,0.6)' }}>{e.prompt}</span>
             </div>
           )}
+          {/* テキスト出力 */}
           {e.output && (
-            <div style={{ color: e.color ?? '#00ff41', textShadow: `0 0 4px ${e.color ?? 'rgba(0,255,65,0.5)'}`, paddingLeft: '0.5rem' }}>
-              {renderOutput(e)}
+            <div style={{
+              color: e.color ?? '#00ff41',
+              textShadow: `0 0 4px ${e.color ?? 'rgba(0,255,65,0.5)'}`,
+              paddingLeft: '0.5rem',
+              whiteSpace: 'pre-wrap',
+            }}>
+              {e.output}
             </div>
           )}
-          {e.qr && qrDataUrl && (
+          {/* ls 出力 */}
+          {e.ls && (
+            <div style={{ paddingLeft: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0 1.5rem' }}>
+              {e.ls.map((entry, j) => (
+                <span key={j} style={{
+                  color: entry.isDir ? '#6699ff' : '#00ff41',
+                  textShadow: `0 0 4px ${entry.isDir ? 'rgba(102,153,255,0.5)' : 'rgba(0,255,65,0.5)'}`,
+                }}>
+                  {entry.name}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* QR コード */}
+          {e.qr && (
             <div style={{ margin: '0.75rem 0 0.25rem 0.5rem' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={qrDataUrl}
+                src={e.qr}
                 alt="QR Code"
                 style={{ width: '160px', height: '160px', imageRendering: 'pixelated', display: 'block' }}
               />
               <div style={{ color: '#888', fontSize: `calc(${fs} * 0.85)`, marginTop: '4px' }}>
-                scan or visit: <span style={{ color: '#00ff41' }}>{secretUrl}</span>
+                scan or visit:{' '}
+                <a
+                  href="/secret"
+                  style={{ color: '#00ff41', textDecoration: 'none' }}
+                >
+                  {typeof window !== 'undefined' ? `${window.location.origin}/secret` : '/secret'}
+                </a>
               </div>
             </div>
           )}
         </div>
       ))}
 
-      {/* Input line */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
-        <span style={{ color: '#00ccff', whiteSpace: 'nowrap', textShadow: '0 0 4px rgba(0,204,255,0.6)' }}>
-          {prompt()}
+      {/* 入力行 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem' }}>
+        <span style={{ color: '#00ccff', whiteSpace: 'nowrap', textShadow: '0 0 4px rgba(0,204,255,0.6)', flexShrink: 0 }}>
+          {promptStr(cwd)}
         </span>
         <input
           ref={inputRef}
@@ -360,16 +382,11 @@ export function FakeShell({ secretUrl }: { secretUrl: string }) {
           autoCorrect="off"
           spellCheck={false}
           style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: '#00ff41',
-            fontFamily: FONT,
-            fontSize: fs,
+            flex: 1, minWidth: 0,
+            background: 'transparent', border: 'none', outline: 'none',
+            color: '#00ff41', fontFamily: FONT, fontSize: fs,
             textShadow: '0 0 4px rgba(0,255,65,0.6)',
             caretColor: '#00ff41',
-            minWidth: 0,
           }}
         />
       </div>

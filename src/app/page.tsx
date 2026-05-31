@@ -493,7 +493,7 @@ export default function TerminalPage() {
               </a>
             </div>
             {/* フェイクシェル */}
-            <FakeShell secretUrl={typeof window !== 'undefined' ? `${window.location.origin}/secret` : '/secret'} />
+            <FakeShell />
           </div>
         )}
       </main>
