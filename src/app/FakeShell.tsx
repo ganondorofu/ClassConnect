@@ -363,15 +363,6 @@ Rendering encoded data...`;
                 alt="QR Code"
                 style={{ width: '160px', height: '160px', imageRendering: 'pixelated', display: 'block' }}
               />
-              <div style={{ color: '#888', fontSize: `calc(${fs} * 0.85)`, marginTop: '4px' }}>
-                scan or visit:{' '}
-                <a
-                  href="/secret"
-                  style={{ color: '#00ff41', textDecoration: 'none' }}
-                >
-                  {typeof window !== 'undefined' ? `${window.location.origin}/secret` : '/secret'}
-                </a>
-              </div>
             </div>
           )}
         </div>
