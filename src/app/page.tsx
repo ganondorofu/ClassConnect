@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { BreakoutGame } from './BreakoutGame';
 
 type LogLine = {
   text: string;
@@ -8,7 +9,6 @@ type LogLine = {
 };
 
 type Phase = 'classconnect' | 'bsod' | 'terminal';
-type GameState = 'inactive' | 'playing' | 'won' | 'lost';
 
 function detectOS(): string {
   const ua = navigator.userAgent;
@@ -55,7 +55,6 @@ function detectBrowser(): string {
   return 'UNKNOWN';
 }
 
-const MAX_ATTEMPTS = 7;
 
 export default function TerminalPage() {
   const [phase, setPhase] = useState<Phase>('classconnect');
@@ -65,14 +64,6 @@ export default function TerminalPage() {
   const [currentText, setCurrentText] = useState('');
   const [currentColor, setCurrentColor] = useState('#00ff41');
   const [done, setDone] = useState(false);
-
-  // Mini-game state
-  const [gameState, setGameState] = useState<GameState>('inactive');
-  const [gameTarget, setGameTarget] = useState(0);
-  const [gameInput, setGameInput] = useState('');
-  const [gameAttempts, setGameAttempts] = useState(0);
-  const [gameHistory, setGameHistory] = useState<{ guess: number; hint: string; color: string }[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // ClassConnect fake loading → BSOD transition
   useEffect(() => {
@@ -106,7 +97,6 @@ export default function TerminalPage() {
     setCurrentText('');
     setCurrentColor('#00ff41');
     setDone(false);
-    setGameState('inactive');
 
     const deviceInfo = {
       os: detectOS(),
@@ -197,54 +187,6 @@ export default function TerminalPage() {
       clearTimeout(timeout);
     };
   }, [phase]);
-
-  // Start mini-game when scan is done
-  useEffect(() => {
-    if (!done) return;
-    const target = Math.floor(Math.random() * 100) + 1;
-    setGameTarget(target);
-    setGameAttempts(0);
-    setGameHistory([]);
-    setGameInput('');
-    setGameState('playing');
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, [done]);
-
-  function handleGuess(e: React.FormEvent) {
-    e.preventDefault();
-    const n = parseInt(gameInput, 10);
-    if (isNaN(n) || n < 1 || n > 100) return;
-
-    const newAttempts = gameAttempts + 1;
-    setGameAttempts(newAttempts);
-    setGameInput('');
-
-    if (n === gameTarget) {
-      setGameHistory(prev => [...prev, { guess: n, hint: 'CORRECT', color: '#00ff41' }]);
-      setGameState('won');
-    } else {
-      const remaining = MAX_ATTEMPTS - newAttempts;
-      const hint = n < gameTarget ? 'TOO LOW' : 'TOO HIGH';
-      const color = remaining <= 2 ? '#ff4444' : '#ffff00';
-      if (newAttempts >= MAX_ATTEMPTS) {
-        setGameHistory(prev => [...prev, { guess: n, hint: `${hint} — GAME OVER`, color: '#ff4444' }]);
-        setGameState('lost');
-      } else {
-        setGameHistory(prev => [...prev, { guess: n, hint: `${hint}  (${remaining} attempts left)`, color }]);
-        setTimeout(() => inputRef.current?.focus(), 50);
-      }
-    }
-  }
-
-  function restartGame() {
-    const target = Math.floor(Math.random() * 100) + 1;
-    setGameTarget(target);
-    setGameAttempts(0);
-    setGameHistory([]);
-    setGameInput('');
-    setGameState('playing');
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }
 
   // Phase 1: Fake ClassConnect loading screen
   if (phase === 'classconnect') {
@@ -478,98 +420,12 @@ export default function TerminalPage() {
         </pre>
 
         {/* Mini-game */}
-        {gameState !== 'inactive' && (
-          <div style={{
-            marginTop: '2rem', maxWidth: '800px',
-            fontFamily: font, fontSize,
-            color: '#00ff41', textShadow: '0 0 6px rgba(0,255,65,0.8)',
-            lineHeight: '1.9',
-          }}>
-            <span style={{ color: '#ff4444', display: 'block' }}>{'> ─────────────────────────────────'}</span>
-            <span style={{ color: '#ffff00', display: 'block' }}>{'> [CHALLENGE] ENCRYPTION_LOCK_ACTIVE'}</span>
-            <span style={{ display: 'block' }}>{'> Crack the key to elevate your access.'}</span>
-            <span style={{ display: 'block' }}>{`> Guess the number between 1 and 100. (${MAX_ATTEMPTS} attempts)`}</span>
-            <span style={{ display: 'block' }}>{'> ─────────────────────────────────'}</span>
-
-            {gameHistory.map((h, i) => (
-              <span key={i} style={{ color: h.color, display: 'block' }}>
-                {`> [${String(h.guess).padStart(3, ' ')}] → ${h.hint}`}
-              </span>
-            ))}
-
-            {gameState === 'playing' && (
-              <form onSubmit={handleGuess} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                <span>{'> ENTER KEY: '}</span>
-                <input
-                  ref={inputRef}
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={gameInput}
-                  onChange={e => setGameInput(e.target.value)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid #00ff41',
-                    color: '#00ff41',
-                    fontFamily: font,
-                    fontSize,
-                    width: '5ch',
-                    outline: 'none',
-                    textShadow: '0 0 6px rgba(0,255,65,0.8)',
-                    MozAppearance: 'textfield',
-                  }}
-                />
-                <button type="submit" style={{
-                  background: 'transparent', border: '1px solid #00ff41',
-                  color: '#00ff41', fontFamily: font, fontSize,
-                  padding: '0.1rem 0.6rem', cursor: 'pointer',
-                  textShadow: '0 0 6px rgba(0,255,65,0.8)',
-                }}>
-                  SUBMIT
-                </button>
-              </form>
-            )}
-
-            {gameState === 'won' && (
-              <>
-                <span style={{ color: '#00ff41', display: 'block', marginTop: '0.5rem' }}>
-                  {`> ENCRYPTION CRACKED in ${gameAttempts} attempt${gameAttempts === 1 ? '' : 's'}. Access level elevated.`}
-                </span>
-                <button
-                  type="button"
-                  onClick={restartGame}
-                  style={{
-                    marginTop: '1rem', background: 'transparent',
-                    border: '1px solid #00ff41', color: '#00ff41',
-                    fontFamily: font, fontSize, padding: '0.4rem 1rem',
-                    cursor: 'pointer', textShadow: '0 0 6px rgba(0,255,65,0.8)',
-                  }}
-                >
-                  PLAY AGAIN
-                </button>
-              </>
-            )}
-
-            {gameState === 'lost' && (
-              <>
-                <span style={{ color: '#ff4444', display: 'block', marginTop: '0.5rem' }}>
-                  {`> ACCESS DENIED. The key was ${gameTarget}.`}
-                </span>
-                <button
-                  type="button"
-                  onClick={restartGame}
-                  style={{
-                    marginTop: '1rem', background: 'transparent',
-                    border: '1px solid #ff4444', color: '#ff4444',
-                    fontFamily: font, fontSize, padding: '0.4rem 1rem',
-                    cursor: 'pointer', textShadow: '0 0 6px rgba(255,68,68,0.8)',
-                  }}
-                >
-                  RETRY
-                </button>
-              </>
-            )}
+        {done && (
+          <div style={{ marginTop: '2rem', maxWidth: '800px' }}>
+            <span style={{ color: '#ff4444', fontFamily: font, fontSize, display: 'block', marginBottom: '1rem' }}>
+              {'> ─────────────────────────────────'}
+            </span>
+            <BreakoutGame />
           </div>
         )}
       </main>
@@ -578,8 +434,6 @@ export default function TerminalPage() {
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; background: #050505; }
-        input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         button:hover { background: rgba(0, 255, 65, 0.1) !important; }
       `}</style>
     </>
