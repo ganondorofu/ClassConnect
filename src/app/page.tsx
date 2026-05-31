@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BreakoutGame } from './BreakoutGame';
 
 type LogLine = {
   text: string;
@@ -450,11 +449,30 @@ export default function TerminalPage() {
 
         {/* Mini-game */}
         {done && (
-          <div style={{ marginTop: '2rem', maxWidth: '800px' }}>
-            <span style={{ color: '#ff4444', fontFamily: font, fontSize, display: 'block', marginBottom: '1rem' }}>
+          <div style={{ marginTop: '2rem', maxWidth: '800px', fontFamily: font, fontSize }}>
+            <span style={{ color: '#ff4444', display: 'block', marginBottom: '0.75rem' }}>
               {'> ─────────────────────────────────'}
             </span>
-            <BreakoutGame />
+            <span style={{ color: '#ffff00', display: 'block' }}>
+              {'> [MINI-GAME] BLOCK_BREAKER available'}
+            </span>
+            <a
+              href="/game"
+              style={{
+                display: 'inline-block',
+                marginTop: '0.6rem',
+                border: '1px solid #00ff41',
+                color: '#00ff41',
+                fontFamily: font,
+                fontSize,
+                padding: '0.4rem 1.2rem',
+                textDecoration: 'none',
+                textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                boxShadow: '0 0 10px rgba(0,255,65,0.15)',
+              }}
+            >
+              LAUNCH GAME →
+            </a>
           </div>
         )}
       </main>

@@ -11,8 +11,8 @@ const BLOCK_H = 18;
 const PADDLE_W = 80;
 const PADDLE_H = 10;
 const BALL_R = 6;
-const BALL_SPEED = 4.5;
-const PADDLE_SPEED = 7;
+const BALL_SPEED = 2.8;
+const PADDLE_SPEED = 6;
 const MAX_LIVES = 3;
 
 const ROW_COLORS = ['#ff4444', '#ff8800', '#ffff00', '#88ff00', '#00ff41'];
@@ -27,7 +27,11 @@ interface Block {
   row: number;
 }
 
-export function BreakoutGame() {
+interface Props {
+  fullscreen?: boolean;
+}
+
+export function BreakoutGame({ fullscreen = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -85,7 +89,6 @@ export function BreakoutGame() {
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, LW, LH);
 
-    // Blocks
     const isIdle = statusRef.current === 'idle';
     blocksRef.current.forEach(b => {
       if (!b.alive) return;
@@ -99,13 +102,11 @@ export function BreakoutGame() {
     ctx.globalAlpha = 1;
 
     if (!isIdle) {
-      // Paddle
       ctx.shadowColor = '#00ff41';
       ctx.shadowBlur = 10;
       ctx.fillStyle = '#00ff41';
       ctx.fillRect(paddleXRef.current, LH - 20, PADDLE_W, PADDLE_H);
 
-      // Ball
       const ball = ballRef.current;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
@@ -114,7 +115,6 @@ export function BreakoutGame() {
       ctx.shadowBlur = 8;
       ctx.fill();
     } else {
-      // Idle: show paddle dimmed
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = '#00ff41';
       ctx.shadowBlur = 0;
@@ -122,7 +122,6 @@ export function BreakoutGame() {
       ctx.globalAlpha = 1;
     }
 
-    // Border
     ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(0,255,65,0.25)';
     ctx.lineWidth = 1;
@@ -141,12 +140,10 @@ export function BreakoutGame() {
     b.x += b.dx;
     b.y += b.dy;
 
-    // Walls
     if (b.x - BALL_R < 0) { b.x = BALL_R; b.dx = Math.abs(b.dx); }
     if (b.x + BALL_R > LW) { b.x = LW - BALL_R; b.dx = -Math.abs(b.dx); }
     if (b.y - BALL_R < 0) { b.y = BALL_R; b.dy = Math.abs(b.dy); }
 
-    // Paddle
     const py = LH - 20;
     if (
       b.dy > 0 &&
@@ -161,7 +158,6 @@ export function BreakoutGame() {
       b.dy = -Math.abs(spd * Math.cos(angle));
     }
 
-    // Fall out
     if (b.y - BALL_R > LH) {
       livesRef.current--;
       setLives(livesRef.current);
@@ -175,7 +171,6 @@ export function BreakoutGame() {
       return;
     }
 
-    // Block collisions
     for (const block of blocksRef.current) {
       if (!block.alive) continue;
       if (b.x + BALL_R < block.x || b.x - BALL_R > block.x + block.w) continue;
@@ -209,13 +204,21 @@ export function BreakoutGame() {
     if (!ctx) return;
     ctxRef.current = ctx;
 
-    // Draw idle preview
     blocksRef.current = makeBlocks();
     paddleXRef.current = LW / 2 - PADDLE_W / 2;
 
     function resize() {
       if (!canvas || !container) return;
-      const cw = Math.min(container.clientWidth, LW);
+      let cw: number;
+      if (fullscreen) {
+        // 縦にはみ出さないよう、利用可能な高さからも最大幅を算出
+        const availH = window.innerHeight - 110; // HUD + ヘッダー分
+        const maxWFromH = availH * (LW / LH);
+        cw = Math.min(container.clientWidth, maxWFromH);
+      } else {
+        cw = Math.min(container.clientWidth, LW);
+      }
+      cw = Math.round(cw);
       canvas.width = cw;
       canvas.height = Math.round(LH * (cw / LW));
       scaleRef.current = cw / LW;
@@ -288,44 +291,55 @@ export function BreakoutGame() {
   }
 
   const font = '"Courier New", Courier, monospace';
-  const fs = 'clamp(11px, 2.2vw, 14px)';
+  const fs = fullscreen ? 'clamp(12px, 2vw, 16px)' : 'clamp(11px, 2.2vw, 14px)';
   const isLost = status === 'lost';
 
   return (
-    <div ref={containerRef} style={{ maxWidth: `${LW}px`, width: '100%' }}>
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        maxWidth: fullscreen ? 'none' : `${LW}px`,
+      }}
+    >
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         fontFamily: font, fontSize: fs, color: '#00ff41',
         textShadow: '0 0 6px rgba(0,255,65,0.8)',
-        marginBottom: '4px', padding: '0 2px',
+        marginBottom: '6px', padding: '0 2px',
       }}>
         <span>SCORE: {score}</span>
-        <span style={{ letterSpacing: '2px' }}>
+        <span style={{ letterSpacing: '3px' }}>
           {'♥'.repeat(lives)}
-          <span style={{ opacity: 0.3 }}>{'♥'.repeat(MAX_LIVES - lives)}</span>
+          <span style={{ opacity: 0.25 }}>{'♥'.repeat(MAX_LIVES - lives)}</span>
         </span>
       </div>
 
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', width: '100%', cursor: status === 'playing' ? 'none' : 'default', touchAction: 'none' }}
+        style={{
+          display: 'block',
+          width: '100%',
+          cursor: status === 'playing' ? 'none' : 'default',
+          touchAction: 'none',
+        }}
       />
 
       {status !== 'playing' && (
-        <div style={{ marginTop: '10px', fontFamily: font, fontSize: fs }}>
+        <div style={{ marginTop: '12px', fontFamily: font, fontSize: fs }}>
           {status === 'idle' && (
             <span style={{ color: '#ffff00', display: 'block' }}>
-              {'> [MINI-GAME] BLOCK_BREAKER  — mouse / touch / arrow keys'}
+              {'> mouse / touch / ← → キーでパドルを操作'}
             </span>
           )}
           {status === 'won' && (
             <span style={{ color: '#00ff41', display: 'block' }}>
-              {`> ALL BLOCKS DESTROYED. Final score: ${score}`}
+              {`> ALL BLOCKS DESTROYED — Score: ${score}`}
             </span>
           )}
           {status === 'lost' && (
             <span style={{ color: '#ff4444', display: 'block' }}>
-              {`> ACCESS LOST. Final score: ${score}`}
+              {`> GAME OVER — Score: ${score}`}
             </span>
           )}
           <button
@@ -335,8 +349,8 @@ export function BreakoutGame() {
               marginTop: '8px', background: 'transparent',
               border: `1px solid ${isLost ? '#ff4444' : '#00ff41'}`,
               color: isLost ? '#ff4444' : '#00ff41',
-              fontFamily: font, fontSize: fs,
-              padding: '0.35rem 1rem', cursor: 'pointer',
+              fontFamily: font, fontSize, padding: '0.4rem 1.2rem',
+              cursor: 'pointer',
               textShadow: `0 0 6px ${isLost ? 'rgba(255,68,68,0.8)' : 'rgba(0,255,65,0.8)'}`,
             }}
           >
