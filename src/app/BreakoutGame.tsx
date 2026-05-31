@@ -29,9 +29,10 @@ interface Block {
 
 interface Props {
   fullscreen?: boolean;
+  onWin?: () => void;
 }
 
-export function BreakoutGame({ fullscreen = false }: Props) {
+export function BreakoutGame({ fullscreen = false, onWin }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -156,7 +157,11 @@ export function BreakoutGame({ fullscreen = false }: Props) {
       break;
     }
 
-    if (blocksRef.current.every(b => !b.alive)) { statusRef.current = 'won'; setStatus('won'); }
+    if (blocksRef.current.every(b => !b.alive)) {
+      statusRef.current = 'won';
+      setStatus('won');
+      onWin?.();
+    }
   }
 
   function resize() {

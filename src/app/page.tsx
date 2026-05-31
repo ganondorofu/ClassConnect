@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FakeShell } from './FakeShell';
 
 type LogLine = {
   text: string;
@@ -460,40 +459,34 @@ export default function TerminalPage() {
           </pre>
         </div>
 
-        {/* シェルとゲームリンク — 下部エリア */}
+        {/* ゲームリンク — スキャン完了後に表示 */}
         {done && (
           <div style={{
             flexShrink: 0,
             borderTop: '1px solid rgba(0,255,65,0.2)',
             paddingTop: '0.75rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.5rem',
-            minHeight: 0,
-            maxHeight: '45vh',
-            overflowY: 'auto',
+            fontFamily: font,
+            fontSize,
           }}>
-            {/* ゲームリンク */}
-            <div style={{ fontFamily: font, fontSize, flexShrink: 0 }}>
-              <a
-                href="/game"
-                style={{
-                  display: 'inline-block',
-                  border: '1px solid rgba(0,255,65,0.5)',
-                  color: '#00ff41',
-                  fontFamily: font,
-                  fontSize,
-                  padding: '0.25rem 0.9rem',
-                  textDecoration: 'none',
-                  textShadow: '0 0 6px rgba(0,255,65,0.8)',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                LAUNCH GAME →
-              </a>
-            </div>
-            {/* フェイクシェル */}
-            <FakeShell />
+            <span style={{ color: '#ffff00', display: 'block', marginBottom: '0.5rem' }}>
+              {'> [CHALLENGE] Clear the game to unlock shell access.'}
+            </span>
+            <a
+              href="/game"
+              style={{
+                display: 'inline-block',
+                border: '1px solid #00ff41',
+                color: '#00ff41',
+                fontFamily: font,
+                fontSize,
+                padding: '0.35rem 1.1rem',
+                textDecoration: 'none',
+                textShadow: '0 0 6px rgba(0,255,65,0.8)',
+                boxShadow: '0 0 10px rgba(0,255,65,0.15)',
+              }}
+            >
+              LAUNCH GAME →
+            </a>
           </div>
         )}
       </main>
