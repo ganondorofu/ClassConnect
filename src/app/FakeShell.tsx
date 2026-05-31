@@ -304,11 +304,22 @@ Rendering encoded data...`;
     setInput('');
   }
 
-  const fs = 'clamp(11px, 2.2vw, 13px)';
+  // モバイル: visualViewport リサイズ（キーボード開閉）時に入力欄へスクロール
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, []);
+
+  const fs = 'clamp(13px, 3.5vw, 15px)';
 
   return (
     <div
-      style={{ fontFamily: FONT, fontSize: fs, lineHeight: 1.8 }}
+      style={{ fontFamily: FONT, fontSize: fs, lineHeight: 1.8, paddingBottom: '0.5rem' }}
       onClick={() => inputRef.current?.focus()}
     >
       {history.map((e, i) => (
@@ -366,8 +377,15 @@ Rendering encoded data...`;
         </div>
       ))}
 
-      {/* 入力行 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem' }}>
+      {/* 入力行 — sticky で常に画面下部に固定 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '0.4rem',
+        marginTop: '0.25rem',
+        position: 'sticky', bottom: 0,
+        background: '#050505',
+        paddingTop: '0.25rem',
+        paddingBottom: 'env(safe-area-inset-bottom, 0.25rem)',
+      }}>
         <span style={{ color: '#00ccff', whiteSpace: 'nowrap', textShadow: '0 0 4px rgba(0,204,255,0.6)', flexShrink: 0 }}>
           {promptStr(cwd)}
         </span>
@@ -378,9 +396,15 @@ Rendering encoded data...`;
           onKeyDown={e => {
             if (e.key === 'Enter') { e.preventDefault(); run(input); }
           }}
+          onFocus={() => {
+            setTimeout(() => {
+              inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }, 300); // キーボードアニメーション待ち
+          }}
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
+          enterKeyHint="send"
           style={{
             flex: 1, minWidth: 0,
             background: 'transparent', border: 'none', outline: 'none',

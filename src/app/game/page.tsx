@@ -22,8 +22,10 @@ export default function GamePage() {
       }} />
 
       <main style={{
-        height: '100dvh',
-        overflow: 'hidden',
+        // ゲーム中: 100dvh 固定。シェル表示時: min-height のみ（自然スクロール）
+        ...(gameWon
+          ? { minHeight: '100dvh' }
+          : { height: '100dvh', overflow: 'hidden' }),
         background: '#050505',
         display: 'flex',
         flexDirection: 'column',
@@ -97,7 +99,8 @@ export default function GamePage() {
 
       <style>{`
         * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; background: #050505; height: 100%; overflow: hidden; }
+        html, body { margin: 0; padding: 0; background: #050505; }
+        ${!gameWon ? 'html, body { height: 100%; overflow: hidden; }' : ''}
         a:hover { background: rgba(0,255,65,0.1); }
       `}</style>
     </>
