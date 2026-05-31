@@ -19,21 +19,22 @@ export default function GamePage() {
       }} />
 
       <main style={{
-        minHeight: '100dvh',
+        height: '100dvh',
+        overflow: 'hidden',
         background: '#050505',
         display: 'flex',
         flexDirection: 'column',
-        padding: 'clamp(0.6rem, 2.5vw, 1.25rem)',
+        padding: 'clamp(0.5rem, 2vw, 1rem)',
         boxSizing: 'border-box',
         position: 'relative',
         zIndex: 1,
       }}>
-        {/* Header bar */}
+        {/* Header */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '1rem',
-          marginBottom: '0.6rem',
+          marginBottom: '0.5rem',
           fontFamily: font,
           fontSize: 'clamp(11px, 2vw, 14px)',
           flexShrink: 0,
@@ -60,13 +61,14 @@ export default function GamePage() {
           </span>
         </div>
 
-        {/* Game area — centerd, fills remaining height */}
+        {/* Game area — 残り高さをすべて使う */}
         <div style={{
           flex: 1,
+          minHeight: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: 0,
+          overflow: 'hidden',
         }}>
           <BreakoutGame fullscreen />
         </div>
@@ -74,7 +76,7 @@ export default function GamePage() {
 
       <style>{`
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background: #050505; }
+        html, body { margin: 0; padding: 0; background: #050505; height: 100%; overflow: hidden; }
         a:hover { background: rgba(0,255,65,0.1); }
       `}</style>
     </>
