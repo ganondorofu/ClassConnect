@@ -11,7 +11,7 @@ const BLOCK_H = 18;
 const PADDLE_W = 80;
 const PADDLE_H = 10;
 const BALL_R = 6;
-const BALL_SPEED = 2.0;
+const BALL_SPEED = 2.3;
 const PADDLE_SPEED = 6;
 const MAX_LIVES = 3;
 
