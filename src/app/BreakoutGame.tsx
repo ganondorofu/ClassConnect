@@ -349,7 +349,7 @@ export function BreakoutGame({ fullscreen = false }: Props) {
               marginTop: '8px', background: 'transparent',
               border: `1px solid ${isLost ? '#ff4444' : '#00ff41'}`,
               color: isLost ? '#ff4444' : '#00ff41',
-              fontFamily: font, fontSize, padding: '0.4rem 1.2rem',
+              fontFamily: font, fontSize: fs, padding: '0.4rem 1.2rem',
               cursor: 'pointer',
               textShadow: `0 0 6px ${isLost ? 'rgba(255,68,68,0.8)' : 'rgba(0,255,65,0.8)'}`,
             }}
