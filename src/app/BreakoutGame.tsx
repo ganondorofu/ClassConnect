@@ -317,9 +317,14 @@ export function BreakoutGame({ fullscreen = false }: Props) {
               </span>
             )}
             {status === 'won' && (
-              <span style={{ color: '#00ff41', fontFamily: font, fontSize: fs, textShadow: '0 0 8px rgba(0,255,65,0.8)' }}>
-                ALL BLOCKS DESTROYED — Score: {score}
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ color: '#00ff41', fontFamily: font, fontSize: fs, textShadow: '0 0 8px rgba(0,255,65,0.8)' }}>
+                  ALL BLOCKS DESTROYED — Score: {score}
+                </span>
+                <span style={{ color: '#ffff00', fontFamily: font, fontSize: `calc(${fs} * 0.88)`, textShadow: '0 0 6px rgba(255,255,0,0.6)', opacity: 0.9 }}>
+                  [CTF] &quot;Well-behaved crawlers know where they&apos;re not welcome.&quot;
+                </span>
+              </div>
             )}
             {status === 'lost' && (
               <span style={{ color: '#ff4444', fontFamily: font, fontSize: fs, textShadow: '0 0 8px rgba(255,68,68,0.8)' }}>
@@ -348,7 +353,14 @@ export function BreakoutGame({ fullscreen = false }: Props) {
       {!fullscreen && status !== 'playing' && (
         <div style={{ marginTop: '12px', fontFamily: font, fontSize: fs }}>
           {status === 'idle' && <span style={{ color: '#ffff00', display: 'block' }}>{'> mouse / touch / ← → キーでパドルを操作'}</span>}
-          {status === 'won' && <span style={{ color: '#00ff41', display: 'block' }}>{`> ALL BLOCKS DESTROYED — Score: ${score}`}</span>}
+          {status === 'won' && (
+            <>
+              <span style={{ color: '#00ff41', display: 'block' }}>{`> ALL BLOCKS DESTROYED — Score: ${score}`}</span>
+              <span style={{ color: '#ffff00', display: 'block', marginTop: '0.25rem', fontSize: `calc(${fs} * 0.9)` }}>
+                {'> [CTF] "Well-behaved crawlers know where they\'re not welcome."'}
+              </span>
+            </>
+          )}
           {status === 'lost' && <span style={{ color: '#ff4444', display: 'block' }}>{`> GAME OVER — Score: ${score}`}</span>}
           <button
             type="button"
